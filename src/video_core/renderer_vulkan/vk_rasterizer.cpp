@@ -2227,6 +2227,12 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
             buffer_cache.ForgetReadTraps(page_start, page_end - page_start);
         }
     }
+    // Pages no image was ever registered on have nothing to flush: skip the texture cache's lock
+    // (after Stephen Jayakar's read fast path in Lichii, #1479).
+    if (!texture_cache.page_filter.Any(addr, size)) {
+        return VideoCommon::Nx2Reactive::CombineFlushArea(std::nullopt, page_start, page_end,
+                                                          flush_buffer);
+    }
     {
         const s64 lock_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
         std::scoped_lock lock{texture_cache.mutex};
