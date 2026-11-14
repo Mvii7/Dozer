@@ -735,6 +735,8 @@ private:
     // their storage and only see the write.
     void BackSparseWrite(u64 gpu_address, u64 size) {
         std::scoped_lock lk{m_region_mutex};
+        const auto back_start = std::chrono::steady_clock::now();
+        const u64 blocks_before = m_sparse_blocks;
         const u64 end = gpu_address + size;
         auto it = m_sparse_regions.upper_bound(gpu_address);
         if (it != m_sparse_regions.begin()) {
@@ -776,6 +778,13 @@ private:
                              m_gpu_only_peak >> 20);
                 }
             }
+        }
+        if (const auto back_ms = std::chrono::duration<double, std::milli>(
+                                     std::chrono::steady_clock::now() - back_start)
+                                     .count();
+            back_ms > 3.0) {
+            LOG_INFO(Service, "nx2:gpu backing {} sparse blocks took {:.1f} ms",
+                     m_sparse_blocks - blocks_before, back_ms);
         }
     }
 
