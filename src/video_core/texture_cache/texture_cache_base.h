@@ -191,6 +191,9 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     // Nanoseconds of the last frame's uploads by step: staging buffer, guest memory read, untile
     // (and convert), accelerated (GPU transcode) record, copy record.
     std::array<u64, 5> hitch_step_ns{};
+    /// Transcode steps (GPU thread, filled by the Vulkan runtime): decode image, its views,
+    /// decode record, encode buffer request, encode records, freeing finished decode images.
+    static inline thread_local std::array<u64, 6> transcode_step_ns{};
     struct StepTimer {
         StepTimer(u64& total_) noexcept : total{total_}, start{std::chrono::steady_clock::now()} {}
         ~StepTimer() {

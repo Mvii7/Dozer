@@ -398,15 +398,19 @@ void TextureCache<P>::TickFrame() {
             LOG_INFO(HW_GPU,
                      "Slow frame {:.1f} ms: {} uploads {:.1f} ms (worst {:.1f} ms, {} KiB), {} "
                      "images created {:.1f} ms (worst {:.1f} ms, {} KiB; host images {:.1f} ms); upload steps: "
-                     "staging {:.1f}, read {:.1f}, untile {:.1f}, transcode {:.1f}, copy {:.1f} ms",
+                     "staging {:.1f}, read {:.1f}, untile {:.1f}, transcode {:.1f}, copy {:.1f} ms; transcode: "
+                     "image {:.1f}, views {:.1f}, decode {:.1f}, buffer {:.1f}, encode {:.1f}, free {:.1f} ms",
                      frame_ms, hitch_uploads, ms(hitch_upload_ns), ms(hitch_upload_worst_ns),
                      hitch_upload_worst_bytes >> 10, hitch_creates, ms(hitch_create_ns),
                      ms(hitch_create_worst_ns), hitch_create_worst_bytes >> 10, ms(hitch_make_ns), ms(hitch_step_ns[0]),
                      ms(hitch_step_ns[1]), ms(hitch_step_ns[2]), ms(hitch_step_ns[3]),
-                     ms(hitch_step_ns[4]));
+                     ms(hitch_step_ns[4]), ms(transcode_step_ns[0]), ms(transcode_step_ns[1]),
+                     ms(transcode_step_ns[2]), ms(transcode_step_ns[3]), ms(transcode_step_ns[4]),
+                     ms(transcode_step_ns[5]));
         }
         hitch_frame_start = now;
         hitch_step_ns.fill(0);
+        transcode_step_ns.fill(0);
         hitch_make_ns = hitch_upload_ns = hitch_upload_worst_ns = hitch_create_ns =
             hitch_create_worst_ns = 0;
         hitch_uploads = hitch_creates = hitch_upload_worst_bytes = hitch_create_worst_bytes = 0;

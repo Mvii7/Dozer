@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <limits>
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <optional>
 #include <span>
@@ -43,6 +44,21 @@
 #include "video_core/textures/decoders.h"
 
 namespace Vulkan {
+namespace {
+/// Adds the time it lives to one of TextureCache's transcode step totals.
+struct TextureCacheStepTimer {
+    explicit TextureCacheStepTimer(size_t slot_) noexcept
+        : slot{slot_}, start{std::chrono::steady_clock::now()} {}
+    ~TextureCacheStepTimer() {
+        VideoCommon::TextureCache<TextureCacheParams>::transcode_step_ns[slot] +=
+            static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::steady_clock::now() - start)
+                                 .count());
+    }
+    size_t slot;
+    std::chrono::steady_clock::time_point start;
+};
+} // namespace
 
 using Tegra::Engines::Fermi2D;
 using Tegra::Texture::SwizzleSource;
@@ -2130,8 +2146,11 @@ void TextureCacheRuntime::ReleaseMsaaScratchImage(VkImage image) {
 }
 
 void TextureCacheRuntime::TickFrame() {
-    while (!pending_transcodes.empty() && scheduler.IsFree(pending_transcodes.front().tick)) {
-        pending_transcodes.pop_front();
+    {
+        const TextureCacheStepTimer step{5};
+        while (!pending_transcodes.empty() && scheduler.IsFree(pending_transcodes.front().tick)) {
+            pending_transcodes.pop_front();
+        }
     }
     static constexpr u32 MAX_UNUSED_SCRATCH_FRAMES = 60;
     std::erase_if(msaa_scratch_images, [this](MsaaScratchImage& scratch) {
@@ -3742,6 +3761,8 @@ void TextureCacheRuntime::TranscodeAstcToBcn(
     // The decode image lives only until the encode ran. Sub-allocated, not dedicated: streaming
     // worlds transcode ~100 textures a second, and a vkAllocateMemory plus a vkFreeMemory for each
     // took several percent of the GPU thread. VMA still gives large ones their own block.
+    std::optional<TextureCacheStepTimer> step;
+    step.emplace(0);
     PendingTranscode pending{
         .tick = 0,
         .image = memory_allocator.CreateImage(VkImageCreateInfo{
@@ -3763,10 +3784,12 @@ void TextureCacheRuntime::TranscodeAstcToBcn(
         }),
         .views = {},
     };
+    step.emplace(1);
     for (u32 level = 0; level < levels; ++level) {
         pending.views.push_back(
             MakeStorageView(device.GetLogical(), level, *pending.image, DecodeFormat));
     }
+    step.emplace(2);
     astc_decoder_pass->AssembleInto(
         info, skip, image.guest_size_bytes,
         ASTCDecoderPass::Target{
@@ -3778,6 +3801,7 @@ void TextureCacheRuntime::TranscodeAstcToBcn(
         },
         map, swizzles);
 
+    step.reset();
     // Encode every level into one buffer, then copy it into the image.
     const bool bc3 = !IsOpaqueBc1Astc(device, info) &&
                      Settings::values.astc_recompression.GetValue() !=
@@ -3806,7 +3830,9 @@ void TextureCacheRuntime::TranscodeAstcToBcn(
         });
         total += size;
     }
+    step.emplace(3);
     const auto output = staging_buffer_pool.Request(total, MemoryUsage::DeviceLocal);
+    step.emplace(4);
     for (u32 level = 0; level < levels; ++level) {
         bc_encoder_pass->Encode(*pending.views[level], copies[level].image_extent.width,
                                 copies[level].image_extent.height, layers, bc3, output.buffer,
