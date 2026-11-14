@@ -588,7 +588,7 @@ struct Values {
                                                                true};
 
     SwitchableSetting<AstcRecompression, true> astc_recompression{linkage,
-                                                                  AstcRecompression::Uncompressed,
+                                                                  AstcRecompression::Bc3,
                                                                   "astc_recompression",
                                                                   Category::RendererAdvanced};
 
@@ -818,6 +818,18 @@ struct Values {
                                               Category::Controls};
     SwitchableSetting<bool> enable_accurate_vibrations{linkage, false, "enable_accurate_vibrations",
                                                        Category::Controls};
+    // Only tested on Windows so far; on Linux (PipeWire) the haptics play through the speaker
+    Setting<bool> enable_dualsense_haptics{linkage,
+#ifdef _WIN32
+                                           true,
+#else
+                                           false,
+#endif
+                                           "enable_dualsense_haptics", Category::Controls};
+    Setting<int, true> dualsense_haptics_strength{
+        linkage, 90, 50, 150, "dualsense_haptics_strength", Category::Controls};
+    Setting<bool> rumble_frequency_mapping{linkage, false, "rumble_frequency_mapping",
+                                           Category::Controls};
 
     SwitchableSetting<bool> motion_enabled{linkage, true, "motion_enabled", Category::Controls};
     Setting<std::string> udp_input_servers{linkage, "127.0.0.1:26760", "udp_input_servers",

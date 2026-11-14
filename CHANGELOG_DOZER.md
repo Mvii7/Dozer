@@ -8,6 +8,21 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- One readme: `README.md` is now the full manual (it was `README_DOZER.md`), replacing the upstream
+  `README.md` and the shorter `.github/README.md` that GitHub showed as the front page. It names
+  Mario Kart World as the second tuned game. The release zip, the launchers and the load-error
+  message point to `README.md`.
+
+- ASTC recompression now defaults to BC3 instead of Uncompressed. In Mario Kart World on a 16 GB
+  card, uncompressed ASTC kept device memory at the collector's critical line (12.6-13.7 GiB),
+  evicting and decoding textures again every few seconds; with BC3 the first race stays near
+  9.5 GiB with no evictions (over a full grand prix the cache still fills up to its limit), and
+  Donkey Kong Bananza stays at about 4.6 GiB with no evictions and looks the same to the
+  maintainer. Only configs without a saved value change; set ASTC Recompression
+  Method (advanced graphics settings) to Uncompressed for the best quality.
+
+## Dozer 0.1.0 (`v0.1.0`)
+
 - Mario Kart World dynamic frame rate (`MKW_DYN=1` / `EDEN_NX2_MKW_DYN=1`): its frame mode
   choice is patched in memory so the game picks 1 or 2 vblanks a frame from its real frame time,
   with presents paced to every vblank. After the Lichii fork's patch (zortos293/Lichii#1332),
@@ -48,9 +63,6 @@ and `=0` brings back the 2.0.0 code path.
   when the update has none, the en-us name is preferred, and a file without a name shows its
   file name; a damaged `.zs` texture (no zstd header) is replaced by a neighbouring one with a
   warning in the log. Still read only.
-- Consecutive NVN indexed indirect draws merge into one host multi-draw again (`INDIRECT_BATCH`,
-  on). The terrain damage that had it off by default was not this merge. `=0` is one host draw
-  per call.
 - Rumble: HID command 214 (the Switch 2 titles' vibration, sent every frame) is forwarded to the
   controller through the existing vibration path; it was accepted and dropped. From the Selevet
   fork (`49e2ed7`); not tried with a controller yet.

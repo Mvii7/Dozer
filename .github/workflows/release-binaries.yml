@@ -127,6 +127,9 @@ jobs:
             }
           }
           windeployqt --release --no-translations build/release/bin/dozer.exe
+          # upload-artifact drops empty folders, so the portable user folder carries a visible placeholder (upload-artifact also skips hidden files).
+          New-Item -ItemType Directory -Force build/release/bin/user | Out-Null
+          Set-Content -Path build/release/bin/user/README.txt -Value "Portable data folder."
 
       # The artifact is the bin folder itself: GitHub zips artifacts on download, and uploading a
       # zip gave a zip inside a zip. The publish job zips it once for the release.
@@ -259,11 +262,20 @@ jobs:
           test -s "$LDAI_OUTPUT"
           ls -la "$LDAI_OUTPUT"
 
+      - name: Add the user folder
+        shell: bash
+        run: |
+          # upload-artifact drops empty folders, so the portable user folder carries a visible placeholder (upload-artifact also skips hidden files).
+          mkdir -p user
+          echo "Portable data folder." > user/README.txt
+
       - name: Upload Linux binary
         uses: actions/upload-artifact@v4
         with:
           name: dozer-linux-x86_64-${{ github.sha }}
-          path: dozer-${{ github.sha }}-linux-x86_64.AppImage
+          path: |
+            dozer-${{ github.sha }}-linux-x86_64.AppImage
+            user/README.txt
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -355,6 +367,10 @@ jobs:
           echo "bundle: $app"
           macdeployqt "$app" -codesign=-
           ditto -c -k --sequesterRsrc --keepParent "$app" "dozer-${GITHUB_SHA}-macos-arm64.zip"
+          # Portable user folder beside the app, with a placeholder so the zip keeps it.
+          mkdir -p user
+          echo "Portable data folder." > user/README.txt
+          zip -qr "dozer-${GITHUB_SHA}-macos-arm64.zip" user
           ls -la "dozer-${GITHUB_SHA}-macos-arm64.zip"
 
       - name: Upload macOS binary
@@ -425,9 +441,9 @@ jobs:
           cp -r dl/dozer-windows-x86_64-*/. "$win/"
           cp dist/dozer/*.bat dist/dozer/dozer-config.ps1 "$win/"
           cp -r dist/dozer/Games "$win/Games"
-          cp README_DOZER.md LICENSE.txt "$win/"
+          cp README.md LICENSE.txt "$win/"
           cp -r LICENSES "$win/LICENSES"
-          mkdir "$win/user"
+          mkdir -p "$win/user"
           test -f "$win/dozer.exe" && test -f "$win/dozer-cli.exe"
           zip -qr "release/$win.zip" "$win"
           cp dl/dozer-linux-x86_64-*/*.AppImage "release/Dozer-$VERSION-linux-x86_64.AppImage"
@@ -447,9 +463,9 @@ jobs:
             if [ -n "$NOTES" ]; then printf '%s\n\n' "$NOTES"; fi
             echo "Built from commit \`$SHA\` (run $BUILD_RUN_ID)."
             echo
-            echo "Dozer is a preview fork of Anka tuned for Donkey Kong Bananza. Support is very limited,"
-            echo "and more games may be added later."
-            echo "Not affiliated with Nintendo or the Eglantine project. See README_DOZER.md in the zip."
+            echo "Dozer is a preview emulator tuned for Donkey Kong Bananza and Mario Kart World."
+            echo "Support is limited, and more games may be added later."
+            echo "Not affiliated with Nintendo or the Eglantine project. See README.md in the zip."
             echo "The macOS build is experimental and has never been run."
           } > notes.md
           flags=(--draft --target "$SHA" --title "Dozer $VERSION" --notes-file notes.md)
