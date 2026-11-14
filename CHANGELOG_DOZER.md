@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Texture cache thresholds keep at least an eighth of the driver budget in reserve for the
+  allocator's unused block space even before any is measured. In an 8-minute Mario Kart World run
+  on a 16 GB card the memory peaked 0.4 GB under the budget with the measured value alone; the
+  reserve keeps the peak 1.5-2 GB under it.
+
 - Texture cache collector, to cut the hitches when a course changes (Mario Kart World): a
   GPU-modified image is only evicted at the critical line and at most one is downloaded (a full
   GPU wait) per pass; past the expected line, costly (ASTC) images unused for 600 frames
