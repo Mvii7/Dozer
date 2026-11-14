@@ -10,6 +10,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Dozer 0.1.1 (`v0.1.1`)
 
+- Texture cache thresholds follow the allocator's unused block space as well as the driver
+  budget, so `EDEN_NX2_TC_EXPECTED_MIB` and `EDEN_NX2_TC_CRITICAL_MIB` are no longer needed on a
+  16 GB card to avoid the lag after about 12 minutes of Mario Kart World. The overrides still win.
+
 - One readme: `README.md` is now the full manual (it was `README_DOZER.md`), replacing the upstream
   `README.md` and the shorter `.github/README.md` that GitHub showed as the front page. It names
   Mario Kart World as the second tuned game. The release zip, the launchers and the load-error

@@ -984,6 +984,10 @@ FN_MAX_LIMIT_LIST
     /// budget. 0 without the extension.
     u64 GetDeviceMemoryBudget() const;
 
+    /// Bytes inside the allocator's blocks that no allocation uses: real VRAM that
+    /// GetDeviceMemoryUsage() leaves out.
+    u64 GetDeviceMemorySlack() const;
+
     u32 GetSetsPerPool() const {
         return sets_per_pool;
     }
