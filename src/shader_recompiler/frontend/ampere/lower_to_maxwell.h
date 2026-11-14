@@ -44,6 +44,13 @@ struct LoweredProgram {
     explicit operator bool() const { return error.empty(); }
 };
 
+/// EDEN_NX2_LOWER_SURED=0 and EDEN_NX2_LOWER_ISBE=0 reject the programs using surface reductions
+/// and non-trivial ISBERD/ISBEWR again (the draws are skipped), to isolate a driver crash.
+inline bool LoweringEnabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value == nullptr || value[0] != '0';
+}
+
 /// BRA's offset field is instruction bits 32-81: the byte offset starts at bit 36, bits 32-35 are
 /// flags. Every BRA of more than a thousand Donkey Kong Bananza shaders has them clear, but a
 /// fragment effect shader's conditional branch (@!P1 BRA after an ISETP, 80 instructions ahead)
@@ -1032,6 +1039,8 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
             break;
         }
         case 0x59f: { // Surface reduction through a direct descriptor (Maxwell SURED).
+            static const bool sured_enabled = LoweringEnabled("EDEN_NX2_LOWER_SURED");
+            if (!sured_enabled) return fail(index, "native surface reduction (disabled)");
             const u32 binding = insn.Bits(54, 5), offset = insn.Bits(40, 14);
             const u32 coordinate = insn.Bits(24, 8), data = insn.Bits(32, 8);
             const u32 first_reserved = uses_uniform_bank ? 216U : 246U;
@@ -1869,6 +1878,8 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
             // Any other mode (patches, primitives, indexed attributes, skewed global reads) has a
             // Maxwell counterpart the Maxwell frontend implements in full. Ampere fields: offset
             // 24-31, imm 40-55, mem_type 74-75, access 76-77, skew 78, output 79.
+            static const bool isbe_enabled = LoweringEnabled("EDEN_NX2_LOWER_ISBE");
+            if (!isbe_enabled) return fail(index, "native stage buffer read mode (disabled)");
             const u32 offset_reg = insn.Bits(24, 8);
             const u32 imm_offset = insn.Bits(40, 16);
             const u32 mem_type = insn.Bits(74, 2);
@@ -1885,6 +1896,8 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
         }
         case 0x927: { // ISBEWR: Maxwell has no equivalent. The write is dropped (it only leaves one
                       // stage output stale) instead of rejecting the whole program.
+            static const bool isbe_write_enabled = LoweringEnabled("EDEN_NX2_LOWER_ISBE");
+            if (!isbe_write_enabled) return fail(index, "native stage buffer entry write (disabled)");
             const u32 offset_reg = insn.Bits(24, 8);
             const u32 data_reg = insn.Bits(32, 8);
             if ((offset_reg != 255 && offset_reg >= 246) || (data_reg != 255 && data_reg >= 246))

@@ -30,6 +30,11 @@
 # NVIDIA gives; AMD showed garbage, e.g. green patches near glowing objects). On for AMD drivers
 # only; =1 forces it on for every GPU, =0 turns it off.
 #EDEN_NX2_UNDEF_ZERO=1
+# LOWER_SURED / LOWER_ISBE: lower the native surface reduction (SURED) and the non-trivial
+# ISBERD/ISBEWR forms. =0 rejects those programs again (their draws are skipped), to find out
+# whether one of them crashes the driver.
+#EDEN_NX2_LOWER_SURED=0
+#EDEN_NX2_LOWER_ISBE=0
 
 # --- GPU thread shortcuts (on by default; =0 as before; added by Dozer) ---
 # =2 keeps them on and logs what they would get wrong: VERTEX_CLEAN, LIGHT_SYNC_SKIP,
