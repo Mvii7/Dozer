@@ -10,21 +10,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Dozer 0.1.2 (`v0.1.2`)
 
-- AMD RDNA2 fixes. Shaders: registers read before they are written
-  are zero instead of OpUndef, which AMD read as garbage (green patches near glowing objects;
-  `EDEN_NX2_UNDEF_ZERO`, on for AMD drivers only); CAS loops keep the expected value from the
-  last exchange; 64/128-bit storage accesses are split into words where the buffer alignment is
-  too small; fragment shuffles fall back to a lane loop; geometry outputs no fragment shader
-  reads are pruned (AMD fails shaders writing more than 128 output components); integer texture
-  formats are only taken from the TIC for color textures. Textures: large sparse images are
-  backed normally on AMD and RADV, because AMD samples unbound memory as black, which left Mario
-  Kart World's terrain dark (`EDEN_NX2_SPARSE_UNBACKED` overrides); a sparse layer block the
-  driver reports as other than one page is rejected; a texture handle past the TIC limit reads as
-  a null texture; compare-enabled samplers are only used for depth textures. Driver workarounds
-  (AMD only): device memory overallocation is allowed, a pipeline cache the driver rejects is
-  rebuilt, sample queries wait on only the newest query, the blend key is refreshed every draw,
-  and wait-for-idle and compute writes read by later draws use full pipeline barriers. Other
-  GPUs keep their paths. Tested on AMD hardware.
+- AMD RDNA2 fixes: shader code the AMD drivers miscompile is avoided (read-before-write registers
+  become zero, `EDEN_NX2_UNDEF_ZERO`; CAS loops, 64/128-bit storage accesses, fragment shuffles
+  and geometry outputs worked around), large sparse images are backed normally on AMD and RADV so
+  Mario Kart World's terrain is no longer dark (`EDEN_NX2_SPARSE_UNBACKED` overrides), and a few
+  AMD-only Vulkan driver workarounds (memory overallocation, pipeline cache rebuild, full
+  pipeline barriers) apply. Other GPUs keep their paths. Tested on an RX 6700 XT.
 
 - Texture cache thresholds keep at least an eighth of the driver budget in reserve for the
   allocator's unused block space even before any is measured. In an 8-minute Mario Kart World run
