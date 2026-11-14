@@ -13,10 +13,7 @@ and `=0` brings back the 2.0.0 code path.
   from other causes of a hitch. An image that takes over 10 ms to create is logged with its format,
   size, layers, flags and how often it was made at that address. Slow frames also show the time in the
   host image constructor, and GPU-only region backing over 5 ms is logged.
-- Texture cache thresholds follow the allocator's unused block space as well as the driver
-  budget, so `EDEN_NX2_TC_EXPECTED_MIB` and `EDEN_NX2_TC_CRITICAL_MIB` are no longer needed on a
-  16 GB card. The image tables are reset once per collector pass, and one GPU-wait download is
-  allowed per pass.
+- The collector resets the image tables once per pass, and allows one GPU-wait download per pass.
 - Texture cache collector, to cut the hitches when a course changes (Mario Kart World): a
   GPU-modified image is only evicted at the critical line and at most two are downloaded (a full
   GPU wait each) per frame; past the expected line, costly (ASTC) images unused for 600 frames
@@ -26,6 +23,12 @@ and `=0` brings back the 2.0.0 code path.
   about 0.6 ms). A collector pass now stops after 1.5 ms (`EDEN_NX2_TC_GC_BUDGET_US=<us>`, 0 = no
   limit; not applied once memory is 1 GiB over the critical line), spreading a burst over frames.
   A pass over 2 ms is logged with where the time went. Not played much yet.
+
+## Dozer 0.1.1 (`v0.1.1`)
+
+- Texture cache thresholds follow the allocator's unused block space as well as the driver
+  budget, so `EDEN_NX2_TC_EXPECTED_MIB` and `EDEN_NX2_TC_CRITICAL_MIB` are no longer needed on a
+  16 GB card to avoid the lag after about 12 minutes of Mario Kart World. The overrides still win.
 
 - One readme: `README.md` is now the full manual (it was `README_DOZER.md`), replacing the upstream
   `README.md` and the shorter `.github/README.md` that GitHub showed as the front page. It names
