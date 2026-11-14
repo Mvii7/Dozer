@@ -99,9 +99,9 @@ files in `Games`, and the `user` folder (your keys, firmware and saves).
   uncompressed it fills VRAM even on a 16 GB card, so the texture cache keeps evicting and
   decoding textures again, which shows as stutter every few seconds. BC3 stores them about four
   times smaller (opaque ones as BC1, about eight times) at a small loss in texture quality. If you
-  have plenty of VRAM and want the best quality, set it to Uncompressed. With BC3, Mario Kart
-  World stays under 7 GB of VRAM in total on the maintainer's machine. If you are still short of
-  VRAM and stutter, try BC1: it makes every texture BC1, including the ones with transparency, so
+  have plenty of VRAM and want the best quality, set it to Uncompressed. In Mario Kart World on
+  a 16 GB card BC3 used several GB less VRAM in the maintainer's tests, but over a long session the
+  texture cache still fills up to its limit. If you are still short of VRAM and stutter, try BC1: it makes every texture BC1, including the ones with transparency, so
   foliage and effects may lose their alpha. Not tested yet.
 
 ## Game files
