@@ -1689,6 +1689,20 @@ u64 Device::GetDeviceMemoryBudget() const {
     return result;
 }
 
+u64 Device::GetDeviceMemorySlack() const {
+    if (allocator == nullptr) {
+        return 0;
+    }
+    std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> heap_budgets{};
+    vmaGetHeapBudgets(allocator, heap_budgets.data());
+    u64 result{};
+    for (const size_t heap : valid_heap_memory) {
+        const VmaStatistics& statistics = heap_budgets[heap].statistics;
+        result += statistics.blockBytes - (std::min)(statistics.blockBytes, statistics.allocationBytes);
+    }
+    return result;
+}
+
 void Device::CollectPhysicalMemoryInfo() {
     // Calculate limits using memory budget
     VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{};
