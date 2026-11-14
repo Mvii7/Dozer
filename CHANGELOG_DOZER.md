@@ -8,6 +8,16 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Texture cache collector, to cut the hitches when a course changes (Mario Kart World): a
+  GPU-modified image is only evicted at the critical line and at most one is downloaded (a full
+  GPU wait) per pass; past the expected line, costly (ASTC) images unused for 600 frames
+  (`EDEN_NX2_TC_STALE_COSTLY=<frames>`, 0 = off) go a few per frame instead of all at once at the
+  critical line. A pass stops after 1.5 ms (`EDEN_NX2_TC_GC_BUDGET_US=<us>`, 0 = no limit; not
+  applied once memory is 1 GiB over the critical line), spreading a burst over frames. The views,
+  framebuffers and image tables of the deleted images are cleared once at the end of a pass
+  instead of once per image, which was most of the time a pass took. Tested on Mario Kart World
+  with a 16 GB card only.
+
 ## Dozer 0.1.1 (`v0.1.1`)
 
 - Texture cache thresholds follow the allocator's unused block space as well as the driver
