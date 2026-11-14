@@ -35,6 +35,10 @@
 # whether one of them crashes the driver.
 #EDEN_NX2_LOWER_SURED=0
 #EDEN_NX2_LOWER_ISBE=0
+# SPARSE_UNBACKED: large Switch 2 sparse images may be created with no memory and sampled. Off on
+# AMD drivers (they sample black or fault on unbound memory, which left Mario Kart World's terrain
+# dark): those images are backed normally. =1 allows unbound images on every GPU, =0 on none.
+#EDEN_NX2_SPARSE_UNBACKED=0
 
 # --- GPU thread shortcuts (on by default; =0 as before; added by Dozer) ---
 # =2 keeps them on and logs what they would get wrong: VERTEX_CLEAN, LIGHT_SYNC_SKIP,
