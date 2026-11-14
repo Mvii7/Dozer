@@ -8,6 +8,8 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+## Dozer 0.1.1 (`v0.1.1`)
+
 - One readme: `README.md` is now the full manual (it was `README_DOZER.md`), replacing the upstream
   `README.md` and the shorter `.github/README.md` that GitHub showed as the front page. It names
   Mario Kart World as the second tuned game. The release zip, the launchers and the load-error
