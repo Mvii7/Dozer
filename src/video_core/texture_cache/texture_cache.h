@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <chrono>
 #include <cstdlib>
 #include <limits>
 #include <map>
@@ -250,6 +251,25 @@ void TextureCache<P>::RunGarbageCollector() {
     bool aggressive_mode = false;
     u64 ticks_to_destroy = 0;
     size_t num_iterations = 0;
+    // Costly (ASTC) images are normally kept until the critical line, so a course's textures pile
+    // up and are cleared in one burst when the next course loads. Past the expected line the ones
+    // unused for EDEN_NX2_TC_STALE_COSTLY frames (default 600, 0 = off) go a few per frame.
+    static const u64 stale_costly_ticks = [] {
+        const char* value = std::getenv("EDEN_NX2_TC_STALE_COSTLY");
+        return value != nullptr ? std::strtoull(value, nullptr, 10) : 600ULL;
+    }();
+    bool allow_costly = false;
+    bool gc_deleted_any = false;
+    // Evicting a GPU-modified image downloads it and waits for the GPU: a few per frame at most.
+    size_t downloads_left = 1;
+    // EDEN_NX2_TC_GC_BUDGET_US: a pass stops after this long (default 1500, 0 = no limit), so a
+    // burst of evictions is spread over frames; ignored once memory is 1 GiB over the critical line.
+    static const u64 budget_us = [] {
+        const char* value = std::getenv("EDEN_NX2_TC_GC_BUDGET_US");
+        return value != nullptr ? std::strtoull(value, nullptr, 10) : 1500ULL;
+    }();
+    const auto start_time = std::chrono::steady_clock::now();
+    defer_view_removal = true;
     const auto Configure = [&](bool allow_aggressive) {
         high_priority_mode = total_used_memory >= expected_memory;
         aggressive_mode = allow_aggressive && total_used_memory >= critical_memory;
@@ -262,8 +282,13 @@ void TextureCache<P>::RunGarbageCollector() {
         ticks_to_destroy = (std::max)(ticks_to_destroy, min_age);
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
-    const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode](ImageId image_id) {
+    const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode,
+                          &allow_costly, &downloads_left, &start_time, &gc_deleted_any](ImageId image_id) {
         if (num_iterations == 0) {
+            return true;
+        }
+        if (budget_us != 0 && total_used_memory < critical_memory + 1_GiB &&
+            std::chrono::steady_clock::now() - start_time > std::chrono::microseconds{budget_us}) {
             return true;
         }
         --num_iterations;
@@ -272,10 +297,12 @@ void TextureCache<P>::RunGarbageCollector() {
             return false;
         }
         const bool must_download = IsDownloadable(image) && False(image.flags & ImageFlagBits::BadOverlap);
-        if ((!aggressive_mode && True(image.flags & ImageFlagBits::CostlyLoad)) || (!high_priority_mode && must_download)) {
+        if ((!aggressive_mode && !allow_costly && True(image.flags & ImageFlagBits::CostlyLoad)) ||
+            (!aggressive_mode && must_download) || (must_download && downloads_left == 0)) {
             return false;
         }
         if (must_download) {
+            --downloads_left;
             auto map = runtime.DownloadStagingBuffer(image.unswizzled_size_bytes);
             const auto copies = FullDownloadCopies(image.info);
             image.DownloadMemory(map, copies);
@@ -289,6 +316,7 @@ void TextureCache<P>::RunGarbageCollector() {
         ++(True(image.flags & ImageFlagBits::CostlyLoad) ? gc_costly_deletes : gc_deletes);
         UnregisterImage(image_id);
         DeleteImage(image_id, image.scale_tick > frame_tick + 5);
+        gc_deleted_any = true;
         if (aggressive_mode && total_used_memory < critical_memory) {
             num_iterations >>= 2;
             aggressive_mode = false;
@@ -303,7 +331,21 @@ void TextureCache<P>::RunGarbageCollector() {
     if (total_used_memory >= critical_memory) {
         Configure(true);
         lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
+    } else if (stale_costly_ticks != 0 && total_used_memory >= expected_memory &&
+               frame_tick > stale_costly_ticks) {
+        Configure(false);
+        allow_costly = true;
+        num_iterations = 10;
+        lru_cache.ForEachItemBelow(frame_tick - stale_costly_ticks, Cleanup);
     }
+    defer_view_removal = false;
+    if (gc_deleted_any) {
+        for (size_t c : active_channel_ids) {
+            channel_storage[c].graphics_image_table.Invalidate();
+            channel_storage[c].compute_image_table.Invalidate();
+        }
+    }
+    FlushDeferredViewRemovals();
 }
 
 template <class P>
@@ -3529,8 +3571,13 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
             render_targets.depth_buffer_id = ImageViewId{};
         }
     }
-    RemoveImageViewReferences(image_view_ids);
-    RemoveFramebuffers(image_view_ids);
+    if (defer_view_removal) {
+        deferred_removed_views.insert(deferred_removed_views.end(), image_view_ids.begin(),
+                                      image_view_ids.end());
+    } else {
+        RemoveImageViewReferences(image_view_ids);
+        RemoveFramebuffers(image_view_ids);
+    }
 
     for (const AliasedImage& alias : image.aliased_images) {
         ImageBase& other_image = slot_images[alias.id];
@@ -3576,8 +3623,10 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
         if constexpr (ENABLE_VALIDATION)
             for (auto& e : channel_info.image_view_ids)
                 e.second = CORRUPT_ID;
-        channel_info.graphics_image_table.Invalidate();
-        channel_info.compute_image_table.Invalidate();
+        if (!defer_view_removal) {
+            channel_info.graphics_image_table.Invalidate();
+            channel_info.compute_image_table.Invalidate();
+        }
     }
     has_deleted_images = true;
 }
@@ -3605,6 +3654,42 @@ void TextureCache<P>::RemoveFramebuffers(std::span<const ImageViewId> removed_vi
     while (it != framebuffers.end()) {
         if (it->first.Contains(removed_views)) {
             auto framebuffer_id = it->second;
+            ASSERT(framebuffer_id);
+            if (framebuffer_id == last_framebuffer_id) {
+                last_framebuffer_id = {};
+                last_framebuffer_serial = 0;
+            }
+            sentenced_framebuffers.Push(std::move(slot_framebuffers[framebuffer_id]));
+            it = framebuffers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+template <class P>
+void TextureCache<P>::FlushDeferredViewRemovals() {
+    if (deferred_removed_views.empty()) {
+        return;
+    }
+    std::vector<ImageViewId> removed = std::move(deferred_removed_views);
+    deferred_removed_views.clear();
+    std::ranges::sort(removed);
+    removed.erase(std::unique(removed.begin(), removed.end()), removed.end());
+    const auto is_removed = [&removed](ImageViewId id) {
+        return std::ranges::binary_search(removed, id);
+    };
+    for (size_t c : active_channel_ids) {
+        std::erase_if(channel_storage[c].image_views,
+                      [&](const auto& entry) { return is_removed(entry.second); });
+    }
+    runtime.FlushDeferredClear();
+    auto it = framebuffers.begin();
+    while (it != framebuffers.end()) {
+        const RenderTargets& key = it->first;
+        if (std::ranges::any_of(key.color_buffer_ids, is_removed) ||
+            is_removed(key.depth_buffer_id)) {
+            const auto framebuffer_id = it->second;
             ASSERT(framebuffer_id);
             if (framebuffer_id == last_framebuffer_id) {
                 last_framebuffer_id = {};
