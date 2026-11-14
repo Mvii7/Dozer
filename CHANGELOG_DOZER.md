@@ -8,6 +8,13 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Slow frames (over 40 ms between texture cache ticks) are logged with the time spent in image
+  uploads and image creation, the worst of each and its size, to tell texture streaming apart
+  from other causes of a hitch.
+- Texture cache thresholds follow the allocator's unused block space as well as the driver
+  budget, so `EDEN_NX2_TC_EXPECTED_MIB` and `EDEN_NX2_TC_CRITICAL_MIB` are no longer needed on a
+  16 GB card. The image tables are reset once per collector pass, and one GPU-wait download is
+  allowed per pass.
 - Texture cache collector, to cut the hitches when a course changes (Mario Kart World): a
   GPU-modified image is only evicted at the critical line and at most two are downloaded (a full
   GPU wait each) per frame; past the expected line, costly (ASTC) images unused for 600 frames

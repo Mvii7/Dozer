@@ -165,6 +165,32 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
             gc_phase_start = now;
         }
     }
+    // Per-frame time in image uploads and creations, logged by TickFrame for slow frames.
+    struct HitchTimer {
+        HitchTimer(u64& total_, u32& count_, u64& worst_, u32& worst_bytes_, u32 bytes_) noexcept
+            : total{total_}, count{count_}, worst{worst_}, worst_bytes{worst_bytes_}, bytes{bytes_},
+              start{std::chrono::steady_clock::now()} {}
+        ~HitchTimer() {
+            const auto ns = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                 std::chrono::steady_clock::now() - start)
+                                                 .count());
+            total += ns;
+            ++count;
+            if (ns > worst) {
+                worst = ns;
+                worst_bytes = bytes;
+            }
+        }
+        u64& total;
+        u32& count;
+        u64& worst;
+        u32& worst_bytes;
+        u32 bytes;
+        std::chrono::steady_clock::time_point start;
+    };
+    u64 hitch_upload_ns{}, hitch_upload_worst_ns{}, hitch_create_ns{}, hitch_create_worst_ns{};
+    u32 hitch_uploads{}, hitch_creates{}, hitch_upload_worst_bytes{}, hitch_create_worst_bytes{};
+    std::chrono::steady_clock::time_point hitch_frame_start{};
     u64 alias_checks_walked{};  ///< SynchronizeAliases walks over the aliases (last 600 frames)
     u64 alias_checks_skipped{}; ///< Calls skipped: no alias can be newer (EDEN_NX2_ALIAS_LAZY)
     u64 alias_syncs{};          ///< Walks that found newer aliases and copied from them

@@ -388,6 +388,24 @@ void TextureCache<P>::ApplyThresholdOverrides(bool log) {
 
 template <class P>
 void TextureCache<P>::TickFrame() {
+    {
+        const auto now = std::chrono::steady_clock::now();
+        const auto ms = [](u64 ns) { return static_cast<double>(ns) / 1e6; };
+        const double frame_ms =
+            std::chrono::duration<double, std::milli>(now - hitch_frame_start).count();
+        if (hitch_frame_start != std::chrono::steady_clock::time_point{} && frame_ms > 40.0 &&
+            frame_ms < 2000.0) {
+            LOG_INFO(HW_GPU,
+                     "Slow frame {:.1f} ms: {} uploads {:.1f} ms (worst {:.1f} ms, {} KiB), {} "
+                     "images created {:.1f} ms (worst {:.1f} ms, {} KiB)",
+                     frame_ms, hitch_uploads, ms(hitch_upload_ns), ms(hitch_upload_worst_ns),
+                     hitch_upload_worst_bytes >> 10, hitch_creates, ms(hitch_create_ns),
+                     ms(hitch_create_worst_ns), hitch_create_worst_bytes >> 10);
+        }
+        hitch_frame_start = now;
+        hitch_upload_ns = hitch_upload_worst_ns = hitch_create_ns = hitch_create_worst_ns = 0;
+        hitch_uploads = hitch_creates = hitch_upload_worst_bytes = hitch_create_worst_bytes = 0;
+    }
     if (Nx2Stages::GpuPages().Live()) [[unlikely]] {
         // Between cache operations: the page summary's queued clean-ups are made.
         Nx2Stages::GpuPages().Settle();
@@ -1757,6 +1775,8 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         return;
     }
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::TextureUpload};
+    const HitchTimer hitch_timer{hitch_upload_ns, hitch_uploads, hitch_upload_worst_ns,
+                                 hitch_upload_worst_bytes, image.guest_size_bytes};
 
     if (!image.partial_dirty_pages.empty() || !image.partial_remapped.empty()) {
         // Only some pages changed and the rest of the image is still tracked.
@@ -2414,6 +2434,9 @@ std::optional<DAddr> TextureCache<P>::ImageCpuAddress(GPUVAddr gpu_addr, size_t 
 template <class P>
 ImageId TextureCache<P>::InsertImage(const ImageInfo& info, GPUVAddr gpu_addr,
                                      RelaxedOptions options) {
+    const HitchTimer hitch_timer{hitch_create_ns, hitch_creates, hitch_create_worst_ns,
+                                 hitch_create_worst_bytes,
+                                 static_cast<u32>(CalculateGuestSizeInBytes(info))};
     std::optional<DAddr> cpu_addr = ImageCpuAddress(gpu_addr, CalculateGuestSizeInBytes(info));
     if (!cpu_addr) {
         const DAddr fake_addr = ~(1ULL << 40ULL) + virtual_invalid_space;
