@@ -10,7 +10,7 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Dozer 0.1.2 (`v0.1.2`)
 
-- AMD RDNA2 fixes, ported from Lichii and Anka. Shaders: registers read before they are written
+- AMD RDNA2 fixes. Shaders: registers read before they are written
   are zero instead of OpUndef, which AMD read as garbage (green patches near glowing objects;
   `EDEN_NX2_UNDEF_ZERO`, on for AMD drivers only); CAS loops keep the expected value from the
   last exchange; 64/128-bit storage accesses are split into words where the buffer alignment is
