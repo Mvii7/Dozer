@@ -587,8 +587,16 @@ private:
                 Tegra::Nx2AddSparseSpan(start, size);
                 LOG_INFO(Service, "nx2:gpu 214 sparse region [{:#x}, {:#x}] backed as the GPU writes it",
                          start, last);
-            } else if (const auto address = BackGpuOnlyRegion(start, size)) {
+            } else if (const auto back_start = std::chrono::steady_clock::now();
+                       const auto address = BackGpuOnlyRegion(start, size)) {
                 Nvidia::Devices::Nx2GpuMemoryRegistry::Get().MapAt(start, *address, size);
+                if (const auto back_ms = std::chrono::duration<double, std::milli>(
+                                             std::chrono::steady_clock::now() - back_start)
+                                             .count();
+                    back_ms > 5.0) {
+                    LOG_INFO(Service, "nx2:gpu 214 backing {} MiB took {:.1f} ms", size >> 20,
+                             back_ms);
+                }
                 LOG_INFO(Service, "nx2:gpu 214 GPU-only region [{:#x}, {:#x}] backed at {:#x} "
                                   "({} MiB of GPU-only memory in use, peak {} MiB)",
                          start, last, *address, m_gpu_only_bytes >> 20, m_gpu_only_peak >> 20);

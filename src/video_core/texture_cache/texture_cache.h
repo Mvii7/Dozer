@@ -397,13 +397,14 @@ void TextureCache<P>::TickFrame() {
             frame_ms < 2000.0) {
             LOG_INFO(HW_GPU,
                      "Slow frame {:.1f} ms: {} uploads {:.1f} ms (worst {:.1f} ms, {} KiB), {} "
-                     "images created {:.1f} ms (worst {:.1f} ms, {} KiB)",
+                     "images created {:.1f} ms (worst {:.1f} ms, {} KiB; host images {:.1f} ms)",
                      frame_ms, hitch_uploads, ms(hitch_upload_ns), ms(hitch_upload_worst_ns),
                      hitch_upload_worst_bytes >> 10, hitch_creates, ms(hitch_create_ns),
-                     ms(hitch_create_worst_ns), hitch_create_worst_bytes >> 10);
+                     ms(hitch_create_worst_ns), hitch_create_worst_bytes >> 10, ms(hitch_make_ns));
         }
         hitch_frame_start = now;
-        hitch_upload_ns = hitch_upload_worst_ns = hitch_create_ns = hitch_create_worst_ns = 0;
+        hitch_make_ns = hitch_upload_ns = hitch_upload_worst_ns = hitch_create_ns =
+            hitch_create_worst_ns = 0;
         hitch_uploads = hitch_creates = hitch_upload_worst_bytes = hitch_create_worst_bytes = 0;
     }
     if (Nx2Stages::GpuPages().Live()) [[unlikely]] {
@@ -2591,7 +2592,11 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
             }
         }
     }
+    const auto make_start = std::chrono::steady_clock::now();
     const ImageId new_image_id = slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    hitch_make_ns += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                          std::chrono::steady_clock::now() - make_start)
+                                          .count());
     Image& new_image = slot_images[new_image_id];
 
     new_image.allocation_tick = frame_tick;

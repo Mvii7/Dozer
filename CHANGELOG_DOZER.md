@@ -11,7 +11,8 @@ and `=0` brings back the 2.0.0 code path.
 - Slow frames (over 40 ms between texture cache ticks) are logged with the time spent in image
   uploads and image creation, the worst of each and its size, to tell texture streaming apart
   from other causes of a hitch. An image that takes over 10 ms to create is logged with its format,
-  size, layers, flags and how often it was made at that address.
+  size, layers, flags and how often it was made at that address. Slow frames also show the time in the
+  host image constructor, and GPU-only region backing over 5 ms is logged.
 - Texture cache thresholds follow the allocator's unused block space as well as the driver
   budget, so `EDEN_NX2_TC_EXPECTED_MIB` and `EDEN_NX2_TC_CRITICAL_MIB` are no longer needed on a
   16 GB card. The image tables are reset once per collector pass, and one GPU-wait download is

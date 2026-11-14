@@ -188,6 +188,7 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
         u32 bytes;
         std::chrono::steady_clock::time_point start;
     };
+    u64 hitch_make_ns{};
     u64 hitch_upload_ns{}, hitch_upload_worst_ns{}, hitch_create_ns{}, hitch_create_worst_ns{};
     u32 hitch_uploads{}, hitch_creates{}, hitch_upload_worst_bytes{}, hitch_create_worst_bytes{};
     std::chrono::steady_clock::time_point hitch_frame_start{};
