@@ -8,6 +8,9 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Texture cache thresholds follow the allocator's unused block space as well as the driver
+  budget, so `EDEN_NX2_TC_EXPECTED_MIB` and `EDEN_NX2_TC_CRITICAL_MIB` are no longer needed on a
+  16 GB card to avoid the lag after about 12 minutes of Mario Kart World. The overrides still win.
 ## Dozer 0.1.1 (`v0.1.1`)
 
 - One readme: `README.md` is now the full manual (it was `README_DOZER.md`), replacing the upstream
