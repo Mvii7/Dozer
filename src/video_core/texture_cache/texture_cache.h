@@ -411,8 +411,11 @@ void TextureCache<P>::TickFrame() {
                     const u64 slack = (std::min)(runtime.GetDeviceMemorySlack(), slack_cap);
                     memory_slack_estimate = (std::max)(
                         slack, memory_slack_estimate - (std::min)(memory_slack_estimate, 64_MiB));
-                    critical_memory =
-                        (std::max)(budget - margin - memory_slack_estimate, budget / 2);
+                    // The hidden space only shows up after the collector has evicted, so the first
+                    // overshoot has none measured yet (a 16 GB card peaked 0.4 GB under its budget):
+                    // assume at least an eighth of the budget.
+                    const u64 reserve = (std::max)(memory_slack_estimate, budget / 8);
+                    critical_memory = (std::max)(budget - margin - reserve, budget / 2);
                     expected_memory = (std::max)(critical_memory - 2 * margin, budget / 3);
                     // Log the first values and real changes (the budget moves by a few MiB all
                     // the time).
