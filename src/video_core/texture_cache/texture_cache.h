@@ -259,8 +259,9 @@ void TextureCache<P>::RunGarbageCollector() {
         return value != nullptr ? std::strtoull(value, nullptr, 10) : 600ULL;
     }();
     bool allow_costly = false;
+    bool gc_deleted_any = false;
     // Evicting a GPU-modified image downloads it and waits for the GPU: a few per frame at most.
-    size_t downloads_left = 2;
+    size_t downloads_left = 1;
     // EDEN_NX2_TC_GC_BUDGET_US: a pass stops after this long (default 1500, 0 = no limit), so a
     // burst of evictions is spread over frames; ignored once memory is 1 GiB over the critical line.
     static const u64 budget_us = [] {
@@ -285,7 +286,7 @@ void TextureCache<P>::RunGarbageCollector() {
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
     const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode,
-                          &allow_costly, &downloads_left, &start_time](ImageId image_id) {
+                          &allow_costly, &downloads_left, &start_time, &gc_deleted_any](ImageId image_id) {
         if (num_iterations == 0) {
             return true;
         }
@@ -322,6 +323,7 @@ void TextureCache<P>::RunGarbageCollector() {
         UnregisterImage(image_id);
         GcPhase(3);
         DeleteImage(image_id, image.scale_tick > frame_tick + 5);
+        gc_deleted_any = true;
         if (aggressive_mode && total_used_memory < critical_memory) {
             num_iterations >>= 2;
             aggressive_mode = false;
@@ -345,6 +347,13 @@ void TextureCache<P>::RunGarbageCollector() {
     }
     defer_view_removal = false;
     GcPhase(0);
+    if (gc_deleted_any) {
+        for (size_t c : active_channel_ids) {
+            channel_storage[c].graphics_image_table.Invalidate();
+            channel_storage[c].compute_image_table.Invalidate();
+        }
+    }
+    GcPhase(8);
     FlushDeferredViewRemovals();
     GcPhase(9);
     gc_timing = false;
@@ -3633,8 +3642,10 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
         if constexpr (ENABLE_VALIDATION)
             for (auto& e : channel_info.image_view_ids)
                 e.second = CORRUPT_ID;
-        channel_info.graphics_image_table.Invalidate();
-        channel_info.compute_image_table.Invalidate();
+        if (!defer_view_removal) {
+            channel_info.graphics_image_table.Invalidate();
+            channel_info.compute_image_table.Invalidate();
+        }
     }
     GcPhase(8);
     has_deleted_images = true;
