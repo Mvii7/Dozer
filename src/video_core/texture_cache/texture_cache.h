@@ -2452,8 +2452,25 @@ ImageId TextureCache<P>::InsertImage(const ImageInfo& info, GPUVAddr gpu_addr,
                  gpu_addr, info.size.width, info.size.height, info.size.depth, info.resources.levels,
                  static_cast<u32>(info.format), info.block.width, info.block.height, info.block.depth);
     }
+    const auto join_start = std::chrono::steady_clock::now();
     const ImageId image_id = JoinImages(storage_info, gpu_addr, *cpu_addr);
     const Image& image = slot_images[image_id];
+    if (const double join_ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - join_start)
+                .count();
+        join_ms > 10.0) {
+        // Which image takes this long, and whether it is made again at the same address.
+        static std::unordered_map<GPUVAddr, u32> seen;
+        const u32 times = ++seen[image.gpu_addr];
+        LOG_INFO(HW_GPU,
+                 "Slow image creation {:.1f} ms at {:#x} (made {} times): format {} type {} {}x{}x{} "
+                 "layers {} levels {} samples {} guest {} KiB, host {} KiB, flags {:#x}",
+                 join_ms, image.gpu_addr, times, static_cast<u32>(info.format),
+                 static_cast<u32>(info.type), info.size.width, info.size.height, info.size.depth,
+                 info.resources.layers, info.resources.levels, info.num_samples,
+                 image.guest_size_bytes >> 10, image.unswizzled_size_bytes >> 10,
+                 static_cast<u32>(image.flags));
+    }
     // Using "image.gpu_addr" instead of "gpu_addr" is important because it might be different
     const auto [it, is_new] = image_allocs_table.try_emplace(image.gpu_addr);
     if (is_new) {
