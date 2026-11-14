@@ -188,6 +188,19 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
         u32 bytes;
         std::chrono::steady_clock::time_point start;
     };
+    // Nanoseconds of the last frame's uploads by step: staging buffer, guest memory read, untile
+    // (and convert), accelerated (GPU transcode) record, copy record.
+    std::array<u64, 5> hitch_step_ns{};
+    struct StepTimer {
+        StepTimer(u64& total_) noexcept : total{total_}, start{std::chrono::steady_clock::now()} {}
+        ~StepTimer() {
+            total += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                          std::chrono::steady_clock::now() - start)
+                                          .count());
+        }
+        u64& total;
+        std::chrono::steady_clock::time_point start;
+    };
     u64 hitch_make_ns{};
     u64 hitch_upload_ns{}, hitch_upload_worst_ns{}, hitch_create_ns{}, hitch_create_worst_ns{};
     u32 hitch_uploads{}, hitch_creates{}, hitch_upload_worst_bytes{}, hitch_create_worst_bytes{};

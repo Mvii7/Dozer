@@ -12,7 +12,7 @@ and `=0` brings back the 2.0.0 code path.
   uploads and image creation, the worst of each and its size, to tell texture streaming apart
   from other causes of a hitch. An image that takes over 10 ms to create is logged with its format,
   size, layers, flags and how often it was made at that address. Slow frames also show the time in the
-  host image constructor, and GPU-only region and sparse block backing over 3-5 ms is logged. Every swapchain recreation is logged with
+  host image constructor and in each upload step (staging, guest read, untile, transcode, copy), and GPU-only region and sparse block backing over 3-5 ms is logged. Every swapchain recreation is logged with
   its old and new size and how long it took.
 - The collector resets the image tables once per pass, and allows one GPU-wait download per pass.
 - Texture cache collector, to cut the hitches when a course changes (Mario Kart World): a

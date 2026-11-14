@@ -397,12 +397,16 @@ void TextureCache<P>::TickFrame() {
             frame_ms < 2000.0) {
             LOG_INFO(HW_GPU,
                      "Slow frame {:.1f} ms: {} uploads {:.1f} ms (worst {:.1f} ms, {} KiB), {} "
-                     "images created {:.1f} ms (worst {:.1f} ms, {} KiB; host images {:.1f} ms)",
+                     "images created {:.1f} ms (worst {:.1f} ms, {} KiB; host images {:.1f} ms); upload steps: "
+                     "staging {:.1f}, read {:.1f}, untile {:.1f}, transcode {:.1f}, copy {:.1f} ms",
                      frame_ms, hitch_uploads, ms(hitch_upload_ns), ms(hitch_upload_worst_ns),
                      hitch_upload_worst_bytes >> 10, hitch_creates, ms(hitch_create_ns),
-                     ms(hitch_create_worst_ns), hitch_create_worst_bytes >> 10, ms(hitch_make_ns));
+                     ms(hitch_create_worst_ns), hitch_create_worst_bytes >> 10, ms(hitch_make_ns), ms(hitch_step_ns[0]),
+                     ms(hitch_step_ns[1]), ms(hitch_step_ns[2]), ms(hitch_step_ns[3]),
+                     ms(hitch_step_ns[4]));
         }
         hitch_frame_start = now;
+        hitch_step_ns.fill(0);
         hitch_make_ns = hitch_upload_ns = hitch_upload_worst_ns = hitch_create_ns =
             hitch_create_worst_ns = 0;
         hitch_uploads = hitch_creates = hitch_upload_worst_bytes = hitch_create_worst_bytes = 0;
@@ -1842,7 +1846,10 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     uploaded_bytes += image.guest_size_bytes;
     largest_upload = (std::max<u64>)(largest_upload, image.guest_size_bytes);
     if (!UploadInChunks(image)) {
-        auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
+        auto staging = [&] {
+            const StepTimer step{hitch_step_ns[0]};
+            return runtime.UploadStagingBuffer(MapSizeBytes(image));
+        }();
         UploadImageContents(image, staging);
         runtime.InsertUploadMemoryBarrier();
     }
@@ -2002,22 +2009,30 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
         auto uploads = FullUploadSwizzles(image.info);
         const size_t level_offset = uploads[image.host_level_offset].buffer_offset;
         const size_t tail = image.info.layer_stride - level_offset;
-        for (s32 layer = 0; layer < image.info.resources.layers; ++layer) {
-            gpu_memory->ReadBlock(gpu_addr + layer * image.info.layer_stride + level_offset,
-                                  mapped_span.data() + layer * tail, tail,
-                                  VideoCommon::CacheType::NoTextureCache);
+        {
+            const StepTimer step{hitch_step_ns[1]};
+            for (s32 layer = 0; layer < image.info.resources.layers; ++layer) {
+                gpu_memory->ReadBlock(gpu_addr + layer * image.info.layer_stride + level_offset,
+                                      mapped_span.data() + layer * tail, tail,
+                                      VideoCommon::CacheType::NoTextureCache);
+            }
         }
         uploads.erase(uploads.begin(), uploads.begin() + image.host_level_offset);
         for (auto& upload : uploads) {
             upload.buffer_offset -= level_offset;
         }
+        const StepTimer step{hitch_step_ns[3]};
         runtime.AccelerateImageUpload(image, staging, uploads, 0, 0);
         return;
     }
     if (True(image.flags & ImageFlagBits::AcceleratedUpload)) {
-        gpu_memory->ReadBlock(gpu_addr, mapped_span.data(), mapped_span.size_bytes(),
-                              VideoCommon::CacheType::NoTextureCache);
+        {
+            const StepTimer step{hitch_step_ns[1]};
+            gpu_memory->ReadBlock(gpu_addr, mapped_span.data(), mapped_span.size_bytes(),
+                                  VideoCommon::CacheType::NoTextureCache);
+        }
         const auto uploads = FullUploadSwizzles(image.info);
+        const StepTimer step{hitch_step_ns[3]};
         runtime.AccelerateImageUpload(image, staging, uploads, 0, 0);
         return;
     }
@@ -2026,11 +2041,21 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
         *gpu_memory, gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
     if (True(image.flags & ImageFlagBits::Converted)) {
         unswizzle_data_buffer.resize_destructive(image.unswizzled_size_bytes);
-        auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, unswizzle_data_buffer);
-        ConvertImage(unswizzle_data_buffer, image.info, mapped_span, copies);
+        auto copies = [&] {
+            const StepTimer step{hitch_step_ns[2]};
+            auto result = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data,
+                                         unswizzle_data_buffer);
+            ConvertImage(unswizzle_data_buffer, image.info, mapped_span, result);
+            return result;
+        }();
+        const StepTimer step{hitch_step_ns[4]};
         image.UploadMemory(staging, copies);
     } else {
-        const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, mapped_span);
+        const auto copies = [&] {
+            const StepTimer step{hitch_step_ns[2]};
+            return UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, mapped_span);
+        }();
+        const StepTimer step{hitch_step_ns[4]};
         image.UploadMemory(staging, copies);
     }
 }
