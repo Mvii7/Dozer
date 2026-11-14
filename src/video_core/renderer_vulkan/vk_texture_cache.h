@@ -70,6 +70,8 @@ public:
 
     u64 GetDeviceMemoryBudget() const;
 
+    u64 GetDeviceMemorySlack() const;
+
     bool CanReportMemoryUsage() const;
 
     void LogMemoryStatistics() const;

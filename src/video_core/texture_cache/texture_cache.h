@@ -427,8 +427,16 @@ void TextureCache<P>::TickFrame() {
                 if (budget > 2_GiB) {
                     const u64 old_critical = critical_memory;
                     const u64 margin = (std::min)(budget / 8, 1_GiB);
-                    critical_memory = budget - margin;
-                    expected_memory = budget - 2 * margin;
+                    // The usage figure leaves out the allocator's unused block space, which is
+                    // still VRAM: keep it (rises at once, falls slowly, capped) under the budget
+                    // as well, so no manual thresholds are needed.
+                    const u64 slack_cap = (std::min)(budget / 5, 3_GiB);
+                    const u64 slack = (std::min)(runtime.GetDeviceMemorySlack(), slack_cap);
+                    memory_slack_estimate = (std::max)(
+                        slack, memory_slack_estimate - (std::min)(memory_slack_estimate, 64_MiB));
+                    critical_memory =
+                        (std::max)(budget - margin - memory_slack_estimate, budget / 2);
+                    expected_memory = (std::max)(critical_memory - 2 * margin, budget / 3);
                     // Log the first values and real changes (the budget moves by a few MiB all
                     // the time).
                     const u64 change = critical_memory > old_critical
