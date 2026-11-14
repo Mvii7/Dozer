@@ -8,6 +8,16 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+## Dozer 0.1.2 (`v0.1.2`)
+
+- AMD RDNA2 fixes, ported from Lichii and Anka: shader code the AMD drivers miscompile is
+  avoided (read-before-write registers become zero, `EDEN_NX2_UNDEF_ZERO`; CAS loops, 64/128-bit
+  storage accesses, fragment shuffles and geometry outputs worked around), large sparse images are
+  backed normally on AMD and RADV so Mario Kart World's terrain is no longer dark
+  (`EDEN_NX2_SPARSE_UNBACKED` overrides), and a few AMD-only Vulkan driver workarounds (memory
+  overallocation, pipeline cache rebuild, full pipeline barriers) apply. Other GPUs keep their
+  paths. Not tested on AMD hardware here.
+
 - Texture cache thresholds keep at least an eighth of the driver budget in reserve for the
   allocator's unused block space even before any is measured. In an 8-minute Mario Kart World run
   on a 16 GB card the memory peaked 0.4 GB under the budget with the measured value alone; the
