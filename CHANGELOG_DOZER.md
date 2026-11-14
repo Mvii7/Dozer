@@ -12,9 +12,11 @@ and `=0` brings back the 2.0.0 code path.
   GPU-modified image is only evicted at the critical line and at most two are downloaded (a full
   GPU wait each) per frame; past the expected line, costly (ASTC) images unused for 600 frames
   (`EDEN_NX2_TC_STALE_COSTLY=<frames>`, 0 = off) go a few per frame instead of all at once at the
-  critical line. Deleting images no longer scans every cached view and framebuffer once per image
-  (about 0.7 ms an image with ~15k cached): the collector removes them in one pass at the end of
-  its run. A pass that takes over 2 ms is logged. Not built or played yet.
+  critical line. Deleting images no longer scans every cached view and framebuffer once per image:
+  the collector removes them in one pass at the end of its run (a small gain: a delete still costs
+  about 0.6 ms). A collector pass now stops after 1.5 ms (`EDEN_NX2_TC_GC_BUDGET_US=<us>`, 0 = no
+  limit; not applied once memory is 1 GiB over the critical line), spreading a burst over frames.
+  A pass over 2 ms is logged with where the time went. Not played much yet.
 
 ## Dozer 0.1.0 (`v0.1.0`)
 

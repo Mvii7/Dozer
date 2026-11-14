@@ -261,8 +261,17 @@ void TextureCache<P>::RunGarbageCollector() {
     bool allow_costly = false;
     // Evicting a GPU-modified image downloads it and waits for the GPU: a few per frame at most.
     size_t downloads_left = 2;
+    // EDEN_NX2_TC_GC_BUDGET_US: a pass stops after this long (default 1500, 0 = no limit), so a
+    // burst of evictions is spread over frames; ignored once memory is 1 GiB over the critical line.
+    static const u64 budget_us = [] {
+        const char* value = std::getenv("EDEN_NX2_TC_GC_BUDGET_US");
+        return value != nullptr ? std::strtoull(value, nullptr, 10) : 1500ULL;
+    }();
     const auto start_time = std::chrono::steady_clock::now();
     defer_view_removal = true;
+    gc_timing = true;
+    gc_phase_ns.fill(0);
+    gc_phase_start = start_time;
     const auto Configure = [&](bool allow_aggressive) {
         high_priority_mode = total_used_memory >= expected_memory;
         aggressive_mode = allow_aggressive && total_used_memory >= critical_memory;
@@ -276,8 +285,12 @@ void TextureCache<P>::RunGarbageCollector() {
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
     const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode,
-                          &allow_costly, &downloads_left](ImageId image_id) {
+                          &allow_costly, &downloads_left, &start_time](ImageId image_id) {
         if (num_iterations == 0) {
+            return true;
+        }
+        if (budget_us != 0 && total_used_memory < critical_memory + 1_GiB &&
+            std::chrono::steady_clock::now() - start_time > std::chrono::microseconds{budget_us}) {
             return true;
         }
         --num_iterations;
@@ -290,6 +303,7 @@ void TextureCache<P>::RunGarbageCollector() {
             (!aggressive_mode && must_download) || (must_download && downloads_left == 0)) {
             return false;
         }
+        GcPhase(0);
         if (must_download) {
             --downloads_left;
             auto map = runtime.DownloadStagingBuffer(image.unswizzled_size_bytes);
@@ -299,11 +313,14 @@ void TextureCache<P>::RunGarbageCollector() {
             SwizzleImage(*gpu_memory, image.gpu_addr, image.info, copies, map.mapped_span, swizzle_data_buffer);
             ++gc_download_deletes;
         }
+        GcPhase(1);
         if (True(image.flags & ImageFlagBits::Tracked)) {
             UntrackImage(image, image_id);
         }
+        GcPhase(2);
         ++(True(image.flags & ImageFlagBits::CostlyLoad) ? gc_costly_deletes : gc_deletes);
         UnregisterImage(image_id);
+        GcPhase(3);
         DeleteImage(image_id, image.scale_tick > frame_tick + 5);
         if (aggressive_mode && total_used_memory < critical_memory) {
             num_iterations >>= 2;
@@ -327,13 +344,21 @@ void TextureCache<P>::RunGarbageCollector() {
         lru_cache.ForEachItemBelow(frame_tick - stale_costly_ticks, Cleanup);
     }
     defer_view_removal = false;
+    GcPhase(0);
     FlushDeferredViewRemovals();
+    GcPhase(9);
+    gc_timing = false;
     const auto elapsed = std::chrono::steady_clock::now() - start_time;
     if (elapsed > std::chrono::milliseconds{2}) {
-        LOG_INFO(HW_GPU, "Texture cache collector took {:.1f} ms ({} deleted so far in this window, "
-                         "{} downloaded)",
+        const auto ms = [this](size_t phase) { return static_cast<double>(gc_phase_ns[phase]) / 1e6; };
+        LOG_INFO(HW_GPU,
+                 "Texture cache collector took {:.1f} ms ({} deleted so far in this window, {} "
+                 "downloaded) [walk {:.1f}, download {:.1f}, untrack {:.1f}, unregister {:.1f}, "
+                 "delete: pre {:.1f}, views {:.1f}, aliases {:.1f}, retire {:.1f}, tables {:.1f}, "
+                 "flush {:.1f}]",
                  std::chrono::duration<double, std::milli>(elapsed).count(), images_deleted,
-                 gc_download_deletes);
+                 gc_download_deletes, ms(0), ms(1), ms(2), ms(3), ms(4), ms(5), ms(6), ms(7), ms(8),
+                 ms(9));
     }
 }
 
@@ -3552,6 +3577,7 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
             render_targets.depth_buffer_id = ImageViewId{};
         }
     }
+    GcPhase(4);
     if (defer_view_removal) {
         deferred_removed_views.insert(deferred_removed_views.end(), image_view_ids.begin(),
                                       image_view_ids.end());
@@ -3559,6 +3585,7 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
         RemoveImageViewReferences(image_view_ids);
         RemoveFramebuffers(image_view_ids);
     }
+    GcPhase(5);
 
     for (const AliasedImage& alias : image.aliased_images) {
         ImageBase& other_image = slot_images[alias.id];
@@ -3579,6 +3606,7 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
         ASSERT_MSG(num_removed_overlaps == 1, "Invalid number of removed overlapps: {}",
                    num_removed_overlaps);
     }
+    GcPhase(6);
     for (const ImageViewId image_view_id : image_view_ids) {
         if (!immediate_delete) {
             sentenced_image_view.Push(std::move(slot_image_views[image_view_id]));
@@ -3599,6 +3627,7 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     if (alloc_images.empty()) {
         image_allocs_table.erase(alloc_it);
     }
+    GcPhase(7);
     for (size_t c : active_channel_ids) {
         auto& channel_info = channel_storage[c];
         if constexpr (ENABLE_VALIDATION)
@@ -3607,6 +3636,7 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
         channel_info.graphics_image_table.Invalidate();
         channel_info.compute_image_table.Invalidate();
     }
+    GcPhase(8);
     has_deleted_images = true;
 }
 

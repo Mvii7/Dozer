@@ -6,7 +6,9 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <deque>
 #include <limits>
 #include <map>
@@ -147,6 +149,21 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     /// framebuffer, ~0.7 ms an image with ~15k cached).
     bool defer_view_removal{};
     std::vector<ImageViewId> deferred_removed_views;
+    /// Time spent in each part of the last collector pass (ns), logged for slow passes. Phases:
+    /// 0 walk and skips, 1 download, 2 untrack, 3 unregister, 4 DeleteImage before the view
+    /// removal, 5 view removal, 6 aliases and overlaps, 7 view/image retirement, 8 table
+    /// invalidation, 9 deferred view removal at the end.
+    std::array<u64, 10> gc_phase_ns{};
+    std::chrono::steady_clock::time_point gc_phase_start;
+    bool gc_timing{};
+    void GcPhase(size_t phase) noexcept {
+        if (gc_timing) {
+            const auto now = std::chrono::steady_clock::now();
+            gc_phase_ns[phase] += static_cast<u64>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(now - gc_phase_start).count());
+            gc_phase_start = now;
+        }
+    }
     u64 alias_checks_walked{};  ///< SynchronizeAliases walks over the aliases (last 600 frames)
     u64 alias_checks_skipped{}; ///< Calls skipped: no alias can be newer (EDEN_NX2_ALIAS_LAZY)
     u64 alias_syncs{};          ///< Walks that found newer aliases and copied from them
