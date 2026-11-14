@@ -4,6 +4,8 @@
 // SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <chrono>
+
 #include "common/display_hdr.h"
 #include "common/settings.h"
 #include "common/thread.h"
@@ -382,8 +384,16 @@ void PresentManager::UpdateHdrMetadata() {
 
 // Returns false after discarding a deferred or incompatible frame; creation exceptions propagate.
 bool PresentManager::RecreateSwapchain(Frame* frame) {
-    if (swapchain.Create(*surface, frame->width, frame->height, frame->format,
-                         frame->color_space)) {
+    const auto start = std::chrono::steady_clock::now();
+    const u32 old_width = swapchain.GetWidth();
+    const u32 old_height = swapchain.GetHeight();
+    const bool created =
+        swapchain.Create(*surface, frame->width, frame->height, frame->format, frame->color_space);
+    LOG_INFO(Render_Vulkan, "Swapchain recreated {}x{} -> {}x{} in {:.1f} ms", old_width,
+             old_height, frame->width, frame->height,
+             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                 .count());
+    if (created) {
         SetImageCount();
         if (frame->color_space == VK_COLOR_SPACE_HDR10_ST2084_EXT) {
             UpdateHdrMetadata();
