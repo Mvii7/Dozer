@@ -29,6 +29,7 @@
 #include "common/literals.h"
 #include "common/lru_cache.h"
 #include "common/range_sets.h"
+#include "core/memory/read_traps.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "common/slot_vector.h"
@@ -515,6 +516,23 @@ public:
     bool WaitForCopyBack(std::unique_lock<Common::SpinRecursiveMutex>& lock, DAddr addr,
                          u64 size);
 
+    /// Read traps a copy back found nothing left to flush in: the pages and the trap generation
+    /// they were checked at (traps armed later stay).
+    struct ReadTrapDisarm {
+        Tegra::MaxwellDeviceMemoryManager::CpuRun run;
+        u64 generation;
+    };
+    /// The disarms PopAsyncBuffers decided, for the caller to apply once it releases `mutex`.
+    [[nodiscard]] std::vector<ReadTrapDisarm> TakeReadTrapDisarms() {
+        return std::exchange(pending_trap_disarms, {});
+    }
+    /// Applies them without `mutex`: the core's own lock and page protections only.
+    void ApplyReadTrapDisarms(std::span<const ReadTrapDisarm> disarms) {
+        for (const ReadTrapDisarm& disarm : disarms) {
+            device_memory.DisarmReadTraps(disarm.run, disarm.generation);
+        }
+    }
+
     /// 4 KiB pages in the CPU-read ranges (EDEN_NX2_REACTIVE_STATS; walks them).
     [[nodiscard]] u64 CpuReadPages() const;
 
@@ -971,6 +989,8 @@ private:
     void DisarmCopiedReadTraps(DAddr addr, u64 size);
     /// Notified after each PopAsyncBuffers (WaitForCopyBack).
     std::condition_variable_any copy_back_cv;
+    /// DisarmCopiedReadTraps' decisions not applied yet (TakeReadTrapDisarms).
+    std::vector<ReadTrapDisarm> pending_trap_disarms;
 
     // Async Buffers
     Common::OverlapRangeSet<DAddr> async_downloads;

@@ -487,9 +487,9 @@ public:
     /// that is not copied back at fences): the read takes the slow path and flushes them.
     void RasterizerArmReadTraps(Common::ProcessAddress vaddr, u64 size);
 
-    /// Disarms the read traps in this range: the GPU writes there were copied back to guest
-    /// memory, so a read needs no flush.
-    void RasterizerDisarmReadTraps(Common::ProcessAddress vaddr, u64 size);
+    /// Disarms the read traps in this range armed up to generation (ReadTraps::Generation()):
+    /// the GPU writes there were copied back to guest memory, so a read needs no flush.
+    void RasterizerDisarmReadTraps(Common::ProcessAddress vaddr, u64 size, u64 generation);
 
     /**
      * Marks each page within the specified address range as debug or non-debug.

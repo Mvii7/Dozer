@@ -12,10 +12,12 @@ namespace Core::Memory {
 
 /// Guest pages whose next read must take the slow path because the GPU wrote them, each tagged
 /// with the generation it was armed in. Callers serialize every member except Generation() and
-/// Empty(), which readers check without the lock.
+/// Empty(), which readers check without the lock. Every process's traps share one generation
+/// counter, so a snapshot taken without a process at hand (the buffer cache's) orders against
+/// any arm.
 class ReadTraps {
 public:
-    u64 Generation() const {
+    static u64 Generation() {
         return generation.load(std::memory_order_acquire);
     }
 
@@ -24,7 +26,7 @@ public:
     }
 
     /// Opens a new generation: a read that started before it cannot disarm what is armed in it.
-    u64 NewGeneration() {
+    static u64 NewGeneration() {
         return generation.fetch_add(1, std::memory_order_release) + 1;
     }
 
@@ -75,7 +77,7 @@ public:
 private:
     std::map<u64, u64> pages;
     std::atomic<size_t> count{};
-    std::atomic<u64> generation{};
+    static inline std::atomic<u64> generation{};
 };
 
 } // namespace Core::Memory

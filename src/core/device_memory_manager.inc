@@ -701,8 +701,21 @@ void DeviceMemoryManager<Traits>::ArmReadTraps(DAddr addr, size_t size) {
 }
 
 template <typename Traits>
-void DeviceMemoryManager<Traits>::DisarmReadTraps(DAddr addr, size_t size) {
-    ForEachCpuRun(addr, size, &DeviceMemoryManager<Traits>::DeviceMethods::DisarmRegionReadTrap);
+void DeviceMemoryManager<Traits>::AppendCpuRuns(DAddr addr, size_t size,
+                                                std::vector<CpuRun>& runs) {
+    ForEachCpuRun(addr, size, [&](Memory::Memory* memory, VAddr vaddr, size_t run_size) {
+        if (!runs.empty() && runs.back().memory == memory &&
+            runs.back().vaddr + runs.back().size == vaddr) {
+            runs.back().size += run_size;
+            return;
+        }
+        runs.push_back({memory, vaddr, run_size});
+    });
+}
+
+template <typename Traits>
+void DeviceMemoryManager<Traits>::DisarmReadTraps(const CpuRun& run, u64 generation) {
+    DeviceMethods::DisarmRegionReadTrap(run.memory, run.vaddr, run.size, generation);
 }
 
 template <typename Traits>

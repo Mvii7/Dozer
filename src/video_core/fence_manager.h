@@ -310,18 +310,27 @@ private:
             if (buffer_pops != 0) {
                 const bool stats = Common::Nx2Reactive::StatsEnabled();
                 const s64 wait_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
-                std::scoped_lock lock{buffer_cache.mutex};
+                decltype(buffer_cache.TakeReadTrapDisarms()) disarms;
+                std::unique_lock lock{buffer_cache.mutex};
                 const s64 held_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
                 for (size_t i = 0; i < buffer_pops; ++i) {
                     buffer_cache.PopAsyncFlushes();
                 }
+                disarms = buffer_cache.TakeReadTrapDisarms();
+                lock.unlock();
+                const s64 released_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
+                // Page protections off the buffer cache's lock: the GPU thread waits on it.
+                buffer_cache.ApplyReadTrapDisarms(disarms);
                 if (stats) [[unlikely]] {
                     using Common::Nx2Reactive::Counter;
                     Common::Nx2Reactive::Add(Counter::PopBufferWaitNs,
                                              static_cast<u64>((std::max)(s64{0}, held_ns - wait_ns)));
                     Common::Nx2Reactive::Add(
                         Counter::PopBufferNs,
-                        static_cast<u64>((std::max)(s64{0}, Common::Nx2Reactive::NowNs() - held_ns)));
+                        static_cast<u64>((std::max)(s64{0}, released_ns - held_ns)));
+                    Common::Nx2Reactive::Add(
+                        Counter::PopDisarmNs,
+                        static_cast<u64>((std::max)(s64{0}, Common::Nx2Reactive::NowNs() - released_ns)));
                 }
             }
             // Queries and operations keep their per-fence order.
@@ -357,8 +366,13 @@ private:
             texture_cache.PopAsyncFlushes();
         }
         if (committed & BufferFlushes) {
-            std::scoped_lock lock{buffer_cache.mutex};
-            buffer_cache.PopAsyncFlushes();
+            decltype(buffer_cache.TakeReadTrapDisarms()) disarms;
+            {
+                std::scoped_lock lock{buffer_cache.mutex};
+                buffer_cache.PopAsyncFlushes();
+                disarms = buffer_cache.TakeReadTrapDisarms();
+            }
+            buffer_cache.ApplyReadTrapDisarms(disarms);
         }
         query_cache.PopAsyncFlushes();
     }

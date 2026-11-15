@@ -135,8 +135,20 @@ public:
     /// Traps the next guest CPU read of these pages, to learn which GPU writes the CPU reads.
     void ArmReadTraps(DAddr addr, size_t size);
 
-    /// Disarms the read traps of these pages: their GPU writes were copied back.
-    void DisarmReadTraps(DAddr addr, size_t size);
+    /// Guest pages contiguous in one process's address space.
+    struct CpuRun {
+        Memory::Memory* memory;
+        VAddr vaddr;
+        size_t size;
+    };
+
+    /// Appends the CPU runs backing these device pages, merging with the last one when
+    /// contiguous. Under the same lock as the mappings it reads (the buffer cache's).
+    void AppendCpuRuns(DAddr addr, size_t size, std::vector<CpuRun>& runs);
+
+    /// Disarms the read traps of a run armed up to generation. Touches no table here, so it may
+    /// run outside that lock.
+    void DisarmReadTraps(const CpuRun& run, u64 generation);
 
 private:
     /// Calls func(interface, vaddr, size) for each run of these pages contiguous in one

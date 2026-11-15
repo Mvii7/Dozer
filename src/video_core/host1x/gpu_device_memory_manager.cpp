@@ -19,8 +19,8 @@ struct MaxwellDeviceMethods {
     }
 
     static inline void DisarmRegionReadTrap(Core::Memory::Memory* interface, VAddr address,
-                                            size_t size) {
-        interface->RasterizerDisarmReadTraps(address, size);
+                                            size_t size, u64 generation) {
+        interface->RasterizerDisarmReadTraps(address, size, generation);
     }
 };
 

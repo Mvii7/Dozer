@@ -667,14 +667,14 @@ struct Memory::Impl {
         protect_run();
     }
 
-    /// The buffer cache copied the GPU writes in this range back to guest memory, and the GPU
-    /// has not written it since (BufferCache::PopAsyncBuffers holds its lock across both).
-    void RasterizerDisarmReadTraps(u64 vaddr, u64 size) {
+    /// The buffer cache copied the GPU writes in this range back to guest memory, and had seen no
+    /// GPU write there since when it took generation; traps armed after it stay.
+    void RasterizerDisarmReadTraps(u64 vaddr, u64 size, u64 generation) {
         if (vaddr == 0 || size == 0 || !AddressSpaceContains(*current_page_table, vaddr, size) ||
             !ReadTrapsEnabled()) {
             return;
         }
-        DisarmReadTraps(vaddr, size, ~0ULL);
+        DisarmReadTraps(vaddr, size, generation);
     }
 
     /**
@@ -1184,8 +1184,8 @@ void Memory::RasterizerArmReadTraps(Common::ProcessAddress vaddr, u64 size) {
     impl->RasterizerArmReadTraps(GetInteger(vaddr), size);
 }
 
-void Memory::RasterizerDisarmReadTraps(Common::ProcessAddress vaddr, u64 size) {
-    impl->RasterizerDisarmReadTraps(GetInteger(vaddr), size);
+void Memory::RasterizerDisarmReadTraps(Common::ProcessAddress vaddr, u64 size, u64 generation) {
+    impl->RasterizerDisarmReadTraps(GetInteger(vaddr), size, generation);
 }
 
 void Memory::MarkRegionDebug(Common::ProcessAddress vaddr, u64 size, bool debug) {

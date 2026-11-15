@@ -120,6 +120,7 @@ enum class Counter : u32 {
     CopyBackWaits,          ///< Read traps that waited for copies back (EDEN_NX2_COPYBACK_WAIT)
     CopyBackWaitUs,         ///< Their wait, microseconds
     CopyBackWaitMisses,     ///< Of them, the ones that still sync flushed (timeout, newer write)
+    PopDisarmNs,            ///< Fence thread: disarming copied-back pages, after the lock
     Count,
 };
 
@@ -283,7 +284,8 @@ struct Window {
                        "feedback {}, target cpu modified {} sparse {} alias {}, image cpu modified "
                        "{} alias {}; masked targets color {} depth {}; draws {}; rt fit in pass "
                        "barriers {} (light {}); fastmem read fallbacks {}, read faults kept {}; traps "
-                       "disarmed at copy back {}; copy back waits {} ({} us, {} missed)",
+                       "disarmed at copy back {} ({} us after the lock); copy back waits {} "
+                       "({} us, {} missed)",
                        w.Get(C::Fences), w.Get(C::FencesSkipped), w.Get(C::FencesReal),
                        w.Get(C::FencesBufferCommit), w.Get(C::FencesTextureCommit),
                        w.Get(C::FencesBufferDeferred), w.Get(C::FenceExtraFlushes),
@@ -296,7 +298,8 @@ struct Window {
                        w.Get(C::Draws), w.Get(C::FitInPassBarriers),
                        w.Get(C::FitInPassLightBarriers), w.Get(C::FastmemReadFallbacks),
                        w.Get(C::FastmemFaultsKept), w.Get(C::TrapsDisarmedAtCopyBack),
-                       w.Get(C::CopyBackWaits), w.Get(C::CopyBackWaitUs),
+                       w.Get(C::PopDisarmNs) / 1000, w.Get(C::CopyBackWaits),
+                       w.Get(C::CopyBackWaitUs),
                        w.Get(C::CopyBackWaitMisses));
 }
 

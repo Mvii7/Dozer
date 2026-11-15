@@ -897,11 +897,20 @@ void BufferCache<P>::DisarmCopiedReadTraps(DAddr addr, u64 size) {
             }
         }
     });
+    if (runs.empty()) {
+        return;
+    }
+    // GPU writes arm traps under this lock: any armed after this snapshot is newer than the copy.
+    const u64 generation = Core::Memory::ReadTraps::Generation();
+    std::vector<Tegra::MaxwellDeviceMemoryManager::CpuRun> cpu_runs;
     u64 pages = 0;
     for (const auto& [run_begin, run_end] : runs) {
-        device_memory.DisarmReadTraps(run_begin, run_end - run_begin);
+        device_memory.AppendCpuRuns(run_begin, run_end - run_begin, cpu_runs);
         read_trapped_ranges.Subtract(run_begin, run_end - run_begin);
         pages += (run_end - run_begin) / Core::DEVICE_PAGESIZE;
+    }
+    for (const auto& cpu_run : cpu_runs) {
+        pending_trap_disarms.push_back({cpu_run, generation});
     }
     if (pages != 0 && Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
         Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::TrapsDisarmedAtCopyBack, pages);

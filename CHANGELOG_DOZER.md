@@ -8,6 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Read traps: the fence thread now disarms copied-back pages after it releases the buffer
+  cache's lock (the GPU thread waits on it for nearly every command), which had doubled the time
+  pops held it in Mario Kart World. Trap generations are shared by all processes, so the decision
+  made under the lock still keeps traps armed after it. The reactive stats line also shows the
+  time spent disarming after the lock.
+
 - Read traps: a guest read that hits one no longer takes its instruction off fastmem for good.
   Dynarmic sends that one read down the slow path and keeps the instruction on fastmem, so later
   reads of pages already flushed stay fast. An instruction that faults more than 1000 times in a
