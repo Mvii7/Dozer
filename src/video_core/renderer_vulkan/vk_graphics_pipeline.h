@@ -281,7 +281,9 @@ public:
     //   | last_descriptor_payload, last_descriptor_buffer_*,       | C                         |
     //   | descriptor_allocator (Commit on the Vulkan worker)       |                           |
     //   | last_handles                                             | C                         |
-    //   | pipeline, is_built, build_mutex, build_condvar           | the build worker, then C  |
+    //   | pipeline, is_built, build_mutex, build_condvar,          | the build worker, then C  |
+    //   | build_task, build_claimed (RunBuild: the builder or the  |                           |
+    //   | Vulkan worker, whichever claims it first)                |                           |
     //   |                                                          | (IsBuilt: any stage)      |
     // The caller holds the caches' locks as PrepareDraw does: B the buffer cache's (through
     // Nx2Record::CacheLock, K3), C the texture cache's; neither half takes the other's.
@@ -424,6 +426,9 @@ private:
 
     void MakePipeline(VkRenderPass render_pass);
 
+    /// Builds the pipeline once, on whichever thread gets here first.
+    void RunBuild();
+
     void Validate();
 
     const GraphicsPipelineCacheKey key;
@@ -512,6 +517,8 @@ private:
     /// its first call).
     mutable std::vector<VideoCommon::DescriptorWordRun> descriptor_word_runs;
 
+    std::function<void()> build_task;
+    std::atomic_bool build_claimed{false};
     std::condition_variable build_condvar;
     std::mutex build_mutex;
     std::atomic_bool is_built{false};
