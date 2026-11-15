@@ -4,6 +4,8 @@
 // SPDX-FileCopyrightText: 2023 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+
 #include "common/logging.h"
 #include "input_common/main.h"
 #include "qt_config.h"
@@ -368,12 +370,40 @@ void QtConfig::ReadNx2PerfValues() {
                 ReadIntegerSetting(std::string{key}, std::make_optional(static_cast<s64>(def))));
         });
     EndGroup();
-    // The first start selects Recommended, which is measured with Reactive Flushing off (like
-    // start-recommended.bat); it is saved with the other settings.
-    const auto reactive =
-        Core::Nx2PerfSettings::ReactiveFlushing(UISettings::values.nx2perf.preset);
-    if (first_start && reactive) {
-        Settings::values.use_reactive_flushing.SetValue(*reactive);
+    UISettings::values.nx2perf_games.clear();
+    const int games = BeginArray("AnkaGames");
+    for (int i = 0; i < games; ++i) {
+        SetArrayIndex(i);
+        const u64 program_id = std::strtoull(ReadStringSetting("program_id").c_str(), nullptr, 16);
+        const auto overrides = Core::Nx2PerfSettings::LoadOverrides([this](std::string_view key) {
+            return static_cast<int>(
+                ReadIntegerSetting(std::string{key}, std::make_optional<s64>(-1)));
+        });
+        if (program_id != 0 && !overrides.Empty()) {
+            UISettings::values.nx2perf_games[program_id] = overrides;
+        }
+    }
+    EndArray();
+    // The dynamic frame rate boxes were global once: a game that had its box off keeps it off.
+    const auto keep_off = [](bool& box, u64 program_id, std::size_t slot) {
+        if (!box) {
+            auto& own = UISettings::values.nx2perf_games[program_id];
+            own.boxes[slot] = own.boxes[slot].value_or(false);
+            box = true;
+        }
+    };
+    keep_off(UISettings::values.nx2perf.dk_dyn, Loader::Nx2DkDynamicFps::ProgramId,
+             Core::Nx2PerfSettings::Keys.size());
+    keep_off(UISettings::values.nx2perf.mkw_dyn, Loader::Nx2MkwDynamicFps::ProgramId,
+             Core::Nx2PerfSettings::Keys.size() + 1);
+    // The first start selects Balanced, which is measured with Reactive Flushing off (like
+    // start-balanced.bat); it is saved with the other settings. An existing file keeps its preset.
+    if (first_start) {
+        UISettings::values.nx2perf = Core::Nx2PerfSettings::FirstStart();
+        if (const auto reactive =
+                Core::Nx2PerfSettings::ReactiveFlushing(UISettings::values.nx2perf.preset)) {
+            Settings::values.use_reactive_flushing.SetValue(*reactive);
+        }
     }
 }
 
@@ -388,6 +418,21 @@ void QtConfig::SaveNx2PerfValues() {
             WriteIntegerSetting(std::string{key}, value, std::make_optional(def));
         });
     EndGroup();
+
+    BeginArray("AnkaGames");
+    int index = 0;
+    for (const auto& [program_id, overrides] : UISettings::values.nx2perf_games) {
+        if (overrides.Empty()) {
+            continue;
+        }
+        SetArrayIndex(index++);
+        WriteStringSetting("program_id", fmt::format("{:016X}", program_id));
+        Core::Nx2PerfSettings::SaveOverrides(
+            overrides, [this](std::string_view key, int value) {
+                WriteIntegerSetting(std::string{key}, value, std::make_optional(-1));
+            });
+    }
+    EndArray();
 }
 
 void QtConfig::SaveQtValues() {

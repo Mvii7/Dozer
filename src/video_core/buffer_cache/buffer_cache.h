@@ -868,9 +868,81 @@ void BufferCache<P>::PopAsyncBuffers() {
             gpu_modified_ranges.Subtract(start, end - start);
         });
     }
+    if (ReadTrapsActive() && Nx2Reactive::TrapPopDisarm()) {
+        for (const auto& copy : downloads) {
+            DisarmCopiedReadTraps(static_cast<DAddr>(copy.src_offset), copy.size);
+        }
+    }
     async_buffers_death_ring.emplace_back(*async_buffer);
     async_buffers.pop_front();
     pending_downloads.pop_front();
+    copy_back_cv.notify_all();
+}
+
+template <class P>
+void BufferCache<P>::DisarmCopiedReadTraps(DAddr addr, u64 size) {
+    const DAddr begin = Common::AlignDown(addr, Core::DEVICE_PAGESIZE);
+    const DAddr end = Common::AlignUp(addr + size, Core::DEVICE_PAGESIZE);
+    boost::container::small_vector<std::pair<DAddr, DAddr>, 4> runs;
+    read_trapped_ranges.ForEachInRange(begin, end - begin, [&](DAddr lower, DAddr upper) {
+        for (DAddr page = lower; page < upper; page += Core::DEVICE_PAGESIZE) {
+            // A GPU write since this copy was committed keeps its trap.
+            if (IsRegionGpuModified(page, Core::DEVICE_PAGESIZE)) {
+                continue;
+            }
+            if (!runs.empty() && runs.back().second == page) {
+                runs.back().second = page + Core::DEVICE_PAGESIZE;
+            } else {
+                runs.emplace_back(page, page + Core::DEVICE_PAGESIZE);
+            }
+        }
+    });
+    u64 pages = 0;
+    for (const auto& [run_begin, run_end] : runs) {
+        device_memory.DisarmReadTraps(run_begin, run_end - run_begin);
+        read_trapped_ranges.Subtract(run_begin, run_end - run_begin);
+        pages += (run_end - run_begin) / Core::DEVICE_PAGESIZE;
+    }
+    if (pages != 0 && Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
+        Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::TrapsDisarmedAtCopyBack, pages);
+    }
+}
+
+template <class P>
+bool BufferCache<P>::CopyBackCovers(DAddr addr, u64 size) const {
+    u64 modified = 0;
+    u64 covered = 0;
+    gpu_modified_ranges.ForEachInRange(addr, size, [&](DAddr start, DAddr end) {
+        modified += end - start;
+        async_downloads.ForEachInRange(
+            start, end - start, [&](DAddr lower, DAddr upper, s32) { covered += upper - lower; });
+    });
+    return modified != 0 && covered >= modified;
+}
+
+template <class P>
+bool BufferCache<P>::WaitForCopyBack(std::unique_lock<Common::SpinRecursiveMutex>& lock,
+                                     DAddr addr, u64 size) {
+    if (!Nx2Reactive::CopyBackWait() || !CopyBackCovers(addr, size)) {
+        return !IsRegionGpuModified(addr, size);
+    }
+    // The fence thread lands copies as the host GPU finishes them; past this, a sync flush.
+    constexpr auto timeout = std::chrono::milliseconds{8};
+    const bool stats = Common::Nx2Reactive::StatsEnabled();
+    const s64 start_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
+    const bool landed =
+        copy_back_cv.wait_for(lock, timeout, [&] { return !CopyBackCovers(addr, size); });
+    const bool fresh = !IsRegionGpuModified(addr, size);
+    if (stats) [[unlikely]] {
+        using Common::Nx2Reactive::Counter;
+        Common::Nx2Reactive::Add(Counter::CopyBackWaits, 1);
+        Common::Nx2Reactive::Add(Counter::CopyBackWaitUs,
+                                 Common::Nx2Reactive::MicrosecondsSince(start_ns));
+        if (!landed || !fresh) {
+            Common::Nx2Reactive::Add(Counter::CopyBackWaitMisses, 1);
+        }
+    }
+    return fresh;
 }
 
 template <class P>

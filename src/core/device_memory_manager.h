@@ -135,7 +135,15 @@ public:
     /// Traps the next guest CPU read of these pages, to learn which GPU writes the CPU reads.
     void ArmReadTraps(DAddr addr, size_t size);
 
+    /// Disarms the read traps of these pages: their GPU writes were copied back.
+    void DisarmReadTraps(DAddr addr, size_t size);
+
 private:
+    /// Calls func(interface, vaddr, size) for each run of these pages contiguous in one
+    /// process's address space.
+    template <typename Func>
+    void ForEachCpuRun(DAddr addr, size_t size, Func&& func);
+
     struct TranslationEntry {
         DAddr guest_page{};
         u8* host_ptr{};

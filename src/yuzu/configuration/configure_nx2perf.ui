@@ -20,7 +20,7 @@
    <item>
     <widget class="QLabel" name="intro">
      <property name="text">
-      <string>Speed settings. They apply when a game starts; once a game has run in this session, a change needs a restart (you are asked).</string>
+      <string>These settings affect performance. They take effect when a game starts. If a game has already run since Dozer was opened, Dozer will ask to restart before a change applies.</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>
@@ -43,12 +43,12 @@
       <widget class="QComboBox" name="preset">
        <item>
         <property name="text">
-         <string>Recommended</string>
+         <string>Performance</string>
         </property>
        </item>
        <item>
         <property name="text">
-         <string>Fast</string>
+         <string>Balanced</string>
         </property>
        </item>
        <item>
@@ -321,61 +321,6 @@
         </property>
         <property name="buddy">
          <cstring>osd</cstring>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QGroupBox" name="bananza">
-     <property name="title">
-      <string>Donkey Kong Bananza only (off in other games)</string>
-     </property>
-     <layout class="QVBoxLayout" name="bananza_layout">
-      <item>
-       <widget class="QCheckBox" name="dk_dyn">
-        <property name="text">
-         <string>Dynamic frame rate</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLabel" name="dk_dyn_text">
-        <property name="text">
-         <string>The game may run at any rate from 40 to 60 fps instead of dropping to 30; patched in memory, no file is changed (DK_DYN).</string>
-        </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-        <property name="indent">
-         <number>22</number>
-        </property>
-        <property name="buddy">
-         <cstring>dk_dyn</cstring>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QCheckBox" name="dk_pacing">
-        <property name="text">
-         <string>Frame pacing</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLabel" name="dk_pacing_text">
-        <property name="text">
-         <string>Follows the game's own 60/30/20 fps choice at the right speed; set aside while the dynamic frame rate applies (PRESENT_INTERVAL_WORD, MODE_PACE, PACE_SPIN_US).</string>
-        </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-        <property name="indent">
-         <number>22</number>
-        </property>
-        <property name="buddy">
-         <cstring>dk_pacing</cstring>
         </property>
        </widget>
       </item>

@@ -138,10 +138,15 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     u64 native_critical_memory{};
     u64 native_expected_memory{};
     u64 budget_check_frames{};
+    u64 memory_slack_estimate{};
     u64 astc_opaque_images{};
     u64 astc_alpha_images{};
     std::vector<u8> astc_scan_buffer;
     u64 images_deleted{};
+    /// Set by the garbage collector: DeleteImage queues the image's views here and they are
+    /// removed from the tables, and the image tables reset, once at the end of the pass.
+    bool defer_view_removal{};
+    std::vector<ImageViewId> deferred_removed_views;
     u64 alias_checks_walked{};  ///< SynchronizeAliases walks over the aliases (last 600 frames)
     u64 alias_checks_skipped{}; ///< Calls skipped: no alias can be newer (EDEN_NX2_ALIAS_LAZY)
     u64 alias_syncs{};          ///< Walks that found newer aliases and copied from them
@@ -507,6 +512,10 @@ private:
 
     /// Remove framebuffers using the given image views from the cache
     void RemoveFramebuffers(std::span<const ImageViewId> removed_views);
+
+    /// Removes the views DeleteImage queued while defer_view_removal was set, in one pass over the
+    /// view tables and framebuffers instead of one pass per deleted image.
+    void FlushDeferredViewRemovals();
 
     /// Mark an image as modified from the GPU
     void MarkModification(ImageBase& image) noexcept;
