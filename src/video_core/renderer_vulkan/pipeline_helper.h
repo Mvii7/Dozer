@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdlib>
 #include <optional>
 
 #include <boost/container/small_vector.hpp>
@@ -21,6 +22,17 @@
 #include "video_core/vulkan_common/vulkan_device.h"
 
 namespace Vulkan {
+
+/// EDEN_NX2_BUILD_CLAIM=1: a draw or dispatch whose pipeline is still queued on the builder
+/// threads builds it on the Vulkan worker instead of waiting for the queue to reach it. Off by
+/// default until measured. Read once, at the first draw that waits (after nx2_switches.txt).
+inline bool Nx2BuildClaim() {
+    static const bool on = [] {
+        const char* value = std::getenv("EDEN_NX2_BUILD_CLAIM");
+        return value != nullptr && value[0] == '1';
+    }();
+    return on;
+}
 
 using Shader::Backend::SPIRV::NUM_TEXTURE_AND_IMAGE_SCALING_WORDS;
 
