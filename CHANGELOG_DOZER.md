@@ -8,6 +8,14 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Fewer waits on the texture cache's lock: guest reads, guest write traps and the GPU's cached
+  writes (constant buffer data) skip it on pages no image was ever registered on, as a page filter
+  tells without the lock. On Windows, write-trap protections try `VirtualProtect` before taking
+  the placeholder lock, so they no longer queue behind bulk mapping. The JIT's register allocator
+  tracks its slots in bitmasks (faster block compiles), and SM4E blocks compile with the host
+  image above 4 GiB. From Lichii (#1479 texture half, #1789, #1780, #1517, #1570); not measured
+  yet.
+
 - Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
   and boxes as that game runs them. A setting changed for the game gets a cross that resets it to
   the global one. Donkey Kong Bananza starts with the Performance preset (read traps off) instead
