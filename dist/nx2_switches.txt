@@ -271,6 +271,12 @@
 # Balanced leaves this unset. Performance, Experimental and Safe set 0 (start-performance.bat,
 # start-reactive-experimental.bat, start-safe.bat).
 #EDEN_NX2_READ_TRAPS=0
+# TRAP_FASTMEM=0: a guest instruction whose read hits a read trap leaves fastmem for good, as
+# after any other fastmem fault (every later read of a GPU-cached page it makes then takes the
+# slow path). Unset (on): it takes the slow path for that one read and keeps fastmem; one that
+# faults more than 1000 times in a second leaves fastmem anyway. Only with read traps on; the
+# reactive stats line shows "fastmem read fallbacks" and "read faults kept".
+#EDEN_NX2_TRAP_FASTMEM=0
 
 # --- reactive flushing (video_core/nx2_reactive_flush.h, common/nx2_reactive.h) ---
 # All off by default. Most matter only with use_reactive_flushing=true in the config;

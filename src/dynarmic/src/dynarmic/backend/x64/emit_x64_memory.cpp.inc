@@ -30,7 +30,7 @@ std::optional<AxxEmitX64::DoNotFastmemMarker> AxxEmitX64::ShouldFastmem(AxxEmitC
     return marker;
 }
 
-void AxxEmitX64::AddFastmemPatch(CodePtr location, CodePtr resume_location, void (*callback)(), const DoNotFastmemMarker& marker, bool recompile) {
+void AxxEmitX64::AddFastmemPatch(CodePtr location, CodePtr resume_location, void (*callback)(), const DoNotFastmemMarker& marker, bool recompile, bool read) {
     const u64 base = std::bit_cast<u64>(code.getCode());
     const auto offset = [base](u64 address) {
         ASSERT(address >= base && address - base <= UINT32_MAX);
@@ -42,10 +42,12 @@ void AxxEmitX64::AddFastmemPatch(CodePtr location, CodePtr resume_location, void
         .callback = offset(std::bit_cast<u64>(callback)),
         .inst_name = 0,
         .recompile = 0,
+        .read = 0,
         .location = std::get<0>(marker),
     };
     info.inst_name = std::get<1>(marker);
     info.recompile = recompile ? 1 : 0;
+    info.read = read ? 1 : 0;
     // Code is emitted in address order; only a block's deferred fallbacks can come after a later
     // access of the same block.
     auto it = fastmem_patch_info.end();
@@ -72,8 +74,18 @@ FakeCall AxxEmitX64::FastmemCallback(u64 rip_) {
         };
         if (iter->recompile) {
             const DoNotFastmemMarker marker{iter->location, static_cast<unsigned>(iter->inst_name)};
+            if (iter->read && conf.fastmem_read_faults_transient && KeepFastmemAfterFault(marker)) {
+                if (::Common::Nx2Reactive::StatsEnabled()) {
+                    ::Common::Nx2Reactive::Add(::Common::Nx2Reactive::Counter::FastmemFaultsKept, 1);
+                }
+                return result;
+            }
             // EDEN_NX2_REACTIVE_STATS shows how many instructions left fastmem (fault path only).
             ::Common::Nx2Reactive::CountFastmemFallback();
+            if (::Common::Nx2Reactive::StatsEnabled() && iter->read) {
+                ::Common::Nx2Reactive::Add(::Common::Nx2Reactive::Counter::FastmemReadFallbacks, 1);
+            }
+            transient_faults.erase(marker);
             do_not_fastmem.insert(marker);
             InvalidateBasicBlocks({std::get<0>(marker)});
         }
@@ -82,6 +94,22 @@ FakeCall AxxEmitX64::FastmemCallback(u64 rip_) {
     fmt::print("dynarmic: Segfault happened within JITted code at rip = {:016x}\n"
         "Segfault wasn't at a fastmem patch location!\n", rip_);
     UNREACHABLE(); //("iter != fastmem_patch_info.end()");
+}
+
+bool AxxEmitX64::KeepFastmemAfterFault(const DoNotFastmemMarker& marker) {
+    // A location that faults more than this in a second is recompiled after all: a fault costs
+    // microseconds, and a page that stays protected faults on every access.
+    constexpr u32 max_faults = 1000;
+    constexpr u64 window_ns = 1'000'000'000;
+    const u64 now_ns = u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now().time_since_epoch())
+                               .count());
+    auto& faults = transient_faults[marker];
+    if (faults.count == 0 || now_ns - faults.window_start_ns > window_ns) {
+        faults.window_start_ns = now_ns;
+        faults.count = 0;
+    }
+    return ++faults.count <= max_faults;
 }
 
 template<std::size_t bitsize, auto callback>
@@ -134,7 +162,7 @@ void AxxEmitX64::EmitMemoryRead(AxxEmitContext& ctx, IR::Inst* inst) {
             code.L(*abort);
             code.call(wrapped_fn);
 
-            AddFastmemPatch(location, code.getCurr(), wrapped_fn, *fastmem_marker, conf.recompile_on_fastmem_failure);
+            AddFastmemPatch(location, code.getCurr(), wrapped_fn, *fastmem_marker, conf.recompile_on_fastmem_failure, true);
 
             EmitCheckMemoryAbort(ctx, inst, end);
             code.jmp(*end, code.T_NEAR);
