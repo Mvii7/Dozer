@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Mario Kart World always runs with read traps on, whatever the Tuning setting or a launcher
+  (start-performance.bat and the others set `EDEN_NX2_READ_TRAPS=0`) says; other games keep the
+  setting. With them off the race music was the same on every track. Starting the game after a
+  game that has them off asks for the usual restart.
+
 - Read traps, to cut the cost of the trapped-read path in Mario Kart World (both off by default,
   untested): `EDEN_NX2_DISARM_MEMO=1` lets a core skip the read trap mutex for a page it already
   disarmed in the current trap generation; `EDEN_NX2_RC3_DISARM=1` disarms only on a read that

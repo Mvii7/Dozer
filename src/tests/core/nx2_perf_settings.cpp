@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <set>
@@ -238,11 +239,15 @@ TEST_CASE("Nx2PerfSettings: presets set the launchers' variables", "[core]") {
     for (const Game game : {Game::Bananza, Game::MarioKartWorld, Game::Other}) {
         const auto safe = Wanted(AllOff(), game);
         const auto own = GameVars(game);
-        REQUIRE(safe.size() == own.size() + SafeOff.size() + 1);
+        // Mario Kart World keeps read traps on, so Safe sets no variable for them there.
+        const std::size_t traps = game == Game::MarioKartWorld ? 0 : 1;
+        REQUIRE(safe.size() == own.size() + SafeOff.size() + traps);
         REQUIRE(std::vector<Var>(safe.begin(), safe.begin() + own.size()) == own);
-        REQUIRE(safe[own.size()] == Var{"EDEN_NX2_READ_TRAPS", "0"});
+        if (traps != 0) {
+            REQUIRE(safe[own.size()] == Var{"EDEN_NX2_READ_TRAPS", "0"});
+        }
         for (std::size_t i = 0; i < SafeOff.size(); ++i) {
-            REQUIRE(safe[own.size() + 1 + i] == Var{SafeOff[i], "0"});
+            REQUIRE(safe[own.size() + traps + i] == Var{SafeOff[i], "0"});
         }
     }
     // Custom with everything off sets read traps off only; Custom with the boxes on: only the
@@ -251,6 +256,22 @@ TEST_CASE("Nx2PerfSettings: presets set the launchers' variables", "[core]") {
     only_traps.push_back({"EDEN_NX2_READ_TRAPS", "0"});
     REQUIRE(Wanted(Custom(AllOff()), Game::Bananza) == only_traps);
     REQUIRE(Wanted(Custom(Balanced()), Game::Bananza) == BalancedBananza);
+}
+
+TEST_CASE("Nx2PerfSettings: Mario Kart World keeps read traps on", "[core]") {
+    const auto has_traps = [](const std::vector<Var>& vars, std::string_view value) {
+        return std::find(vars.begin(), vars.end(), Var{"EDEN_NX2_READ_TRAPS", value}) != vars.end();
+    };
+    const auto none_outside = [](std::string_view) { return false; };
+    const auto traps_outside = [](std::string_view name) { return name == "EDEN_NX2_READ_TRAPS"; };
+    const Switches off = FromPreset(Preset::Performance, Balanced());
+    REQUIRE(!off.read_traps);
+    // The setting turns them off for other games, not for this one.
+    REQUIRE(has_traps(Plan(off, Game::Other, none_outside), "0"));
+    REQUIRE(!has_traps(Plan(off, Game::MarioKartWorld, none_outside), "0"));
+    // A launcher's READ_TRAPS=0 is cleared for this game only.
+    REQUIRE(has_traps(Plan(off, Game::MarioKartWorld, traps_outside), ""));
+    REQUIRE(!has_traps(Plan(off, Game::Other, traps_outside), ""));
 }
 
 TEST_CASE("Nx2PerfSettings: keys are distinct and cover every field", "[core]") {

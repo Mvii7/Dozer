@@ -402,8 +402,9 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
     if (game == Game::MarioKartWorld && switches.mkw_dyn) {
         vars.push_back({"EDEN_NX2_MKW_DYN", "1"});
     }
-    // On by default (unset). Off is the only value the program sets.
-    if (!switches.read_traps) {
+    // On by default (unset). Off is the only value the program sets. Mario Kart World keeps them
+    // on whatever the setting says: without them its race music is the same on every track.
+    if (!switches.read_traps && game != Game::MarioKartWorld) {
         vars.push_back({"EDEN_NX2_READ_TRAPS", "0"});
     }
     if (switches.preset == Preset::Reactive) {
@@ -427,6 +428,11 @@ std::vector<Var> Plan(const Switches& switches, Game game, SetOutside&& set_outs
         if (!set_outside(var.name)) {
             plan.push_back(var);
         }
+    }
+    // A launcher that turns read traps off (start-performance.bat) does not apply to Mario Kart
+    // World: an empty value clears the variable for this session.
+    if (game == Game::MarioKartWorld && set_outside("EDEN_NX2_READ_TRAPS")) {
+        plan.push_back({"EDEN_NX2_READ_TRAPS", ""});
     }
     return plan;
 }

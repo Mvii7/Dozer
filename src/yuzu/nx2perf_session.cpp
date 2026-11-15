@@ -59,9 +59,13 @@ void SetVariable(const Perf::Var& var) {
     const std::string name{var.name};
     const std::string value{var.value};
 #ifdef _WIN32
-    _putenv_s(name.c_str(), value.c_str());
+    _putenv_s(name.c_str(), value.c_str()); // an empty value removes it
 #else
-    setenv(name.c_str(), value.c_str(), 1);
+    if (value.empty()) {
+        unsetenv(name.c_str());
+    } else {
+        setenv(name.c_str(), value.c_str(), 1);
+    }
 #endif
 }
 
