@@ -124,10 +124,11 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         Refresh();
     });
 
-    // The preset box and the crosses are one row_height, as in the other tabs' rows.
+    // The preset box and the crosses are one height, as in the other tabs' rows.
     preset->ensurePolished();
     preset_reset->ensurePolished();
-    const int row_height = std::max(preset->sizeHint().row_height(), preset_reset->sizeHint().row_height());
+    const int row_height =
+        std::max(preset->sizeHint().height(), preset_reset->sizeHint().height());
     preset->setMinimumHeight(row_height);
     preset_reset->setFixedSize(row_height, row_height);
 
