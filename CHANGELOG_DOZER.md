@@ -17,6 +17,10 @@ and `=0` brings back the 2.0.0 code path.
   (`EDEN_NX2_TRAP_REARM=0`: only the first). Before, the instructions that left fastmem flushed
   on their reads; without them, distant terrain in Bananza flickered on data the fences had not
   copied back yet.
+  A copy back at a fence now disarms the traps of its pages (`EDEN_NX2_TRAP_POP_DISARM=0`: they
+  stay armed until a read), so reads after it no longer fault for nothing, and a trapped read
+  whose GPU writes are already in a committed copy back waits for it instead of a sync flush
+  (`EDEN_NX2_COPYBACK_WAIT=0`: always the sync flush). Disarming re-protects pages in runs.
 
 ## Dozer 0.1.2 (`v0.1.2`)
 

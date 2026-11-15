@@ -374,6 +374,27 @@ enum class FitFeedback : u32 {
     return enabled;
 }
 
+/// EDEN_NX2_TRAP_POP_DISARM=0: a copy back to a read-trapped page leaves the trap armed until the
+/// guest's next read. Unset: the copy back disarms it (BufferCache::DisarmCopiedReadTraps).
+[[nodiscard]] inline bool TrapPopDisarm() noexcept {
+    static const bool enabled = [] {
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_TRAP_POP_DISARM");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+/// EDEN_NX2_COPYBACK_WAIT=0: a read trap that finds GPU writes not in guest memory yet always
+/// sync flushes. Unset: when they are all in committed copies back, it waits for those to land
+/// (BufferCache::WaitForCopyBack).
+[[nodiscard]] inline bool CopyBackWait() noexcept {
+    static const bool enabled = [] {
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_COPYBACK_WAIT");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
 /// EDEN_NX2_RX_NO_COPYBACK=1 (DIAGNOSTIC ONLY, breaks reactive flushing's point): guest CPU reads
 /// note no buffer page (NoteCpuRead), so nothing the GPU writes to buffers is copied back at
 /// fences; reads still trap and images still latch.

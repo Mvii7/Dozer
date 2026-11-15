@@ -282,6 +282,16 @@
 # read before the next fence can find older data. Unset (on): each read lets the next GPU write
 # arm the page again, and a read after that write flushes it.
 #EDEN_NX2_TRAP_REARM=0
+# TRAP_POP_DISARM=0: a copy back at a fence leaves the read traps of its pages armed, so the
+# guest's next read still faults (and finds nothing left to flush). Unset (on): the copy back
+# disarms the pages the GPU has not written since; the next GPU write arms them again.
+#EDEN_NX2_TRAP_POP_DISARM=0
+# COPYBACK_WAIT=0: a read trap that finds GPU writes not in guest memory yet always sync flushes
+# (the CPU waits for the GPU thread to reach it and for a new download). Unset (on): when all of
+# them are in copies back already committed at a fence, it waits for those to land instead
+# (8 ms at most, then the sync flush). The reactive stats line shows "traps disarmed at copy
+# back" and "copy back waits".
+#EDEN_NX2_COPYBACK_WAIT=0
 
 # --- reactive flushing (video_core/nx2_reactive_flush.h, common/nx2_reactive.h) ---
 # All off by default. Most matter only with use_reactive_flushing=true in the config;

@@ -11,6 +11,7 @@
 #include <array>
 #include <atomic>
 #include <bit>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -508,6 +509,12 @@ public:
         }
     }
 
+    /// A read trap found GPU writes here not in guest memory yet. When all of them are in copies
+    /// back already committed at a fence, waits for the fence thread to land them instead of a
+    /// sync flush (EDEN_NX2_COPYBACK_WAIT=0: never). Returns whether none is left.
+    bool WaitForCopyBack(std::unique_lock<Common::SpinRecursiveMutex>& lock, DAddr addr,
+                         u64 size);
+
     /// 4 KiB pages in the CPU-read ranges (EDEN_NX2_REACTIVE_STATS; walks them).
     [[nodiscard]] u64 CpuReadPages() const;
 
@@ -956,6 +963,14 @@ private:
     /// Pages handed to ArmReadTraps and not read since (ForgetReadTraps): a GPU write to one of
     /// them arms nothing new.
     Common::RangeSet<DAddr> read_trapped_ranges;
+
+    /// Whether every GPU write in this range is in a committed copy back (async_downloads).
+    [[nodiscard]] bool CopyBackCovers(DAddr addr, u64 size) const;
+    /// A copy back landed in [addr, addr + size): disarms the read traps of its pages the GPU
+    /// has not written since (EDEN_NX2_TRAP_POP_DISARM=0: they stay armed until a read).
+    void DisarmCopiedReadTraps(DAddr addr, u64 size);
+    /// Notified after each PopAsyncBuffers (WaitForCopyBack).
+    std::condition_variable_any copy_back_cv;
 
     // Async Buffers
     Common::OverlapRangeSet<DAddr> async_downloads;
