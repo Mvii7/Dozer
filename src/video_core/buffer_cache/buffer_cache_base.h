@@ -499,6 +499,15 @@ public:
                !AsyncBufferDownloads();
     }
 
+    /// The guest CPU read these pages, which used up their read traps: the next GPU write here
+    /// arms them again, so a read after it flushes instead of finding data the fences have not
+    /// copied back yet. EDEN_NX2_TRAP_REARM=0: they stay unarmed after their first read.
+    void ForgetReadTraps(DAddr device_addr, u64 size) {
+        if (Nx2Reactive::TrapRearm()) {
+            read_trapped_ranges.Subtract(device_addr, size);
+        }
+    }
+
     /// 4 KiB pages in the CPU-read ranges (EDEN_NX2_REACTIVE_STATS; walks them).
     [[nodiscard]] u64 CpuReadPages() const;
 
@@ -944,8 +953,8 @@ private:
         device_memory.ArmReadTraps(begin, end - begin);
     }
 
-    /// Pages already handed to ArmReadTraps: each stays trapped until its first read, then is
-    /// in cpu_read_ranges.
+    /// Pages handed to ArmReadTraps and not read since (ForgetReadTraps): a GPU write to one of
+    /// them arms nothing new.
     Common::RangeSet<DAddr> read_trapped_ranges;
 
     // Async Buffers

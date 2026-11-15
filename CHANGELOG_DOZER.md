@@ -13,6 +13,10 @@ and `=0` brings back the 2.0.0 code path.
   reads of pages already flushed stay fast. An instruction that faults more than 1000 times in a
   second is still recompiled. `EDEN_NX2_TRAP_FASTMEM=0` brings back the old behaviour. The
   reactive stats line also counts the read fallbacks and the faults kept on fastmem.
+  A buffer page's trap is also armed again by the next GPU write after each read
+  (`EDEN_NX2_TRAP_REARM=0`: only the first). Before, the instructions that left fastmem flushed
+  on their reads; without them, distant terrain in Bananza flickered on data the fences had not
+  copied back yet.
 
 ## Dozer 0.1.2 (`v0.1.2`)
 

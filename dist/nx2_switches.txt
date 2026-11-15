@@ -277,6 +277,11 @@
 # faults more than 1000 times in a second leaves fastmem anyway. Only with read traps on; the
 # reactive stats line shows "fastmem read fallbacks" and "read faults kept".
 #EDEN_NX2_TRAP_FASTMEM=0
+# TRAP_REARM=0: a buffer page's read trap is armed by the GPU's first write there only; after
+# the guest's first read, later GPU writes reach it only through the copies back at fences, so a
+# read before the next fence can find older data. Unset (on): each read lets the next GPU write
+# arm the page again, and a read after that write flushes it.
+#EDEN_NX2_TRAP_REARM=0
 
 # --- reactive flushing (video_core/nx2_reactive_flush.h, common/nx2_reactive.h) ---
 # All off by default. Most matter only with use_reactive_flushing=true in the config;

@@ -2221,6 +2221,7 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
         } else if (buffer_cache.ReadTrapsActive()) {
             // A trapped read (or a slow-path read) of GPU-written buffer data: flush it now.
             flush_buffer = buffer_cache.IsRegionGpuModified(page_start, page_end - page_start);
+            buffer_cache.ForgetReadTraps(page_start, page_end - page_start);
         }
     }
     {
