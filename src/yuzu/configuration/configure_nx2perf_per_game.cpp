@@ -3,7 +3,6 @@
 
 #include "yuzu/configuration/configure_nx2perf_per_game.h"
 
-#include <algorithm>
 #include <optional>
 
 #include <QCheckBox>
@@ -11,11 +10,11 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPushButton>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStandardItemModel>
 #include <QStyle>
-#include <QToolButton>
 #include <QVBoxLayout>
 
 #include "core/nx2_perf_settings.h"
@@ -64,13 +63,15 @@ QString PresetName(Perf::Preset preset) {
     return QObject::tr("Custom");
 }
 
-// The cross next to a changed setting, like the other tabs'; it keeps its room when hidden.
-QToolButton* CreateResetButton(QWidget* parent) {
-    auto* button = new QToolButton(parent);
-    button->setIcon(parent->style()->standardIcon(QStyle::SP_LineEditClearButton));
-    button->setAutoRaise(true);
+// The cross next to a changed setting, set up like the other tabs' (shared_widget.cpp); it keeps
+// its room when hidden.
+QPushButton* CreateResetButton(QWidget* parent) {
+    auto* button = new QPushButton(
+        parent->style()->standardIcon(QStyle::SP_LineEditClearButton), QString{}, parent);
     button->setToolTip(QObject::tr("Reset to the global setting"));
-    QSizePolicy policy = button->sizePolicy();
+    // Dark themes give buttons a wide minimum width
+    button->setStyleSheet(QStringLiteral("min-width: 0px;"));
+    QSizePolicy policy{QSizePolicy::Preferred, QSizePolicy::Preferred};
     policy.setRetainSizeWhenHidden(true);
     button->setSizePolicy(policy);
     button->setVisible(false);
@@ -100,7 +101,9 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     layout->addLayout(form);
     layout->addStretch();
 
+    // Preferred, like the other tabs' boxes: the box grows to the cross's height.
     preset = new QComboBox(this);
+    preset->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     for (const Perf::Preset choice : Perf::PresetOrder) {
         preset->addItem(PresetName(choice));
     }
@@ -118,19 +121,11 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
             ChoosePreset(Perf::PresetOrder[static_cast<std::size_t>(index)]);
         }
     });
-    connect(preset_reset, &QToolButton::clicked, this, [this] {
+    connect(preset_reset, &QPushButton::clicked, this, [this] {
         own.preset.reset();
         own.global_preset = Perf::GamePreset(game).has_value();
         Refresh();
     });
-
-    // The preset box and the crosses are one height, as in the other tabs' rows.
-    preset->ensurePolished();
-    preset_reset->ensurePolished();
-    const int row_height =
-        std::max(preset->sizeHint().height(), preset_reset->sizeHint().height());
-    preset->setMinimumHeight(row_height);
-    preset_reset->setFixedSize(row_height, row_height);
 
     for (std::size_t key = 0; key < Perf::KeyCount; ++key) {
         const Entry* entry = EntryOf(key);
@@ -139,7 +134,6 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         }
         auto* box = new QCheckBox(this);
         auto* reset = CreateResetButton(this);
-        reset->setFixedSize(row_height, row_height);
         auto* row_layout = new QHBoxLayout;
         row_layout->addWidget(box, 1);
         row_layout->addWidget(reset);
@@ -148,7 +142,7 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         const std::size_t index = rows.size() - 1;
         connect(box, &QCheckBox::toggled, this,
                 [this, index](bool checked) { ChooseBox(rows[index], checked); });
-        connect(reset, &QToolButton::clicked, this, [this, key] {
+        connect(reset, &QPushButton::clicked, this, [this, key] {
             own.boxes[key].reset();
             Refresh();
         });
