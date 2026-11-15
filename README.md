@@ -71,7 +71,7 @@ saves (`user\nand`), shader caches and log (`user\log\eden_log.txt`) in it, and 
 program" under "The Tuning tab").
 
 Settings: **Emulation > Configure... > Tuning**. On the first start the preset is
-**Performance**, and Dozer also turns *Enable Reactive Flushing* off in
+**Balanced** (Donkey Kong Bananza runs with Performance; see "Per game"), and Dozer also turns *Enable Reactive Flushing* off in
 its `qt-config.ini` (Graphics > Advanced).
 
 GPU Mode (GPU accuracy) starts at **Fast** (Low), as in newer Eden versions (2.0.0 started at
@@ -86,9 +86,9 @@ files in `Games`, and the `user` folder (your keys, firmware and saves).
 - **Use `.nx` instead of `.nup`.** It usually stutters less. Right-click a game in the list and
   choose **Convert to NX...** (see "Game files"). Dozer also offers to convert a `.nup` the first
   time you start it.
-- **Performance is the default preset.** It gives the most speed, but foliage is not drawn. To
-  get foliage back, open **Emulation > Configure... > Tuning** and pick **Balanced**, which costs
-  some performance.
+- **Balanced is the default preset.** Foliage is drawn, at some cost in performance. For more
+  speed without foliage, open **Emulation > Configure... > Tuning** and pick **Performance**
+  (Donkey Kong Bananza always starts from Performance).
 - **If your system is struggling, try handheld mode.** It trades resolution for performance. It
   made little difference on the maintainer's machine, so it mainly helps weaker systems.
 - **Keep asynchronous presentation and asynchronous shader compilation on** (Graphics > Extras).
@@ -133,20 +133,20 @@ under it.
 
 | Preset | What it sets | Same as |
 |---|---|---|
-| **Performance** (the first start's choice) | the fastest settings with read traps and Reactive Flushing off (`EDEN_NX2_READ_TRAPS=0`). Foliage is not rendered for a performance gain. Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Performance or Balanced later turns it off too | `start-performance.bat` |
-| **Balanced** | all nine settings below on, *Enable Reactive Flushing* off (Graphics > Advanced). Foliage is rendered at a performance cost | `start-balanced.bat` |
+| **Performance** | the fastest settings with read traps and Reactive Flushing off (`EDEN_NX2_READ_TRAPS=0`). Foliage is not rendered for a performance gain. Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Performance or Balanced later turns it off too | `start-performance.bat` |
+| **Balanced** (the first start's choice) | all nine settings below on, *Enable Reactive Flushing* off (Graphics > Advanced). Foliage is rendered at a performance cost | `start-balanced.bat` |
 | **Experimental** | the balanced settings with Reactive Flushing instead of read traps: barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and `EDEN_NX2_RX_RT_FIT=3` | `start-reactive-experimental.bat` |
 | **Safe** | all nine off, Frame generation off, and the GPU shortcuts Dozer keeps on by default off too (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
 | **Custom** | chosen by itself when you change a box by hand | - |
 
-**Per game.** The tab sets the defaults for every game, except two that start from a preset of
-their own: **Donkey Kong Bananza** runs with **Performance** (read traps off) and **Mario Kart
-World** with **Balanced** (read traps on), whatever the preset here is. A game's **Properties >
-Tuning** tab (right-click the game, or **Emulation > Configure Current Game**) can choose another
-preset for that game, or set a box on or off for it only; **Default** follows what the game starts
-from. The game-specific boxes and frame generation stay as they are here. A game with its own
-settings starts with them, and Dozer asks to restart when the session's first game used others.
-Every other game uses this tab as it is.
+**Per game.** The tab sets the defaults for every game, except **Donkey Kong Bananza**, which
+starts from the **Performance** preset (read traps off) whatever the preset here is. A game's
+**Properties > Tuning** tab (right-click the game, or **Emulation > Configure Current Game**) can
+choose another preset for that game, or set a box on or off for it only; **Default** follows what
+the game starts from. The game-specific boxes and frame generation stay as they are here. A game
+with its own settings starts with them, and Dozer asks to restart when the session's first game
+used others. Mario Kart World needs read traps on, so keep the preset here on Balanced (or tick
+Read traps in its own Tuning tab).
 
 **Frame generation.** The tab also has a **Frame generation** box with three choices:
 
@@ -166,7 +166,7 @@ Below the preset are the nine settings, in two groups:
 
 | Setting | Switches it sets (`EDEN_NX2_...`) | Group |
 |---|---|---|
-| Read traps | Off by default (the first start's Performance preset leaves it unticked): `READ_TRAPS=0`. With Reactive Flushing off as well, foliage is not rendered. On: left unset; foliage is rendered at a performance cost. Does nothing while Reactive Flushing is on. Balanced ticks it; Performance and Experimental leave it unticked. Unticking it while Balanced is selected changes the preset to Custom | All games |
+| Read traps | On in the Balanced preset (the first start's), off in Performance and Experimental: `READ_TRAPS=0`. With Reactive Flushing off as well, foliage is not rendered. On: left unset; foliage is rendered at a performance cost. Does nothing while Reactive Flushing is on. Balanced ticks it; Performance and Experimental leave it unticked. Unticking it while Balanced is selected changes the preset to Custom | All games |
 | Split GPU thread | `BACK_STAGES=1`, `BACK_CUTS=a` | All games |
 | Acquire peek | `ACQUIRE_PEEK=1` | All games |
 | Same-value filter in the macro JIT | `JIT_SAME=1` | All games |

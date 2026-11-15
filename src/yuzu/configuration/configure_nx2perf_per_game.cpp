@@ -77,8 +77,8 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     auto* intro = new QLabel(
         tr("Settings here replace the Tuning tab's for this game only; Default follows it. Donkey "
-           "Kong Bananza and Mario Kart World start from a preset of their own instead of the "
-           "Tuning tab's. They take effect when the game starts. If a game has already run since "
+           "Kong Bananza starts from the Performance preset instead of the Tuning tab's. They "
+           "take effect when the game starts. If a game has already run since "
            "Dozer was opened, Dozer will ask to restart before a change applies."),
         this);
     intro->setWordWrap(true);

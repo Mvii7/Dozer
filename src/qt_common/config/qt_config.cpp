@@ -384,12 +384,14 @@ void QtConfig::ReadNx2PerfValues() {
         }
     }
     EndArray();
-    // The first start selects Performance, which is measured with Reactive Flushing off (like
-    // start-performance.bat); it is saved with the other settings.
-    const auto reactive =
-        Core::Nx2PerfSettings::ReactiveFlushing(UISettings::values.nx2perf.preset);
-    if (first_start && reactive) {
-        Settings::values.use_reactive_flushing.SetValue(*reactive);
+    // The first start selects Balanced, which is measured with Reactive Flushing off (like
+    // start-balanced.bat); it is saved with the other settings. An existing file keeps its preset.
+    if (first_start) {
+        UISettings::values.nx2perf = Core::Nx2PerfSettings::FirstStart();
+        if (const auto reactive =
+                Core::Nx2PerfSettings::ReactiveFlushing(UISettings::values.nx2perf.preset)) {
+            Settings::values.use_reactive_flushing.SetValue(*reactive);
+        }
     }
 }
 

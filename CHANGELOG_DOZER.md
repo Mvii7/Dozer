@@ -10,10 +10,13 @@ and `=0` brings back the 2.0.0 code path.
 
 - Per-game tuning: a game's Properties window has a Tuning tab where the preset and each Tuning
   box can follow the game's default or be set for that game only. Donkey Kong Bananza starts from
-  the Performance preset (read traps off) and Mario Kart World from Balanced (read traps on),
-  whatever the global preset is; other games use the global settings. Only the choices made in
-  the tab are kept, in `qt-config.ini` (`[AnkaGames]`). A game whose settings differ from the
-  session's first game asks to restart, as before.
+  the Performance preset (read traps off), whatever the global preset is; other games use the
+  global settings. Only the choices made in the tab are kept, in `qt-config.ini`
+  (`[AnkaGames]`). A game whose settings differ from the session's first game asks to restart, as
+  before.
+
+- Tuning: the first start's preset is now Balanced (read traps on, which Mario Kart World needs)
+  instead of Performance. A `qt-config.ini` that already has a preset keeps it.
 
 ## Dozer 0.1.2 (`v0.1.2`)
 

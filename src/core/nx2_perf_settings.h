@@ -14,7 +14,7 @@
 
 // Anka's settings in the Qt program (anka.exe): the EDEN_NX2_* switches of the launchers
 // (dist/dozer/start-*.bat), as a preset and on / off settings kept in the [Anka] group of
-// qt-config.ini, the Performance preset until changed. The program sets the variables in its own
+// qt-config.ini, the Balanced preset until changed. The program sets the variables in its own
 // environment before a game boots (yuzu/nx2perf_session.h); anka-cli and the launchers don't read
 // these settings.
 //
@@ -68,7 +68,8 @@ struct Switches {
     bool operator==(const Switches&) const = default;
 };
 
-/// What the performance launcher sets (and the first start's settings).
+/// What the performance launcher sets. A file that stores no choice (`preset\default`) still means
+/// this, as it did before Balanced became the first start's preset (FirstStart).
 constexpr Switches Performance() {
     return Switches{};
 }
@@ -79,6 +80,11 @@ constexpr Switches Balanced() {
     switches.read_traps = true;
     switches.preset = Preset::Balanced;
     return switches;
+}
+
+/// The settings of a first start (no [Anka] group yet): the balanced launcher's.
+constexpr Switches FirstStart() {
+    return Balanced();
 }
 
 /// start-safe.bat's setup: none of the switches, and the per-draw shortcuts off.
@@ -380,17 +386,10 @@ constexpr Game GameOf(u64 program_id) {
 }
 
 /// The preset a game runs with unless told otherwise, instead of the global one: Bananza
-/// Performance (read traps off), Mario Kart World Balanced (read traps on). Other games: none.
+/// Performance (read traps off). Other games: none, they follow the global preset (Balanced from
+/// the first start).
 constexpr std::optional<Preset> GamePreset(Game game) {
-    switch (game) {
-    case Game::Bananza:
-        return Preset::Performance;
-    case Game::MarioKartWorld:
-        return Preset::Balanced;
-    case Game::Other:
-        break;
-    }
-    return std::nullopt;
+    return game == Game::Bananza ? std::optional{Preset::Performance} : std::nullopt;
 }
 
 /// The settings a game starts from: its own preset's, else the global ones.
