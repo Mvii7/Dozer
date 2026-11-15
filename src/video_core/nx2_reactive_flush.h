@@ -374,6 +374,17 @@ enum class FitFeedback : u32 {
     return enabled;
 }
 
+/// EDEN_NX2_COPYBACK_GROUP=0: a fence's buffer copies back are recorded one copy command each,
+/// as before. Unset: ranges right after each other in one buffer are one copy, and the copies of
+/// one buffer one command (BufferCache::CommitAsyncFlushesHigh).
+[[nodiscard]] inline bool CopyBackGroup() noexcept {
+    static const bool enabled = [] {
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_COPYBACK_GROUP");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
 /// EDEN_NX2_TRAP_POP_DISARM=0: a copy back to a read-trapped page leaves the trap armed until the
 /// guest's next read. Unset: the copy back disarms it (BufferCache::DisarmCopiedReadTraps).
 [[nodiscard]] inline bool TrapPopDisarm() noexcept {

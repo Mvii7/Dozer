@@ -69,6 +69,17 @@ Peek::Mode PeekMode() {
     return mode;
 }
 
+// EDEN_NX2_ACQUIRE_EARLY=1 (with EDEN_NX2_ACQUIRE_PEEK=1): an acquire that has to drain the back
+// stops waiting as soon as guest memory meets it where Decide allows, as a peek at that moment
+// would have (DrainUntilMet), instead of waiting for everything sent before it.
+bool AcquireEarly() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_ACQUIRE_EARLY");
+        return value != nullptr && value[0] == '1';
+    }();
+    return enabled;
+}
+
 // EDEN_NX2_SEMEXEC_DEFER=1 (ProcessSemaphoreExecute): read once.
 bool SemExecuteDefer() {
     static const bool enabled = [] {
@@ -142,6 +153,8 @@ struct PeekStats {
     u64 resumes_latched{}; ///< Resumed without a drain, latched by a release (=1)
     u64 resumes_skipped{}; ///< Resumed without a drain, met in memory (=1)
     u64 sem_execute_deferred{}; ///< SEM_EXECUTE acquires checked on the back (SEMEXEC_DEFER)
+    u64 drains_cut{};  ///< Acquires whose drain stopped once memory met them (ACQUIRE_EARLY)
+    u64 resumes_cut{}; ///< The same for resume checks
 };
 
 thread_local PeekStats t_peek_stats;
@@ -165,7 +178,8 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
              "{:.0f}, untracked {:.0f}; "
              "met in memory but not after the drain {:.0f} (may skip {:.0f}) | resume checks {:.0f} "
              "(met in memory {:.0f}, may skip {:.0f}; skipped: latched {:.0f}, met {:.0f}) | "
-             "sem execute acquires deferred {:.0f} | words {} ({} went down), releases queued {}",
+             "sem execute acquires deferred {:.0f} | drains cut short: acquires {:.0f}, resumes "
+             "{:.0f} | words {} ({} went down), releases queued {}",
              rate(stats.acquires[0] + stats.acquires[1] + stats.acquires[2]),
              rate(stats.acquires[0]), rate(stats.acquires[1]), rate(stats.acquires[2]),
              rate(stats.met_in_memory[0] + stats.met_in_memory[1] + stats.met_in_memory[2]),
@@ -177,7 +191,8 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
              verdict(Peek::Verdict::Untracked),
              rate(stats.met_then_unmet), rate(stats.may_skip_unmet), rate(stats.resumes),
              rate(stats.resumes_met), rate(stats.resumes_may_skip), rate(stats.resumes_latched),
-             rate(stats.resumes_skipped), rate(stats.sem_execute_deferred), tracker.Words(),
+             rate(stats.resumes_skipped), rate(stats.sem_execute_deferred),
+             rate(stats.drains_cut), rate(stats.resumes_cut), tracker.Words(),
              tracker.WordsNotMonotonic(), tracker.QueuedReleases());
 }
 
@@ -309,6 +324,29 @@ void PeekMet(DmaPusher& dma_pusher, const PeekRead& read, u32 value) {
     }
 }
 
+// ACQUIRE_EARLY: drains the back until guest memory meets the acquire where Decide allows (true),
+// or the back ran everything (false: the caller drains and reads as before). Queued releases stay
+// noted, as the drain did not run them all.
+bool DrainUntilMet(DmaPusher& dma_pusher, GPUVAddr address, u64 device, u32 operation, u32 value) {
+    struct Context {
+        DmaPusher* dma_pusher;
+        GPUVAddr address;
+        u64 device;
+        u32 operation;
+        u32 value;
+    };
+    Context context{&dma_pusher, address, device, operation, value};
+    const auto met = [](void* raw) {
+        const auto& c = *static_cast<const Context*>(raw);
+        const u32 word = c.dma_pusher->memory_manager.Read<u32>(c.address);
+        auto& tracker = PeekTracker();
+        tracker.Observe(c.device, word);
+        return tracker.Decide(c.device, c.dma_pusher->channel_state.bind_id, c.operation, c.value,
+                              word) == Peek::Verdict::Skip;
+    };
+    return VideoCommon::GpuSplit::Get().DrainUntil(met, &context);
+}
+
 // =1: what an acquire Decide let go on without a drain may see. The word was written on the back
 // after the work before its release; the front's reads of guest memory after this one stay after
 // it (a compiler barrier: the order of the host's stores and loads is x86-64's).
@@ -356,6 +394,13 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         }
         if (peek.verdict == Peek::Verdict::Skip) {
             CountPeek(&PeekStats::resumes_skipped);
+            PeekSkipped();
+            return true;
+        }
+        if (peek.device && AcquireEarly() &&
+            DrainUntilMet(dma_pusher, pending_acquire->address, *peek.device,
+                          pending_acquire->operation, pending_acquire->value)) {
+            CountPeek(&PeekStats::resumes_cut);
             PeekSkipped();
             return true;
         }
@@ -547,6 +592,14 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
                        PeekSite::Acquire);
         if (peek.verdict == Peek::Verdict::Skip && PeekMode() == Peek::Mode::Skip) {
             CountPeek(&PeekStats::skipped);
+            PeekMet(dma_pusher, peek, acquire.value);
+            PeekSkipped();
+            return;
+        }
+        if (peek.device && PeekMode() == Peek::Mode::Skip && AcquireEarly() &&
+            DrainUntilMet(dma_pusher, acquire.address, *peek.device, acquire.operation,
+                          acquire.value)) {
+            CountPeek(&PeekStats::drains_cut);
             PeekMet(dma_pusher, peek, acquire.value);
             PeekSkipped();
             return;

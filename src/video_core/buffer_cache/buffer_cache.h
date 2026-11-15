@@ -750,6 +750,7 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
     boost::container::small_vector<std::pair<BufferCopy, BufferId>, 16> downloads;
     u64 total_size_bytes = 0;
     u64 largest_copy = 0;
+    const bool group_copies = Nx2Reactive::CopyBackGroup();
     for (const auto& range_set : committed_gpu_modified_ranges) {
         range_set.ForEach([&](DAddr interval_lower, DAddr interval_upper) {
             const std::size_t size = interval_upper - interval_lower;
@@ -766,6 +767,22 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
                         const auto add_download = [&](DAddr start, DAddr end) {
                             const u64 new_offset = start - buffer_addr;
                             const u64 new_size = end - start;
+                            // Align up to avoid cache conflicts
+                            constexpr u64 align = 64ULL;
+                            constexpr u64 mask = ~(align - 1ULL);
+                            if (group_copies && !downloads.empty() &&
+                                downloads.back().second == buffer_id) {
+                                // Right after the last range: the last copy grows (its staging
+                                // space is the last one taken).
+                                BufferCopy& last = downloads.back().first;
+                                if (last.src_offset + last.size == new_offset) {
+                                    last.size += new_size;
+                                    total_size_bytes =
+                                        last.dst_offset + ((last.size + align - 1) & mask);
+                                    largest_copy = (std::max)(largest_copy, last.size);
+                                    return;
+                                }
+                            }
                             downloads.push_back({
                                 BufferCopy{
                                     .src_offset = new_offset,
@@ -774,9 +791,6 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
                                 },
                                 buffer_id,
                             });
-                            // Align up to avoid cache conflicts
-                            constexpr u64 align = 64ULL;
-                            constexpr u64 mask = ~(align - 1ULL);
                             total_size_bytes += (new_size + align - 1) & mask;
                             largest_copy = (std::max)(largest_copy, new_size);
                         };
@@ -801,10 +815,12 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
     }
     auto download_staging = runtime.DownloadStagingBuffer(total_size_bytes, true);
     boost::container::small_vector<BufferCopy, 4> normalized_copies;
+    boost::container::small_vector<BufferCopy, 16> buffer_copies;
     runtime.PreCopyBarrier();
-    for (auto& [copy, buffer_id] : downloads) {
+    for (size_t index = 0; index < downloads.size(); ++index) {
+        auto& [copy, buffer_id] = downloads[index];
         copy.dst_offset += download_staging.offset;
-        const std::array copies{copy};
+        buffer_copies.push_back(copy);
         BufferCopy second_copy{copy};
         Buffer& buffer = slot_buffers[buffer_id];
         second_copy.src_offset = static_cast<size_t>(buffer.CpuAddr()) + copy.src_offset;
@@ -824,8 +840,17 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
         }
         async_downloads.Add(orig_device_addr, copy.size);
         buffer.MarkUsage(copy.src_offset, copy.size);
-        runtime.CopyBuffer(download_staging.buffer, buffer, copies, false);
         normalized_copies.push_back(second_copy);
+        // One copy command per run of copies from the same buffer.
+        const bool run_ends = !group_copies || index + 1 == downloads.size() ||
+                              downloads[index + 1].second != buffer_id;
+        if (run_ends) {
+            runtime.CopyBuffer(download_staging.buffer, buffer,
+                               std::span<const BufferCopy>(buffer_copies.data(),
+                                                           buffer_copies.size()),
+                               false);
+            buffer_copies.clear();
+        }
     }
     runtime.PostCopyBarrier();
     pending_downloads.emplace_back(std::move(normalized_copies));

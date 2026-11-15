@@ -12,6 +12,18 @@ and `=0` brings back the 2.0.0 code path.
   launchers (start-safe.bat clears it). A real fence no longer submits a second, empty command
   buffer after its own: about half the game's submissions, no visible change in play.
 
+- Split GPU thread front: an increasing run of 3D state methods goes to the front in one call
+  instead of one call per word (`EDEN_NX2_FRONT_RUNS=0` turns it off).
+
+- Buffer copy backs at fences: ranges right after each other in one buffer are one copy, and the
+  copies of one buffer one copy command instead of one each (`EDEN_NX2_COPYBACK_GROUP=0` turns it
+  off).
+
+- `EDEN_NX2_ACQUIRE_EARLY=1` (off by default, with `EDEN_NX2_ACQUIRE_PEEK=1`): a semaphore acquire
+  that drains the back stops waiting once guest memory meets it where the acquire peek would let
+  it go on, instead of waiting for everything sent before it. The acquire peek line counts the
+  drains cut short.
+
 ## Dozer 0.1.3 (`v0.1.3`)
 
 - Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset

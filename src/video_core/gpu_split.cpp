@@ -258,6 +258,32 @@ bool GpuSplit::Drain() {
     }
 }
 
+bool GpuSplit::DrainUntil(bool (*done)(void*), void* context) {
+    FlushPending();
+    consumed_cache = consumed.load(std::memory_order_acquire);
+    if (consumed_cache == write_position) {
+        return false;
+    }
+    Publish();
+    Nx2BackCpu::NoteFront();
+    Nx2Profile::Scope scope{Nx2Profile::Zone::SplitDrain};
+    for (u32 spins = 0;; ++spins) {
+        consumed_cache = consumed.load(std::memory_order_acquire);
+        if (consumed_cache == write_position) {
+            publish_every = 8;
+            return false;
+        }
+        if ((spins & 15) == 0 && done(context)) {
+            return true;
+        }
+        if (spins < 16384) {
+            Pause();
+        } else {
+            std::this_thread::yield();
+        }
+    }
+}
+
 void GpuSplit::SwitchEngine(Tegra::Engines::EngineInterface* engine) {
     front_engine = engine;
     // The held writes are the previous engine's: they go before the switch.
