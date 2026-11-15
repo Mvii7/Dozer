@@ -92,12 +92,13 @@ public:
         u32 rip;
         u32 resume_rip;
         u32 callback;
-        u32 inst_name : 31;
+        u32 inst_name : 30;
         u32 recompile : 1;
+        u32 read : 1;
         IR::LocationDescriptor location;
     };
     std::optional<DoNotFastmemMarker> ShouldFastmem(A32EmitContext& ctx, IR::Inst* inst) const;
-    void AddFastmemPatch(CodePtr location, CodePtr resume_location, void (*callback)(), const DoNotFastmemMarker& marker, bool recompile);
+    void AddFastmemPatch(CodePtr location, CodePtr resume_location, void (*callback)(), const DoNotFastmemMarker& marker, bool recompile, bool read = false);
     FakeCall FastmemCallback(u64 rip);
 
     // Memory access helpers
@@ -136,6 +137,14 @@ public:
     ::Common::unordered_map<std::tuple<bool, size_t, int, int>, void (*)()> write_fallbacks;
     ::Common::unordered_map<std::tuple<bool, size_t, int, int>, void (*)()> exclusive_write_fallbacks;
     ::Common::unordered_set<DoNotFastmemMarker> do_not_fastmem;
+    /// Recent faults of reads kept on fastmem (fastmem_read_faults_transient), so a location that
+    /// keeps faulting is recompiled anyway.
+    struct TransientFaults {
+        u64 window_start_ns;
+        u32 count;
+    };
+    ::Common::unordered_map<DoNotFastmemMarker, TransientFaults> transient_faults;
+    bool KeepFastmemAfterFault(const DoNotFastmemMarker& marker);
     boost::container::stable_vector<Xbyak::Label> shared_labels;
     void (*memory_read_128)() = nullptr;   // Dummy
     void (*memory_write_128)() = nullptr;  // Dummy

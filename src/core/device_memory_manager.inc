@@ -697,14 +697,23 @@ void DeviceMemoryManager<Traits>::UpdatePagesCachedBatch(std::span<const std::pa
 
 template <typename Traits>
 void DeviceMemoryManager<Traits>::ArmReadTraps(DAddr addr, size_t size) {
-    const auto MarkRegionReadTrap = &DeviceMemoryManager<Traits>::DeviceMethods::MarkRegionReadTrap;
+    ForEachCpuRun(addr, size, &DeviceMemoryManager<Traits>::DeviceMethods::MarkRegionReadTrap);
+}
+
+template <typename Traits>
+void DeviceMemoryManager<Traits>::DisarmReadTraps(DAddr addr, size_t size) {
+    ForEachCpuRun(addr, size, &DeviceMemoryManager<Traits>::DeviceMethods::DisarmRegionReadTrap);
+}
+
+template <typename Traits>
+template <typename Func>
+void DeviceMemoryManager<Traits>::ForEachCpuRun(DAddr addr, size_t size, Func&& func) {
     Memory::Memory* run_inter = nullptr;
     u64 run_begin = 0;
     u64 run_pages = 0;
     const auto release_run = [&] {
         if (run_pages > 0 && run_inter != nullptr) {
-            MarkRegionReadTrap(run_inter, run_begin << Memory::YUZU_PAGEBITS,
-                               run_pages << Memory::YUZU_PAGEBITS);
+            func(run_inter, run_begin << Memory::YUZU_PAGEBITS, run_pages << Memory::YUZU_PAGEBITS);
         }
         run_pages = 0;
     };
