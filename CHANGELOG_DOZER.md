@@ -20,6 +20,26 @@ and `=0` brings back the 2.0.0 code path.
 - Tuning: the first start's preset is now Balanced (read traps on, which Mario Kart World needs)
   instead of Performance. A `qt-config.ini` that already has a preset keeps it.
 
+- Read traps: a guest read that hits one no longer takes its instruction off fastmem for good.
+  Dynarmic sends that one read down the slow path and keeps the instruction on fastmem, so later
+  reads of pages already flushed stay fast. An instruction that faults more than 1000 times in a
+  second is still recompiled. `EDEN_NX2_TRAP_FASTMEM=0` brings back the old behaviour. The
+  reactive stats line also counts the read fallbacks and the faults kept on fastmem.
+  A buffer page's trap is also armed again by the next GPU write after each read
+  (`EDEN_NX2_TRAP_REARM=0`: only the first). Before, the instructions that left fastmem flushed
+  on their reads; without them, distant terrain in Bananza flickered on data the fences had not
+  copied back yet.
+  A copy back at a fence now disarms the traps of its pages (`EDEN_NX2_TRAP_POP_DISARM=0`: they
+  stay armed until a read), so reads after it no longer fault for nothing, and a trapped read
+  whose GPU writes are already in a committed copy back waits for it instead of a sync flush
+  (`EDEN_NX2_COPYBACK_WAIT=0`: always the sync flush). Disarming re-protects pages in runs.
+
+- Shader cache: a graphics pipeline key no longer includes the Vulkan driver id or version, so a
+  driver update still uses the pipelines in `vulkan.bin` instead of building them all again during
+  play. Older caches are read as they are; the driver words are cleared when a record is loaded, and
+  a pipeline saved under two driver versions is built once. If the driver rejects the device static
+  pipeline cache, that file is dropped and a new one is started.
+
 ## Dozer 0.1.2 (`v0.1.2`)
 
 - AMD RDNA2 fixes: shader code the AMD drivers miscompile is avoided (read-before-write registers

@@ -2205,7 +2205,7 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
         // Guest CPU reads of buffer memory decide which GPU-written buffer data is copied back.
         CheckBufferLockOffB("RasterizerVulkan::GetFlushArea");
         const s64 lock_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
-        std::scoped_lock lock{buffer_cache.mutex};
+        std::unique_lock lock{buffer_cache.mutex};
         if (stats) [[unlikely]] {
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::BufferLockUs,
                                      Common::Nx2Reactive::MicrosecondsSince(lock_ns));
@@ -2221,6 +2221,10 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
         } else if (buffer_cache.ReadTrapsActive()) {
             // A trapped read (or a slow-path read) of GPU-written buffer data: flush it now.
             flush_buffer = buffer_cache.IsRegionGpuModified(page_start, page_end - page_start);
+            if (flush_buffer) {
+                flush_buffer = !buffer_cache.WaitForCopyBack(lock, page_start, page_end - page_start);
+            }
+            buffer_cache.ForgetReadTraps(page_start, page_end - page_start);
         }
     }
     {
