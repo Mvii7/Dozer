@@ -3,6 +3,7 @@
 
 #include "yuzu/configuration/configure_nx2perf_per_game.h"
 
+#include <algorithm>
 #include <optional>
 
 #include <QCheckBox>
@@ -123,6 +124,13 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         Refresh();
     });
 
+    // The preset box and the crosses are one height, as in the other tabs' rows.
+    preset->ensurePolished();
+    preset_reset->ensurePolished();
+    const int height = std::max(preset->sizeHint().height(), preset_reset->sizeHint().height());
+    preset->setMinimumHeight(height);
+    preset_reset->setFixedSize(height, height);
+
     for (std::size_t key = 0; key < Perf::KeyCount; ++key) {
         const Entry* entry = EntryOf(key);
         if (entry->game != Perf::Game::Other && entry->game != game) {
@@ -130,6 +138,7 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         }
         auto* box = new QCheckBox(this);
         auto* reset = CreateResetButton(this);
+        reset->setFixedSize(height, height);
         auto* row_layout = new QHBoxLayout;
         row_layout->addWidget(box, 1);
         row_layout->addWidget(reset);
@@ -162,7 +171,8 @@ void ConfigureNx2PerfPerGame::Refresh() {
             const QSignalBlocker blocker{row.box};
             row.box->setChecked(now.*EntryOf(row.key)->field);
         }
-        row.reset->setVisible(own.boxes[row.key].has_value());
+        // The game's own boxes have no global setting to go back to.
+        row.reset->setVisible(row.key < Perf::Keys.size() && own.boxes[row.key].has_value());
     }
 }
 

@@ -384,6 +384,18 @@ void QtConfig::ReadNx2PerfValues() {
         }
     }
     EndArray();
+    // The dynamic frame rate boxes were global once: a game that had its box off keeps it off.
+    const auto keep_off = [](bool& global, u64 program_id, std::size_t slot) {
+        if (!global) {
+            auto& own = UISettings::values.nx2perf_games[program_id];
+            own.boxes[slot] = own.boxes[slot].value_or(false);
+            global = true;
+        }
+    };
+    keep_off(UISettings::values.nx2perf.dk_dyn, Loader::Nx2DkDynamicFps::ProgramId,
+             Core::Nx2PerfSettings::Keys.size());
+    keep_off(UISettings::values.nx2perf.mkw_dyn, Loader::Nx2MkwDynamicFps::ProgramId,
+             Core::Nx2PerfSettings::Keys.size() + 1);
     // The first start selects Balanced, which is measured with Reactive Flushing off (like
     // start-balanced.bat); it is saved with the other settings. An existing file keeps its preset.
     if (first_start) {
