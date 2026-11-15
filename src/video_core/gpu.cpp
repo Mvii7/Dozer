@@ -326,9 +326,19 @@ struct GPU::Impl {
                      reads.load(std::memory_order_relaxed));
         }
         const s64 flush_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
-        const u64 fence = RequestSyncOperation([this, &raster_area]() {
+        // Written on the GPU thread, read after WaitForSyncOperation.
+        s64 started_ns = 0;
+        s64 finished_ns = 0;
+        const u64 fence = RequestSyncOperation([this, &raster_area, stats, &started_ns,
+                                                &finished_ns]() {
             VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::TickWorkFlushes, 1);
+            if (stats) [[unlikely]] {
+                started_ns = Common::Nx2Reactive::NowNs();
+            }
             renderer->ReadRasterizer()->FlushRegion(raster_area.start_address, raster_area.end_address - raster_area.start_address);
+            if (stats) [[unlikely]] {
+                finished_ns = Common::Nx2Reactive::NowNs();
+            }
         });
         gpu_thread.TickGPU(is_async);
         WaitForSyncOperation(fence);
@@ -337,6 +347,23 @@ struct GPU::Impl {
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::SyncFlushes, 1);
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::SyncFlushUs, wait_us);
             Common::Nx2Reactive::Max(Common::Nx2Reactive::Counter::SyncFlushMaxUs, wait_us);
+            using Counter = Common::Nx2Reactive::Counter;
+            Common::Nx2Reactive::Add(Counter::SyncFlushBytes,
+                                     raster_area.end_address - raster_area.start_address);
+            if (started_ns != 0 && finished_ns != 0) {
+                Common::Nx2Reactive::Add(Counter::SyncFlushQueueUs,
+                                         static_cast<u64>(started_ns - flush_ns) / 1000);
+                Common::Nx2Reactive::Add(Counter::SyncFlushRunUs,
+                                         static_cast<u64>(finished_ns - started_ns) / 1000);
+            }
+            static std::atomic<u64> last_end{};
+            const u64 previous_end = last_end.exchange(raster_area.end_address,
+                                                       std::memory_order_relaxed);
+            const u64 near_range = u64{1} << 20;
+            if (raster_area.start_address + near_range >= previous_end &&
+                raster_area.start_address <= previous_end + near_range) {
+                Common::Nx2Reactive::Add(Counter::SyncFlushNear, 1);
+            }
         }
         return raster_area;
     }

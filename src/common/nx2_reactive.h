@@ -121,6 +121,10 @@ enum class Counter : u32 {
     SlowReadsInArea,        ///< Slow reads inside the core's cached flush area (no GPU call)
     SlowReadsMissed,        ///< Slow reads outside it (they called GPU::OnCPURead)
     DisarmLocks,            ///< Slow reads that took the read trap mutex to disarm pages
+    SyncFlushBytes,         ///< Bytes of the areas the sync flushes copied back
+    SyncFlushQueueUs,       ///< Sync flushes: request until the GPU thread started the flush
+    SyncFlushRunUs,         ///< Sync flushes: the flush itself on the GPU thread
+    SyncFlushNear,          ///< Sync flushes whose area was within 1 MiB of the previous one
     Count,
 };
 
@@ -297,7 +301,10 @@ struct Window {
                        w.Get(C::FitInPassLightBarriers)) +
            fmt::format("; slow reads in area {} missed {}; disarm locks {}",
                        w.Get(C::SlowReadsInArea), w.Get(C::SlowReadsMissed),
-                       w.Get(C::DisarmLocks));
+                       w.Get(C::DisarmLocks)) +
+           fmt::format("; sync flush {} KiB, queue {} us, run {} us, near {}",
+                       (w.Get(C::SyncFlushBytes) + 1023) / 1024, w.Get(C::SyncFlushQueueUs),
+                       w.Get(C::SyncFlushRunUs), w.Get(C::SyncFlushNear));
 }
 
 [[nodiscard]] inline std::string FormatWindow(const Window& w) {
