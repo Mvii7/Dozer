@@ -139,12 +139,14 @@ under it.
 | **Safe** | all nine off, Frame generation off, and the GPU shortcuts Dozer keeps on by default off too (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
 | **Custom** | chosen by itself when you change a box by hand | - |
 
-**Per game.** The tab sets the defaults for every game. A game's **Properties > Tuning** tab (right-click
-the game, or **Emulation > Configure Current Game**) can set a box on or off for that game only;
-**Default** follows this tab, except for two games with defaults of their own: **Read traps** are off
-for Donkey Kong Bananza and on for Mario Kart World (not under Safe and Experimental, which keep
-their own). Every other game uses this tab as it is. The preset and frame generation stay global. A game with its own
-boxes starts with them, and Dozer asks to restart when the session's first game used others.
+**Per game.** The tab sets the defaults for every game, except two that start from a preset of
+their own: **Donkey Kong Bananza** runs with **Performance** (read traps off) and **Mario Kart
+World** with **Balanced** (read traps on), whatever the preset here is. A game's **Properties >
+Tuning** tab (right-click the game, or **Emulation > Configure Current Game**) can choose another
+preset for that game, or set a box on or off for it only; **Default** follows what the game starts
+from. The game-specific boxes and frame generation stay as they are here. A game with its own
+settings starts with them, and Dozer asks to restart when the session's first game used others.
+Every other game uses this tab as it is.
 
 **Frame generation.** The tab also has a **Frame generation** box with three choices:
 

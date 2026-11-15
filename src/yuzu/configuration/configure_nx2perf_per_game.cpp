@@ -3,6 +3,8 @@
 
 #include "yuzu/configuration/configure_nx2perf_per_game.h"
 
+#include <array>
+
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -44,16 +46,40 @@ const Entry* EntryOf(std::size_t key) {
     return &entries[key];
 }
 
+// The presets a game can choose (Custom is what changing a box makes).
+constexpr std::array<Perf::Preset, 4> Presets{
+    Perf::Preset::Performance,
+    Perf::Preset::Balanced,
+    Perf::Preset::Reactive,
+    Perf::Preset::Safe,
+};
+
+QString PresetName(Perf::Preset preset) {
+    switch (preset) {
+    case Perf::Preset::Performance:
+        return QObject::tr("Performance");
+    case Perf::Preset::Balanced:
+        return QObject::tr("Balanced");
+    case Perf::Preset::Reactive:
+        return QObject::tr("Experimental");
+    case Perf::Preset::Safe:
+        return QObject::tr("Safe");
+    case Perf::Preset::Custom:
+        break;
+    }
+    return QObject::tr("Custom");
+}
+
 } // Anonymous namespace
 
 ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     : QWidget(parent), title_id{title_id_} {
     auto* layout = new QVBoxLayout(this);
     auto* intro = new QLabel(
-        tr("Settings here replace the Tuning tab's for this game only; Default follows it (Donkey "
-           "Kong Bananza and Mario Kart World have defaults of their own for read traps). They "
-           "take effect when the game starts. If a game has already run since Dozer was opened, "
-           "Dozer will ask to restart before a change applies."),
+        tr("Settings here replace the Tuning tab's for this game only; Default follows it. Donkey "
+           "Kong Bananza and Mario Kart World start from a preset of their own instead of the "
+           "Tuning tab's. They take effect when the game starts. If a game has already run since "
+           "Dozer was opened, Dozer will ask to restart before a change applies."),
         this);
     intro->setWordWrap(true);
     layout->addWidget(intro);
@@ -63,34 +89,76 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     layout->addStretch();
 
     const Perf::Game game = Perf::GameOf(title_id);
-    const Perf::Switches base = Perf::GameBase(UISettings::values.nx2perf, game);
     const auto games = UISettings::values.nx2perf_games.find(title_id);
+    const bool stored = games != UISettings::values.nx2perf_games.end();
+
+    preset = new QComboBox(this);
+    preset->addItem(QString{});
+    for (const Perf::Preset choice : Presets) {
+        preset->addItem(PresetName(choice));
+    }
+    if (stored && games->second.preset) {
+        for (std::size_t i = 0; i < Presets.size(); ++i) {
+            if (Presets[i] == *games->second.preset) {
+                preset->setCurrentIndex(static_cast<int>(i) + 1);
+            }
+        }
+    }
+    form->addRow(tr("Preset"), preset);
+
     for (std::size_t key = 0; key < Perf::KeyCount; ++key) {
         const Entry* entry = EntryOf(key);
         if (entry->game != Perf::Game::Other && entry->game != game) {
             continue;
         }
         auto* combo = new QComboBox(this);
-        const bool global = base.*entry->field;
-        combo->addItem(tr("Default (%1)").arg(global ? tr("On") : tr("Off")));
+        combo->addItem(QString{});
         combo->addItem(tr("On"));
         combo->addItem(tr("Off"));
-        if (games != UISettings::values.nx2perf_games.end() && games->second.boxes[key]) {
+        if (stored && games->second.boxes[key]) {
             combo->setCurrentIndex(*games->second.boxes[key] ? On : Off);
         }
         form->addRow(tr(entry->label), combo);
         rows.push_back({combo, key});
     }
+
+    ShowDefaults();
+    connect(preset, &QComboBox::currentIndexChanged, this, [this] { ShowDefaults(); });
 }
 
 ConfigureNx2PerfPerGame::~ConfigureNx2PerfPerGame() = default;
 
+Perf::Switches ConfigureNx2PerfPerGame::Base() const {
+    Perf::Switches base =
+        Perf::GameBase(UISettings::values.nx2perf, Perf::GameOf(title_id));
+    const int choice = preset->currentIndex();
+    if (choice > 0) {
+        base = Perf::FromPreset(Presets[static_cast<std::size_t>(choice) - 1], base);
+    }
+    return base;
+}
+
+void ConfigureNx2PerfPerGame::ShowDefaults() {
+    const Perf::Switches base = Base();
+    preset->setItemText(0, tr("Default (%1)").arg(PresetName(
+                               Perf::GameBase(UISettings::values.nx2perf, Perf::GameOf(title_id))
+                                   .preset)));
+    for (const Row& row : rows) {
+        const bool on = base.*EntryOf(row.key)->field;
+        row.combo->setItemText(Default, tr("Default (%1)").arg(on ? tr("On") : tr("Off")));
+    }
+}
+
 void ConfigureNx2PerfPerGame::ApplyConfiguration() {
     Perf::Overrides overrides;
+    const int choice = preset->currentIndex();
+    if (choice > 0) {
+        overrides.preset = Presets[static_cast<std::size_t>(choice) - 1];
+    }
     for (const Row& row : rows) {
-        const int choice = row.combo->currentIndex();
-        if (choice != Default) {
-            overrides.boxes[row.key] = choice == On;
+        const int box = row.combo->currentIndex();
+        if (box != Default) {
+            overrides.boxes[row.key] = box == On;
         }
     }
     auto& games = UISettings::values.nx2perf_games;

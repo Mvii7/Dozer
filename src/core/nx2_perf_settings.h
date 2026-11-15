@@ -123,12 +123,16 @@ constexpr const Key& KeyAt(std::size_t index) {
     return index < Keys.size() ? Keys[index] : GameKeys[index - Keys.size()];
 }
 
-/// One game's own choices over the global settings, one slot per KeyAt(): a box it sets, or none
-/// (it follows the global one). The preset stays the global one.
+/// One game's own choices over its defaults: a preset, and a box per KeyAt() slot, each or none
+/// (it follows the default).
 struct Overrides {
+    std::optional<Preset> preset;
     std::array<std::optional<bool>, KeyCount> boxes{};
 
     constexpr bool Empty() const {
+        if (preset) {
+            return false;
+        }
         for (const auto& box : boxes) {
             if (box) {
                 return false;
@@ -140,7 +144,7 @@ struct Overrides {
     bool operator==(const Overrides&) const = default;
 };
 
-/// The global settings with the game's own boxes over them.
+/// `switches` with the overrides' boxes over them (the preset stays).
 constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) {
     for (std::size_t i = 0; i < KeyCount; ++i) {
         if (overrides.boxes[i]) {
@@ -150,10 +154,16 @@ constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) 
     return switches;
 }
 
-/// Reads a game's overrides through `read(key)`: -1 for no override, 0 off, 1 on.
+/// Reads a game's overrides through `read(key)`: -1 for no override, 0 off, 1 on; "preset" is
+/// a preset number (Custom, or anything else, is none).
 template <typename Read>
 Overrides LoadOverrides(Read&& read) {
     Overrides overrides;
+    const int preset = read("preset");
+    if (preset != static_cast<int>(Preset::Custom) && preset >= 0 &&
+        preset <= static_cast<int>(Preset::Performance)) {
+        overrides.preset = static_cast<Preset>(preset);
+    }
     for (std::size_t i = 0; i < KeyCount; ++i) {
         const int value = read(KeyAt(i).name);
         if (value == 0 || value == 1) {
@@ -166,6 +176,7 @@ Overrides LoadOverrides(Read&& read) {
 /// Writes a game's overrides through `write(key, value)`, with the values `LoadOverrides` reads.
 template <typename Write>
 void SaveOverrides(const Overrides& overrides, Write&& write) {
+    write("preset", overrides.preset ? static_cast<int>(*overrides.preset) : -1);
     for (std::size_t i = 0; i < KeyCount; ++i) {
         const auto& box = overrides.boxes[i];
         write(KeyAt(i).name, box ? static_cast<int>(*box) : -1);
@@ -368,33 +379,33 @@ constexpr Game GameOf(u64 program_id) {
     return Game::Other;
 }
 
-/// Overrides' slot of read_traps (Keys[0]).
-inline constexpr std::size_t ReadTrapsKey = 0;
-
-/// What a game gets over the global settings before its own choices: Bananza runs with read traps
-/// off, Mario Kart World needs them on; other games have none. Safe (everything off) and
-/// Experimental (Reactive Flushing instead of read traps) keep their own.
-constexpr Overrides GameDefaults(Game game, Preset preset) {
-    Overrides defaults;
-    if (preset == Preset::Safe || preset == Preset::Reactive) {
-        return defaults;
+/// The preset a game runs with unless told otherwise, instead of the global one: Bananza
+/// Performance (read traps off), Mario Kart World Balanced (read traps on). Other games: none.
+constexpr std::optional<Preset> GamePreset(Game game) {
+    switch (game) {
+    case Game::Bananza:
+        return Preset::Performance;
+    case Game::MarioKartWorld:
+        return Preset::Balanced;
+    case Game::Other:
+        break;
     }
-    if (game == Game::Bananza) {
-        defaults.boxes[ReadTrapsKey] = false;
-    } else if (game == Game::MarioKartWorld) {
-        defaults.boxes[ReadTrapsKey] = true;
-    }
-    return defaults;
+    return std::nullopt;
 }
 
-/// The global settings with the game's built-in defaults: what the game's own choices go over.
+/// The settings a game starts from: its own preset's, else the global ones.
 constexpr Switches GameBase(const Switches& global, Game game) {
-    return WithOverrides(global, GameDefaults(game, global.preset));
+    const auto preset = GamePreset(game);
+    return preset ? FromPreset(*preset, global) : global;
 }
 
-/// The settings a game runs with: global, the game's defaults, then its own choices.
+/// The settings a game runs with: its base, then its own preset and boxes.
 constexpr Switches ForGame(const Switches& global, Game game, const Overrides& own) {
-    return WithOverrides(GameBase(global, game), own);
+    Switches switches = GameBase(global, game);
+    if (own.preset) {
+        switches = FromPreset(*own.preset, switches);
+    }
+    return WithOverrides(switches, own);
 }
 
 struct Var {
