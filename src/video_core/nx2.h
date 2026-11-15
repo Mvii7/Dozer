@@ -37,7 +37,7 @@ inline bool Nx2MembarEnabled() {
 inline std::atomic<u64> g_nx2_program_id{0};
 
 // Donkey Kong Bananza (the id Loader::Nx2DkDynamicFps patches), whose frame pacing
-// EDEN_NX2_BANANZA_MODE_PACE and EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD are for.
+// EDEN_NX2_DK_MODE_PACE and EDEN_NX2_DK_PRESENT_INTERVAL_WORD are for.
 inline bool Nx2IsBananza() {
     return g_nx2_program_id.load(std::memory_order_relaxed) == 0x040074A01BF12000ULL;
 }

@@ -15,7 +15,7 @@
 
 namespace VideoCommon::Nx2ModePace {
 
-// The decision part of EDEN_NX2_BANANZA_MODE_PACE=2 (v2.1; nx2_mode_pace.h), beside v2's Controller, which
+// The decision part of EDEN_NX2_DK_MODE_PACE=2 (v2.1; nx2_mode_pace.h), beside v2's Controller, which
 // =1 keeps as it is (src/tests/video_core/nx2_mode_pace21.cpp).
 //
 // What v2 showed in Bananza (02.11 runs 73 and 79, 60 / 30 / 20 = 1 / 2 / 3 vblanks):
@@ -150,7 +150,7 @@ struct Params21 {
     double mode_quiet60_s = 0.5;
 };
 
-/// EDEN_NX2_BANANZA_MODE_PACE_PROBE with =2: <down|to20|rel20|rel60|cycle>:<1-3600 s> (cycle: down at 60,
+/// EDEN_NX2_DK_MODE_PACE_PROBE with =2: <down|to20|rel20|rel60|cycle>:<1-3600 s> (cycle: down at 60,
 /// rel20 at 20).
 struct Probe21 {
     Push21 kind{Push21::None};

@@ -19,12 +19,12 @@
 // these settings.
 //
 // Every switch is read once per process, most of them into a function's static the first time
-// a game reaches it (EDEN_NX2_BACK_STAGES, ACQUIRE_PEEK, BANANZA_PRESENT_INTERVAL_WORD, BANANZA_MODE_PACE,
-// PACE_SPIN_US, DK_DYN, OSD, READ_TRAPS); JIT_SAME, FRONT_MACRO_LEAN and FG_TIMED are read again
+// a game reaches it (EDEN_NX2_BACK_STAGES, ACQUIRE_PEEK, DK_PRESENT_INTERVAL_WORD, DK_MODE_PACE,
+// DK_PACE_SPIN_US, DK_DYN, OSD, READ_TRAPS); JIT_SAME, FRONT_MACRO_LEAN and FG_TIMED are read again
 // at each boot.
 // So the variables are set once, at the first boot, and a later boot that would need others (a
 // changed setting, or a game's own variables missing) restarts the program for that game. A game's
-// own variables left on act only on that game (the BANANZA_ ones and the patches
+// own variables left on act only on that game (the DK_ ones and the patches
 // check its title), so an unrelated game after it does not restart.
 namespace Core::Nx2PerfSettings {
 
@@ -462,15 +462,15 @@ inline constexpr std::array<std::string_view, 14> Names{
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
     "EDEN_NX2_OSD",           "EDEN_NX2_DK_DYN",
-    "EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD", "EDEN_NX2_BANANZA_MODE_PACE",
-    "EDEN_NX2_BANANZA_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
+    "EDEN_NX2_DK_PRESENT_INTERVAL_WORD", "EDEN_NX2_DK_MODE_PACE",
+    "EDEN_NX2_DK_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
 };
 
 /// Whether a variable only acts on one game (its patch or its pacing checks the title).
 constexpr bool IsGameOnly(std::string_view name) {
     return name == "EDEN_NX2_DK_DYN" || name == "EDEN_NX2_MKW_DYN" ||
-           name.starts_with("EDEN_NX2_BANANZA_");
+           name.starts_with("EDEN_NX2_DK_");
 }
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -512,9 +512,9 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
         if (switches.dk_dyn) {
             vars.push_back({"EDEN_NX2_DK_DYN", "1"});
         }
-        vars.push_back({"EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD", "12:16:4"});
-        vars.push_back({"EDEN_NX2_BANANZA_MODE_PACE", "2"});
-        vars.push_back({"EDEN_NX2_BANANZA_PACE_SPIN_US", "1500"});
+        vars.push_back({"EDEN_NX2_DK_PRESENT_INTERVAL_WORD", "12:16:4"});
+        vars.push_back({"EDEN_NX2_DK_MODE_PACE", "2"});
+        vars.push_back({"EDEN_NX2_DK_PACE_SPIN_US", "1500"});
     }
     if (game == Game::MarioKartWorld && switches.mkw_dyn) {
         vars.push_back({"EDEN_NX2_MKW_DYN", "1"});

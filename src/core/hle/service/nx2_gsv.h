@@ -1210,7 +1210,7 @@ private:
             if (!m_pace_one_logged) {
                 m_pace_one_logged = true;
                 LOG_INFO(Service, "nx2:vi2 dynamic FPS (EDEN_NX2_DK_DYN, EDEN_NX2_MKW_DYN): "
-                                  "presents paced to every vblank; EDEN_NX2_BANANZA_MODE_PACE and the "
+                                  "presents paced to every vblank; EDEN_NX2_DK_MODE_PACE and the "
                                   "present interval set aside");
                 if (VideoCommon::Nx2ModeGov::Enabled()) {
                     LOG_WARNING(Service, "nx2:vi2 EDEN_NX2_MODE_GOV stays on with EDEN_NX2_DK_DYN: "
@@ -1239,7 +1239,7 @@ private:
         }
         if (!m_pace_one && VideoCommon::Nx2ModePace::Enabled()) [[unlikely]] {
             VideoCommon::Nx2ModePace::Present(PresentInterval(w), entered, composited, paced);
-            // EDEN_NX2_BANANZA_MODE_PACE=2: a released present lets the next one come early (a fast frame
+            // EDEN_NX2_DK_MODE_PACE=2: a released present lets the next one come early (a fast frame
             // to the game, which is what takes it up); 0 with =1.
             if (const auto release = VideoCommon::Nx2ModePace::Release();
                 release.count() > 0 && VblankGridMode() == 0) {
@@ -1467,7 +1467,7 @@ private:
 
     // EDEN_NX2_PRESENT_INTERVAL=<n> (1-4): hold each present at least n vblanks after the previous
     // one (at most 60/n fps; 2 is the fixed 30 fps of speed limit 50 without changing the speed
-    // limit). EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD=<word>[:<shift>[:<bits>]]: take n from that word of
+    // limit). EDEN_NX2_DK_PRESENT_INTERVAL_WORD=<word>[:<shift>[:<bits>]]: take n from that word of
     // the 229 request (0 counts as 1, never below EDEN_NX2_PRESENT_INTERVAL), once
     // EDEN_NX2_PRESENT_DIAG has shown which word carries the game's swap interval. Neither set:
     // 1, the pacing as before.
@@ -1485,7 +1485,7 @@ private:
             if (const char* text = std::getenv("EDEN_NX2_PRESENT_INTERVAL")) {
                 s.minimum = static_cast<u32>(std::clamp(std::strtol(text, nullptr, 10), 1L, 4L));
             }
-            if (const char* text = std::getenv("EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD")) {
+            if (const char* text = std::getenv("EDEN_NX2_DK_PRESENT_INTERVAL_WORD")) {
                 char* end{};
                 const unsigned long word = std::strtoul(text, &end, 10);
                 unsigned long shift = 0;
@@ -1514,9 +1514,9 @@ private:
     }
 
     // EDEN_NX2_PRESENT_RATE=1 (off by default): pace by the refresh rate in the low half of the
-    // swap interval word too (nx2_present_rate.h). Needs EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD with the
+    // swap interval word too (nx2_present_rate.h). Needs EDEN_NX2_DK_PRESENT_INTERVAL_WORD with the
     // interval in the high half (12:16:4); off with EDEN_NX2_VBLANK_GRID (a 60 Hz grid, the vsync
-    // events' too) and EDEN_NX2_BANANZA_MODE_PACE (its holds and thresholds are 60 Hz vblanks).
+    // events' too) and EDEN_NX2_DK_MODE_PACE (its holds and thresholds are 60 Hz vblanks).
     static bool PresentRateOn() {
         static const bool on = [] {
             const char* text = std::getenv("EDEN_NX2_PRESENT_RATE");
@@ -1525,7 +1525,7 @@ private:
             }
             const IntervalSource& source = PresentIntervalSource();
             if (source.word == 0 || source.shift < 16) {
-                LOG_WARNING(Service, "EDEN_NX2_PRESENT_RATE needs EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD "
+                LOG_WARNING(Service, "EDEN_NX2_PRESENT_RATE needs EDEN_NX2_DK_PRESENT_INTERVAL_WORD "
                                      "with the interval in the high half (12:16:4): off");
                 return false;
             }
@@ -1535,7 +1535,7 @@ private:
                 return false;
             }
             if (VideoCommon::Nx2ModePace::Enabled()) {
-                LOG_WARNING(Service, "EDEN_NX2_PRESENT_RATE with EDEN_NX2_BANANZA_MODE_PACE (its holds are "
+                LOG_WARNING(Service, "EDEN_NX2_PRESENT_RATE with EDEN_NX2_DK_MODE_PACE (its holds are "
                                      "60 Hz vblanks): off");
                 return false;
             }
@@ -1624,7 +1624,7 @@ private:
     // average fence and pacing waits, the presents per requested interval (PresentInterval), the
     // GPU pipeline's busy time (Nx2BusyClock: what EDEN_NX2_GPU_BUSY_CLOCK would time; "-" with
     // single core), the vsync ticks, how often each vi2 command ran and the full values of the
-    // swap interval word (EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD's, else word 12: (k << 16) | 60 in
+    // swap interval word (EDEN_NX2_DK_PRESENT_INTERVAL_WORD's, else word 12: (k << 16) | 60 in
     // Bananza's 60/30/20 modes, maybe (1 << 16) | n for n Hz under VRR) with their counts, at most
     // 4 and "other"; (c) every 600 presents, the values each 229 word took so far; (d) each vi2
     // request the first time its data words are seen (the first 256); (e) after the first 200

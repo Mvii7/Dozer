@@ -90,9 +90,9 @@ set EDEN_NX2_ACQUIRE_PEEK=1
 set EDEN_NX2_JIT_SAME=1
 set EDEN_NX2_FRONT_MACRO_LEAN=1
 rem Donkey Kong Bananza: follow the game's own 60/30/20 fps choice at the right speed.
-set EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD=12:16:4
-set EDEN_NX2_BANANZA_MODE_PACE=2
-set EDEN_NX2_BANANZA_PACE_SPIN_US=1500
+set EDEN_NX2_DK_PRESENT_INTERVAL_WORD=12:16:4
+set EDEN_NX2_DK_MODE_PACE=2
+set EDEN_NX2_DK_PACE_SPIN_US=1500
 rem Donkey Kong Bananza dynamic frame rate (DK_DYN above; 0 = the game's own 60/30 rule).
 set EDEN_NX2_DK_DYN=%DK_DYN%
 rem Mario Kart World dynamic frame rate (MKW_DYN above).
