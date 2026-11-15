@@ -8,6 +8,8 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+## Dozer 0.1.3 (`v0.1.3`)
+
 - Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
   and boxes as that game runs them. A setting changed for the game gets a cross that resets it to
   the global one. Donkey Kong Bananza starts with the Performance preset (read traps off) instead
