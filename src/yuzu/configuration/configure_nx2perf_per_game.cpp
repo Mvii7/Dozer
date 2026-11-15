@@ -124,12 +124,12 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         Refresh();
     });
 
-    // The preset box and the crosses are one height, as in the other tabs' rows.
+    // The preset box and the crosses are one row_height, as in the other tabs' rows.
     preset->ensurePolished();
     preset_reset->ensurePolished();
-    const int height = std::max(preset->sizeHint().height(), preset_reset->sizeHint().height());
-    preset->setMinimumHeight(height);
-    preset_reset->setFixedSize(height, height);
+    const int row_height = std::max(preset->sizeHint().row_height(), preset_reset->sizeHint().row_height());
+    preset->setMinimumHeight(row_height);
+    preset_reset->setFixedSize(row_height, row_height);
 
     for (std::size_t key = 0; key < Perf::KeyCount; ++key) {
         const Entry* entry = EntryOf(key);
@@ -138,7 +138,7 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         }
         auto* box = new QCheckBox(this);
         auto* reset = CreateResetButton(this);
-        reset->setFixedSize(height, height);
+        reset->setFixedSize(row_height, row_height);
         auto* row_layout = new QHBoxLayout;
         row_layout->addWidget(box, 1);
         row_layout->addWidget(reset);

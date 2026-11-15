@@ -385,11 +385,11 @@ void QtConfig::ReadNx2PerfValues() {
     }
     EndArray();
     // The dynamic frame rate boxes were global once: a game that had its box off keeps it off.
-    const auto keep_off = [](bool& global, u64 program_id, std::size_t slot) {
-        if (!global) {
+    const auto keep_off = [](bool& box, u64 program_id, std::size_t slot) {
+        if (!box) {
             auto& own = UISettings::values.nx2perf_games[program_id];
             own.boxes[slot] = own.boxes[slot].value_or(false);
-            global = true;
+            box = true;
         }
     };
     keep_off(UISettings::values.nx2perf.dk_dyn, Loader::Nx2DkDynamicFps::ProgramId,
