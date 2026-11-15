@@ -8,7 +8,7 @@
 // EDEN_NX2_PRESENT_RATE=1 (off by default; nx2_gsv.h): the vi2 229 swap interval word is
 // (k << 16) | n, k vblanks a frame at n Hz. Bananza's 60/30/20 modes send n = 60; its VRR path
 // (vi2 107 answered "supported") sends 41-59. Without the switch the pacing reads only k
-// (EDEN_NX2_PRESENT_INTERVAL_WORD=12:16:4) and paces k vblanks of 60 Hz; with it, a rate of 30-240
+// (EDEN_NX2_DKB_PRESENT_INTERVAL_WORD=12:16:4) and paces k vblanks of 60 Hz; with it, a rate of 30-240
 // Hz other than 60 paces k vblanks of n Hz instead (Duck912 f8d38607b6, moceure/eden-nx2-android
 // 809670e3a5 pace by both always). src/tests/core/nx2_present_rate.cpp.
 namespace Service::Nx2PresentRate {

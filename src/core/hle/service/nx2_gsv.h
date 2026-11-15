@@ -1033,7 +1033,7 @@ public:
         } else {
             static_cast<void>(ReplyOwnCommands()); // its "needs the table" warning
         }
-        // EDEN_NX2_DK_DYN applied (nx2_dk_dyn_pace.h): 107 reports VRR, presents are paced to
+        // EDEN_NX2_DKB_DYN applied (nx2_dk_dyn_pace.h): 107 reports VRR, presents are paced to
         // every vblank (unless EDEN_NX2_PACE_ONE=0).
         const bool dk_dyn = Core::g_nx2_dk_dyn_applied.load(std::memory_order_relaxed);
         const u64 application = system.GetApplicationProcessProgramID();
@@ -1045,11 +1045,11 @@ public:
         if (Nx2DkDynPace::ReportVrr(dk_dyn, application)) {
             if (GetReplies() == nullptr) {
                 static const FunctionInfo vrr[] = {
-                    {107, &INx2Vi2Session::ReportVrrSupported, "ReportVrrSupported (EDEN_NX2_DK_DYN)"},
+                    {107, &INx2Vi2Session::ReportVrrSupported, "ReportVrrSupported (EDEN_NX2_DKB_DYN)"},
                 };
                 RegisterHandlersTipc(vrr);
             } else {
-                LOG_WARNING(Service, "nx2:vi2 EDEN_NX2_DK_DYN: 107 answers from the reply table "
+                LOG_WARNING(Service, "nx2:vi2 EDEN_NX2_DKB_DYN: 107 answers from the reply table "
                                      "(EDEN_NX2_VI2_REPLY), not with VRR support{}",
                             m_pace_one ? "; presents are still paced to every vblank" : "");
             }
@@ -1209,11 +1209,11 @@ private:
         if (m_pace_one) [[unlikely]] {
             if (!m_pace_one_logged) {
                 m_pace_one_logged = true;
-                LOG_INFO(Service, "nx2:vi2 dynamic FPS (EDEN_NX2_DK_DYN, EDEN_NX2_MKW_DYN): "
-                                  "presents paced to every vblank; EDEN_NX2_MODE_PACE and the "
+                LOG_INFO(Service, "nx2:vi2 dynamic FPS (EDEN_NX2_DKB_DYN, EDEN_NX2_MKW_DYN): "
+                                  "presents paced to every vblank; EDEN_NX2_DKB_MODE_PACE and the "
                                   "present interval set aside");
                 if (VideoCommon::Nx2ModeGov::Enabled()) {
-                    LOG_WARNING(Service, "nx2:vi2 EDEN_NX2_MODE_GOV stays on with EDEN_NX2_DK_DYN: "
+                    LOG_WARNING(Service, "nx2:vi2 EDEN_NX2_MODE_GOV stays on with EDEN_NX2_DKB_DYN: "
                                          "its GPU timer steers the patched game too");
                 }
             }
@@ -1239,7 +1239,7 @@ private:
         }
         if (!m_pace_one && VideoCommon::Nx2ModePace::Enabled()) [[unlikely]] {
             VideoCommon::Nx2ModePace::Present(PresentInterval(w), entered, composited, paced);
-            // EDEN_NX2_MODE_PACE=2: a released present lets the next one come early (a fast frame
+            // EDEN_NX2_DKB_MODE_PACE=2: a released present lets the next one come early (a fast frame
             // to the game, which is what takes it up); 0 with =1.
             if (const auto release = VideoCommon::Nx2ModePace::Release();
                 release.count() > 0 && VblankGridMode() == 0) {
@@ -1370,7 +1370,7 @@ private:
         u32 presents{}, ran_ahead{};
         u32 rate_presents{}; // EDEN_NX2_PRESENT_RATE: paced at a rate other than 60 Hz
         std::chrono::steady_clock::time_point last_present{};
-        Nx2DkDynPace::StepEstimate dyn_step{}; // EDEN_NX2_DK_DYN applied
+        Nx2DkDynPace::StepEstimate dyn_step{}; // EDEN_NX2_DKB_DYN applied
         u64 output_frames{}; // Core::g_output_frames at the start
         u32 samples{};       // frame times in m_frame_samples
     } m_stats{};
@@ -1467,7 +1467,7 @@ private:
 
     // EDEN_NX2_PRESENT_INTERVAL=<n> (1-4): hold each present at least n vblanks after the previous
     // one (at most 60/n fps; 2 is the fixed 30 fps of speed limit 50 without changing the speed
-    // limit). EDEN_NX2_PRESENT_INTERVAL_WORD=<word>[:<shift>[:<bits>]]: take n from that word of
+    // limit). EDEN_NX2_DKB_PRESENT_INTERVAL_WORD=<word>[:<shift>[:<bits>]]: take n from that word of
     // the 229 request (0 counts as 1, never below EDEN_NX2_PRESENT_INTERVAL), once
     // EDEN_NX2_PRESENT_DIAG has shown which word carries the game's swap interval. Neither set:
     // 1, the pacing as before.
@@ -1485,7 +1485,7 @@ private:
             if (const char* text = std::getenv("EDEN_NX2_PRESENT_INTERVAL")) {
                 s.minimum = static_cast<u32>(std::clamp(std::strtol(text, nullptr, 10), 1L, 4L));
             }
-            if (const char* text = std::getenv("EDEN_NX2_PRESENT_INTERVAL_WORD")) {
+            if (const char* text = std::getenv("EDEN_NX2_DKB_PRESENT_INTERVAL_WORD")) {
                 char* end{};
                 const unsigned long word = std::strtoul(text, &end, 10);
                 unsigned long shift = 0;
@@ -1514,9 +1514,9 @@ private:
     }
 
     // EDEN_NX2_PRESENT_RATE=1 (off by default): pace by the refresh rate in the low half of the
-    // swap interval word too (nx2_present_rate.h). Needs EDEN_NX2_PRESENT_INTERVAL_WORD with the
+    // swap interval word too (nx2_present_rate.h). Needs EDEN_NX2_DKB_PRESENT_INTERVAL_WORD with the
     // interval in the high half (12:16:4); off with EDEN_NX2_VBLANK_GRID (a 60 Hz grid, the vsync
-    // events' too) and EDEN_NX2_MODE_PACE (its holds and thresholds are 60 Hz vblanks).
+    // events' too) and EDEN_NX2_DKB_MODE_PACE (its holds and thresholds are 60 Hz vblanks).
     static bool PresentRateOn() {
         static const bool on = [] {
             const char* text = std::getenv("EDEN_NX2_PRESENT_RATE");
@@ -1525,7 +1525,7 @@ private:
             }
             const IntervalSource& source = PresentIntervalSource();
             if (source.word == 0 || source.shift < 16) {
-                LOG_WARNING(Service, "EDEN_NX2_PRESENT_RATE needs EDEN_NX2_PRESENT_INTERVAL_WORD "
+                LOG_WARNING(Service, "EDEN_NX2_PRESENT_RATE needs EDEN_NX2_DKB_PRESENT_INTERVAL_WORD "
                                      "with the interval in the high half (12:16:4): off");
                 return false;
             }
@@ -1535,7 +1535,7 @@ private:
                 return false;
             }
             if (VideoCommon::Nx2ModePace::Enabled()) {
-                LOG_WARNING(Service, "EDEN_NX2_PRESENT_RATE with EDEN_NX2_MODE_PACE (its holds are "
+                LOG_WARNING(Service, "EDEN_NX2_PRESENT_RATE with EDEN_NX2_DKB_MODE_PACE (its holds are "
                                      "60 Hz vblanks): off");
                 return false;
             }
@@ -1556,7 +1556,7 @@ private:
     static u32 PresentInterval(const u32* w) {
         const IntervalSource& source = PresentIntervalSource();
         u32 vblanks = source.minimum;
-        if (source.word != 0) {
+        if (source.word != 0 && Tegra::Nx2IsBananza()) {
             const u32 value = (w[source.word] >> source.shift) & source.mask;
             vblanks = (std::max)(vblanks, std::clamp(value, 1U, 4U));
         }
@@ -1624,7 +1624,7 @@ private:
     // average fence and pacing waits, the presents per requested interval (PresentInterval), the
     // GPU pipeline's busy time (Nx2BusyClock: what EDEN_NX2_GPU_BUSY_CLOCK would time; "-" with
     // single core), the vsync ticks, how often each vi2 command ran and the full values of the
-    // swap interval word (EDEN_NX2_PRESENT_INTERVAL_WORD's, else word 12: (k << 16) | 60 in
+    // swap interval word (EDEN_NX2_DKB_PRESENT_INTERVAL_WORD's, else word 12: (k << 16) | 60 in
     // Bananza's 60/30/20 modes, maybe (1 << 16) | n for n Hz under VRR) with their counts, at most
     // 4 and "other"; (c) every 600 presents, the values each 229 word took so far; (d) each vi2
     // request the first time its data words are seen (the first 256); (e) after the first 200
@@ -2154,19 +2154,19 @@ private:
         TipcReplyWords(ctx, {output.enabled ? 2U : 1U, 0, output.peak_luminance});
     }
 
-    // 107 with EDEN_NX2_DK_DYN applied: VRR supported (Nx2DkDynPace::VrrReply). Auto-stubbed (an
+    // 107 with EDEN_NX2_DKB_DYN applied: VRR supported (Nx2DkDynPace::VrrReply). Auto-stubbed (an
     // empty success: no VRR) otherwise.
     void ReportVrrSupported(HLERequestContext& ctx) {
         if (!m_vrr_reported) {
             m_vrr_reported = true;
-            LOG_INFO(Service, "nx2:vi2 107: VRR supported, reply {} (EDEN_NX2_DK_DYN applied)",
+            LOG_INFO(Service, "nx2:vi2 107: VRR supported, reply {} (EDEN_NX2_DKB_DYN applied)",
                      Nx2Vi2Reply::FormatWords(std::vector<u32>(Nx2DkDynPace::VrrReply.begin(),
                                                                Nx2DkDynPace::VrrReply.end())));
         }
         TipcReplyWords(ctx, Nx2DkDynPace::VrrReply);
     }
 
-    // EDEN_NX2_DK_DYN applied (Nx2DkDynPace::PaceOne): set as the session opens.
+    // EDEN_NX2_DKB_DYN applied (Nx2DkDynPace::PaceOne): set as the session opens.
     bool m_pace_one{};
     // The patch applied to the application (Nx2DkDynPace::ReportVrr): EDEN_NX2_OSD's speed model.
     bool m_dk_dyn_applied{};

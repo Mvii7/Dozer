@@ -78,7 +78,7 @@ struct Text {
         PutStep(Step);
     }
 
-    // The 40 fps check (EDEN_NX2_DK_DYN_MIN_FPS): movz w14, #40; ccmp w1, w14, #0, eq.
+    // The 40 fps check (EDEN_NX2_DKB_DYN_MIN_FPS): movz w14, #40; ccmp w1, w14, #0, eq.
     void PutLowTarget(size_t controller) {
         words[controller + 59] = 0x5280050E;
         words[controller + 60] = 0x7A4E0020;
@@ -307,7 +307,7 @@ TEST_CASE("Nx2DkDynamicFps: the switch, the title and the module", "[core]") {
     REQUIRE(text.words[Controller] == 0xF9407429);
 }
 
-TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DK_DYN_MIN_FPS's value", "[core]") {
+TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DKB_DYN_MIN_FPS's value", "[core]") {
     const auto none = [](const char* value) {
         const MinFps parsed = ParseMinFps(value);
         REQUIRE(parsed.fps == 0);
@@ -346,7 +346,7 @@ TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DK_DYN_MIN_FPS's value", "[core]") {
     }
 }
 
-TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DK_DYN_MIN_FPS: one word, nothing else", "[core]") {
+TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DKB_DYN_MIN_FPS: one word, nothing else", "[core]") {
     // Unset (0): the text exactly as before the switch existed (the 40 kept).
     Text plain;
     plain.PutAll();
@@ -388,7 +388,7 @@ TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DK_DYN_MIN_FPS: one word, nothing else", "[
     }
 }
 
-TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DK_DYN_MIN_FPS where the words differ", "[core]") {
+TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DKB_DYN_MIN_FPS where the words differ", "[core]") {
     Text reference;
     reference.PutAll();
     reference.PutLowTarget(Controller);
@@ -436,7 +436,7 @@ TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DK_DYN_MIN_FPS where the words differ", "[c
     }
 }
 
-TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DK_DYN_MIN_FPS through the loader's entry", "[core]") {
+TEST_CASE("Nx2DkDynamicFps: EDEN_NX2_DKB_DYN_MIN_FPS through the loader's entry", "[core]") {
     {
         Text text;
         text.PutAll();

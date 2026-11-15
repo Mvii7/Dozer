@@ -19,11 +19,13 @@
 // these settings.
 //
 // Every switch is read once per process, most of them into a function's static the first time
-// a game reaches it (EDEN_NX2_BACK_STAGES, ACQUIRE_PEEK, PRESENT_INTERVAL_WORD, MODE_PACE,
-// PACE_SPIN_US, DK_DYN, OSD, READ_TRAPS); JIT_SAME, FRONT_MACRO_LEAN and FG_TIMED are read again
+// a game reaches it (EDEN_NX2_BACK_STAGES, ACQUIRE_PEEK, DKB_PRESENT_INTERVAL_WORD, DKB_MODE_PACE,
+// DKB_PACE_SPIN_US, DKB_DYN, OSD, READ_TRAPS); JIT_SAME, FRONT_MACRO_LEAN and FG_TIMED are read again
 // at each boot.
 // So the variables are set once, at the first boot, and a later boot that would need others (a
-// changed setting, or Bananza after another game and back) restarts the program for that game.
+// changed setting, or a game's own variables missing) restarts the program for that game. A game's
+// own variables left on act only on that game (the DK_ ones and the patches
+// check its title), so an unrelated game after it does not restart.
 namespace Core::Nx2PerfSettings {
 
 /// The launchers' setups, and Custom: a box changed by hand. The stored numbers stay as they
@@ -61,7 +63,7 @@ struct Switches {
     bool fg_timed = true;          ///< EDEN_NX2_FG_TIMED=1
     bool osd = true;               ///< EDEN_NX2_OSD=1
     // Game-specific: no preset sets or clears these (the Safe preset leaves them as they are).
-    bool dk_dyn = true;            ///< EDEN_NX2_DK_DYN=1, Bananza only
+    bool dk_dyn = true;            ///< EDEN_NX2_DKB_DYN=1, Bananza only
     bool mkw_dyn = true;           ///< EDEN_NX2_MKW_DYN=1, Mario Kart World only
     Preset preset = Preset::Performance;
 
@@ -459,11 +461,17 @@ inline constexpr std::array<std::string_view, 14> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
-    "EDEN_NX2_OSD",           "EDEN_NX2_DK_DYN",
-    "EDEN_NX2_PRESENT_INTERVAL_WORD", "EDEN_NX2_MODE_PACE",
-    "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
+    "EDEN_NX2_OSD",           "EDEN_NX2_DKB_DYN",
+    "EDEN_NX2_DKB_PRESENT_INTERVAL_WORD", "EDEN_NX2_DKB_MODE_PACE",
+    "EDEN_NX2_DKB_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
 };
+
+/// Whether a variable only acts on one game (its patch or its pacing checks the title).
+constexpr bool IsGameOnly(std::string_view name) {
+    return name == "EDEN_NX2_DKB_DYN" || name == "EDEN_NX2_MKW_DYN" ||
+           name.starts_with("EDEN_NX2_DKB_");
+}
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
 template <typename F>
@@ -502,11 +510,11 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
     }
     if (game == Game::Bananza) {
         if (switches.dk_dyn) {
-            vars.push_back({"EDEN_NX2_DK_DYN", "1"});
+            vars.push_back({"EDEN_NX2_DKB_DYN", "1"});
         }
-        vars.push_back({"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"});
-        vars.push_back({"EDEN_NX2_MODE_PACE", "2"});
-        vars.push_back({"EDEN_NX2_PACE_SPIN_US", "1500"});
+        vars.push_back({"EDEN_NX2_DKB_PRESENT_INTERVAL_WORD", "12:16:4"});
+        vars.push_back({"EDEN_NX2_DKB_MODE_PACE", "2"});
+        vars.push_back({"EDEN_NX2_DKB_PACE_SPIN_US", "1500"});
     }
     if (game == Game::MarioKartWorld && switches.mkw_dyn) {
         vars.push_back({"EDEN_NX2_MKW_DYN", "1"});

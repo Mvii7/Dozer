@@ -161,15 +161,24 @@ Boot Prepare(QWidget* parent, u64 program_id, const QString& game, bool fullscre
         return Boot::Go;
     }
 
+    // A game's own variables only act on that game, so one after it just carries them along.
+    if (kind == Perf::Game::Other) {
+        std::vector<Perf::Var> carried;
+        for (const Perf::Var& var : g_applied->plan) {
+            if (!Perf::IsGameOnly(var.name)) {
+                carried.push_back(var);
+            }
+        }
+        if (carried == plan) {
+            return Boot::Go;
+        }
+    }
+
     QString why;
     if (kind != Perf::Game::Other && kind != g_applied->game) {
         why = QObject::tr("%1's own settings are off in this session, which started with "
                           "another game.")
                   .arg(QString::fromUtf8(GameName(kind)));
-    } else if (kind == Perf::Game::Other && g_applied->game != Perf::Game::Other) {
-        why = QObject::tr("%1's own settings are still on in this session; they are only for "
-                          "that game.")
-                  .arg(QString::fromUtf8(GameName(g_applied->game)));
     } else if (program_id != g_applied->program_id) {
         why = QObject::tr("This game's tuning settings differ from this session's first game's.");
     } else {

@@ -177,7 +177,7 @@ Below the preset are the nine settings, in two groups:
 
 These are the switches `start-balanced.bat` sets ("Launchers", "Main switches"). The program
 sets them in its own environment just before a game starts. The dynamic frame rate settings
-(`DK_DYN=1`, `MKW_DYN=1`) are per game: a **Dynamic frame rate** box in the Tuning tab of the
+(`DKB_DYN=1`, `MKW_DYN=1`) are per game: a **Dynamic frame rate** box in the Tuning tab of the
 game's Properties, for Bananza (040074A01BF12000) and Mario Kart World (0400C3F00006E000), the ones
 the patches check; for any other game they stay off. They are on until unticked, no preset
 changes them (not even Safe), and they have no global setting. For Bananza the
@@ -251,11 +251,11 @@ changed:
 | `GAME=` | the game to start (a dragged file wins; this line wins over `Games`) |
 | `CONFIG=` | another `sdl2-config` .ini for this launcher; empty = automatic (above; the reactive launcher uses `sdl2-config-reactive.ini`) |
 | `FULLSCREEN=-f` | full screen; empty = window |
-| `DK_DYN=1` | Bananza dynamic frame rate patch (below); `0` = off |
+| `DKB_DYN=1` | Bananza dynamic frame rate patch (below); `0` = off |
 | `MKW_DYN=1` | Mario Kart World dynamic frame rate patch (below); `0` = off |
 | `OSD=1` | FPS / speed display through RTSS; `0` = off |
 
-(`DK_DYN=` and `OSD=` are in the balanced, performance and reactive launchers only.) If the path of your
+(`DKB_DYN=` and `OSD=` are in the balanced, performance and reactive launchers only.) If the path of your
 game contains `&`, `^`, `,`, `;` or `=` but no space, Windows passes a dragged file badly: put
 the game in `Games` or write it in the `GAME=` line instead.
 A launcher stops with a message when its `CONFIG=` file does not exist (dozer-cli would quietly
@@ -266,8 +266,8 @@ error. Take the launchers from the release zip: they need Windows line endings (
   the GPU thread's back as stages (`BACK_STAGES=1`, `BACK_CUTS=a`), `ACQUIRE_PEEK=1`,
   `JIT_SAME=1`, `FRONT_MACRO_LEAN=1`; Bananza's own 60/30/20 fps choice followed at the right
   speed (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`, `PACE_SPIN_US=1500`); the dynamic
-  frame rate patch (`DK_DYN=1`; while it is applied, the two pacing lines above are set aside:
-  they act with `DK_DYN=0` or when the patch does not apply); timed FSR3 generated frames
+  frame rate patch (`DKB_DYN=1`; while it is applied, the two pacing lines above are set aside:
+  they act with `DKB_DYN=0` or when the patch does not apply); timed FSR3 generated frames
   (`FG_TIMED=1`, only does something with frame generation on); the RTSS display (`OSD=1`). The
   Bananza-specific lines are marked; for other games use the safe launcher, or remove them. It
   is meant for reactive flushing **off**: it turns it off in an `sdl2-config.ini` it makes,
@@ -313,8 +313,8 @@ without a launcher; the menu program sets the recommended ones from its Tuning t
 | `JIT_SAME=1`, `FRONT_MACRO_LEAN=1` | off | the front's macro JIT drops writes that change nothing |
 | `PRESENT_INTERVAL_WORD=12:16:4` | off | presents follow the game's own frame interval (Bananza) |
 | `MODE_PACE=2`, `PACE_SPIN_US=1500` | off | steers Bananza's 60/30/20 fps mode by frame timing |
-| `DK_DYN=1` | off | Bananza dynamic frame rate patch, in memory (below) |
-| `DK_DYN_MIN_FPS=<n>` | 40 | the patch's lower limit |
+| `DKB_DYN=1` | off | Bananza dynamic frame rate patch, in memory (below) |
+| `DKB_DYN_MIN_FPS=<n>` | 40 | the patch's lower limit |
 | `FG_TIMED=1` | off | FSR3 generated frames blended for the time they are shown |
 | `OSD=1` | off | game FPS, display FPS (with frame generation's multiplier) and speed in RTSS |
 | `LIGHT_DRAW`, `LIGHT_UNIFORM`, `UBO_*`, `SYNC_*`, `VERTEX_*`, `RESET_*`, ... (about 60) | **on** | per-draw shortcuts on the GPU thread; `=0` is the 2.0.0 code path, many accept `=2` to check themselves and log |
@@ -326,17 +326,17 @@ without a launcher; the menu program sets the recommended ones from its Tuning t
 
 ## Donkey Kong Bananza dynamic frame rate (DK-DYN)
 
-`EDEN_NX2_DK_DYN=1` applies a game-specific patch: when Bananza's main module is loaded, a few
+`EDEN_NX2_DKB_DYN=1` applies a game-specific patch: when Bananza's main module is loaded, a few
 instructions of the game's frame rate controller are rewritten **in memory** so that the game
 may run at any rate from 40 to 60 fps instead of dropping to 30, with its clock stepped by the
 real frame time (the game's speed stays right down to 24 fps). It is a port of the
 `dk_dynamic_fps` patch of the ZendNevs fork (v2.0.5). Nothing is written to disk, no game file is
 changed, and with the switch unset no module is touched. It only applies to Bananza (title
-040074A01BF12000) and only if the expected instructions are found. `DK_DYN_MIN_FPS=<1-60>`
+040074A01BF12000) and only if the expected instructions are found. `DKB_DYN_MIN_FPS=<1-60>`
 moves the 40 fps limit.
 
 It is off by default in dozer-cli; `start-balanced.bat`, `start-performance.bat` and
-`start-reactive-experimental.bat` turn it on (`DK_DYN=1` at the top), and so does the menu
+`start-reactive-experimental.bat` turn it on (`DKB_DYN=1` at the top), and so does the menu
 program's Tuning tab (the Dynamic frame rate box in Bananza's Properties, on until unticked, no
 preset changes it). With it the game's frame time varies by design (any rate between 40 and 60, in
 steps of 2); below 40 fps its target is 30 fps, and its speed stays right down to 24 fps. While it is applied,

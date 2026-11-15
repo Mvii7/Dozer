@@ -20,7 +20,7 @@ constexpr u64 Bananza = 0x040074A01BF12000ULL;
 constexpr u64 OtherGame = 0x0100000000010000ULL;
 constexpr u64 MarioKartWorld = 0x0400C3F00006E000ULL;
 
-// start-balanced.bat's lines (dist/dozer), DK_DYN and OSD at their defaults (1).
+// start-balanced.bat's lines (dist/dozer), DKB_DYN and OSD at their defaults (1).
 const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_BACK_STAGES", "1"},
     {"EDEN_NX2_BACK_CUTS", "a"},
@@ -29,17 +29,17 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_FRONT_MACRO_LEAN", "1"},
     {"EDEN_NX2_FG_TIMED", "1"},
     {"EDEN_NX2_OSD", "1"},
-    {"EDEN_NX2_DK_DYN", "1"},
-    {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
-    {"EDEN_NX2_MODE_PACE", "2"},
-    {"EDEN_NX2_PACE_SPIN_US", "1500"},
+    {"EDEN_NX2_DKB_DYN", "1"},
+    {"EDEN_NX2_DKB_PRESENT_INTERVAL_WORD", "12:16:4"},
+    {"EDEN_NX2_DKB_MODE_PACE", "2"},
+    {"EDEN_NX2_DKB_PACE_SPIN_US", "1500"},
 };
 
 const std::vector<Var> BananzaVars{
-    {"EDEN_NX2_DK_DYN", "1"},
-    {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
-    {"EDEN_NX2_MODE_PACE", "2"},
-    {"EDEN_NX2_PACE_SPIN_US", "1500"},
+    {"EDEN_NX2_DKB_DYN", "1"},
+    {"EDEN_NX2_DKB_PRESENT_INTERVAL_WORD", "12:16:4"},
+    {"EDEN_NX2_DKB_MODE_PACE", "2"},
+    {"EDEN_NX2_DKB_PACE_SPIN_US", "1500"},
 };
 
 const std::vector<Var> MkwVars{
@@ -60,10 +60,10 @@ std::vector<Var> GameVars(Game game) {
 }
 
 const std::set<std::string_view> BananzaOnly{
-    "EDEN_NX2_DK_DYN",
-    "EDEN_NX2_PRESENT_INTERVAL_WORD",
-    "EDEN_NX2_MODE_PACE",
-    "EDEN_NX2_PACE_SPIN_US",
+    "EDEN_NX2_DKB_DYN",
+    "EDEN_NX2_DKB_PRESENT_INTERVAL_WORD",
+    "EDEN_NX2_DKB_MODE_PACE",
+    "EDEN_NX2_DKB_PACE_SPIN_US",
 };
 
 // An ini group as the config sees it: the on / off keys and "preset".
@@ -308,7 +308,7 @@ TEST_CASE("Nx2PerfSettings: a game's settings never reach another game", "[core]
     no_dk.dk_dyn = false;
     const auto pacing = Wanted(no_dk, Game::Bananza);
     REQUIRE(pacing.size() == other.size() + 3);
-    REQUIRE(pacing.back() == Var{"EDEN_NX2_PACE_SPIN_US", "1500"});
+    REQUIRE(pacing.back() == Var{"EDEN_NX2_DKB_PACE_SPIN_US", "1500"});
     // Mario Kart World's switch is its own: Bananza's box does not touch it.
     REQUIRE(Wanted(no_dk, Game::MarioKartWorld) == Wanted(Balanced(), Game::MarioKartWorld));
     auto mkw = other;
@@ -324,7 +324,7 @@ TEST_CASE("Nx2PerfSettings: a variable set outside the program wins", "[core]") 
     REQUIRE(Plan(Balanced(), Game::Bananza, NoneOutside) == BalancedBananza);
 
     // A launcher (or the user) set two of them: those are left out, whatever their value.
-    const std::set<std::string_view> outside{"EDEN_NX2_JIT_SAME", "EDEN_NX2_MODE_PACE"};
+    const std::set<std::string_view> outside{"EDEN_NX2_JIT_SAME", "EDEN_NX2_DKB_MODE_PACE"};
     const auto is_outside = [&](std::string_view name) { return outside.count(name) != 0; };
     const auto plan = Plan(Balanced(), Game::Bananza, is_outside);
     REQUIRE(plan.size() == BalancedBananza.size() - 2);

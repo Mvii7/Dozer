@@ -20,7 +20,7 @@
 
 namespace VideoCommon::Nx2ModePace {
 
-// The decision part of EDEN_NX2_MODE_PACE (nx2_mode_pace.h), without clocks, settings or logging
+// The decision part of EDEN_NX2_DKB_MODE_PACE (nx2_mode_pace.h), without clocks, settings or logging
 // (src/tests/video_core/nx2_mode_pace.cpp).
 //
 // Donkey Kong Bananza switches between 60, 30 and 20 fps (1, 2, 3 vblanks a frame) on late frames,
@@ -124,7 +124,7 @@ struct Params {
     double to20_rest_s = 30.0;
 };
 
-/// EDEN_NX2_MODE_PACE_PROBE=<down|up|up20|to20|cycle>:<seconds>: a push every so often whatever K.
+/// EDEN_NX2_DKB_MODE_PACE_PROBE=<down|up|up20|to20|cycle>:<seconds>: a push every so often whatever K.
 struct Probe {
     Push kind{Push::None};
     bool cycle{}; ///< the push the game's mode allows: down at 60, up at 30, up20 at 20
