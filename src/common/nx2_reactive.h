@@ -121,6 +121,9 @@ enum class Counter : u32 {
     CopyBackWaitUs,         ///< Their wait, microseconds
     CopyBackWaitMisses,     ///< Of them, the ones that still sync flushed (timeout, newer write)
     PopDisarmNs,            ///< Fence thread: disarming copied-back pages, after the lock
+    CopyBackWaitGpuUs,      ///< Of the copy back waits: the host GPU still running the batch
+    CopyBackWaitLockUs,     ///< Then the fence thread waiting for the buffer cache's lock
+    CopyBackWaitPopUs,      ///< Then its pops (the batch's, up to 64 fences) before the wake
     Count,
 };
 
@@ -285,7 +288,7 @@ struct Window {
                        "{} alias {}; masked targets color {} depth {}; draws {}; rt fit in pass "
                        "barriers {} (light {}); fastmem read fallbacks {}, read faults kept {}; traps "
                        "disarmed at copy back {} ({} us after the lock); copy back waits {} "
-                       "({} us, {} missed)",
+                       "({} us, {} missed; gpu {} us, lock {} us, pop {} us)",
                        w.Get(C::Fences), w.Get(C::FencesSkipped), w.Get(C::FencesReal),
                        w.Get(C::FencesBufferCommit), w.Get(C::FencesTextureCommit),
                        w.Get(C::FencesBufferDeferred), w.Get(C::FenceExtraFlushes),
@@ -300,7 +303,8 @@ struct Window {
                        w.Get(C::FastmemFaultsKept), w.Get(C::TrapsDisarmedAtCopyBack),
                        w.Get(C::PopDisarmNs) / 1000, w.Get(C::CopyBackWaits),
                        w.Get(C::CopyBackWaitUs),
-                       w.Get(C::CopyBackWaitMisses));
+                       w.Get(C::CopyBackWaitMisses), w.Get(C::CopyBackWaitGpuUs),
+                       w.Get(C::CopyBackWaitLockUs), w.Get(C::CopyBackWaitPopUs));
 }
 
 [[nodiscard]] inline std::string FormatWindow(const Window& w) {

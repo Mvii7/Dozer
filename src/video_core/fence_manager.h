@@ -288,6 +288,8 @@ private:
             if (!batch.front().fence->IsStubbed()) {
                 WaitFence(batch.front().fence);
             }
+            const s64 gpu_done_ns =
+                Common::Nx2Reactive::StatsEnabled() ? Common::Nx2Reactive::NowNs() : 0;
             {
                 std::unique_lock lock(guard);
                 while (batch.size() < MaxBatch && !fences.empty() &&
@@ -313,6 +315,9 @@ private:
                 decltype(buffer_cache.TakeReadTrapDisarms()) disarms;
                 std::unique_lock lock{buffer_cache.mutex};
                 const s64 held_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
+                if (stats) [[unlikely]] {
+                    buffer_cache.NotePopTimes(gpu_done_ns, held_ns);
+                }
                 for (size_t i = 0; i < buffer_pops; ++i) {
                     buffer_cache.PopAsyncFlushes();
                 }

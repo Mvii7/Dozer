@@ -944,11 +944,23 @@ bool BufferCache<P>::WaitForCopyBack(std::unique_lock<Common::SpinRecursiveMutex
     const bool fresh = !IsRegionGpuModified(addr, size);
     if (stats) [[unlikely]] {
         using Common::Nx2Reactive::Counter;
+        const s64 end_ns = Common::Nx2Reactive::NowNs();
         Common::Nx2Reactive::Add(Counter::CopyBackWaits, 1);
         Common::Nx2Reactive::Add(Counter::CopyBackWaitUs,
-                                 Common::Nx2Reactive::MicrosecondsSince(start_ns));
+                                 static_cast<u64>((std::max)(s64{0}, end_ns - start_ns)) / 1000);
         if (!landed || !fresh) {
             Common::Nx2Reactive::Add(Counter::CopyBackWaitMisses, 1);
+        } else if (pop_gpu_done_ns != 0 && pop_locked_ns != 0) {
+            // The wait, split at the landing batch's times: the host GPU still running, the
+            // fence thread waiting for this lock, then the pops before the wake.
+            const auto span_us = [](s64 from, s64 to) {
+                return static_cast<u64>((std::max)(s64{0}, to - from)) / 1000;
+            };
+            const s64 gpu_done = std::clamp(pop_gpu_done_ns, start_ns, end_ns);
+            const s64 locked = std::clamp(pop_locked_ns, gpu_done, end_ns);
+            Common::Nx2Reactive::Add(Counter::CopyBackWaitGpuUs, span_us(start_ns, gpu_done));
+            Common::Nx2Reactive::Add(Counter::CopyBackWaitLockUs, span_us(gpu_done, locked));
+            Common::Nx2Reactive::Add(Counter::CopyBackWaitPopUs, span_us(locked, end_ns));
         }
     }
     return fresh;

@@ -533,6 +533,14 @@ public:
         }
     }
 
+    /// EDEN_NX2_REACTIVE_STATS, under `mutex` before a batch of pops: when the host GPU had
+    /// finished the batch (the fence thread's wait returned) and when this lock was taken.
+    /// WaitForCopyBack splits its wait at them.
+    void NotePopTimes(s64 gpu_done_ns, s64 locked_ns) {
+        pop_gpu_done_ns = gpu_done_ns;
+        pop_locked_ns = locked_ns;
+    }
+
     /// 4 KiB pages in the CPU-read ranges (EDEN_NX2_REACTIVE_STATS; walks them).
     [[nodiscard]] u64 CpuReadPages() const;
 
@@ -991,6 +999,9 @@ private:
     std::condition_variable_any copy_back_cv;
     /// DisarmCopiedReadTraps' decisions not applied yet (TakeReadTrapDisarms).
     std::vector<ReadTrapDisarm> pending_trap_disarms;
+    /// NotePopTimes (0: not noted)
+    s64 pop_gpu_done_ns{};
+    s64 pop_locked_ns{};
 
     // Async Buffers
     Common::OverlapRangeSet<DAddr> async_downloads;
