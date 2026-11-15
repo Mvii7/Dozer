@@ -8,6 +8,16 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Draw setup looks up a sampler or image view by index in the descriptor table, instead of hashing
+  that index. Deleting an image no longer walks every channel's view ids in a release build.
+- An ASTC texture's opacity scan uses a table of the 2048 block modes, instead of decoding each
+  block's mode bits on the GPU thread.
+- The GPU split's published and consumed counters sit on separate cache lines.
+- A macro DMA read copies its words in one read.
+- A draw or dispatch keeps room for 160 image views and 96 samplers without a heap allocation.
+
+## Dozer 0.1.3 (`v0.1.3`)
+
 - Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
   and boxes as that game runs them. A setting changed for the game gets a cross that resets it to
   the global one. Donkey Kong Bananza starts with the Performance preset (read traps off) instead
@@ -125,13 +135,6 @@ and `=0` brings back the 2.0.0 code path.
   when the update has none, the en-us name is preferred, and a file without a name shows its
   file name; a damaged `.zs` texture (no zstd header) is replaced by a neighbouring one with a
   warning in the log. Still read only.
-- Draw setup looks up a sampler or image view by index in the descriptor table, instead of hashing
-  that index. Deleting an image no longer walks every channel's view ids in a release build.
-- An ASTC texture's opacity scan uses a table of the 2048 block modes, instead of decoding each
-  block's mode bits on the GPU thread.
-- The GPU split's published and consumed counters sit on separate cache lines.
-- A macro DMA read copies its words in one read.
-- A draw or dispatch keeps room for 160 image views and 96 samplers without a heap allocation.
 - Rumble: HID command 214 (the Switch 2 titles' vibration, sent every frame) is forwarded to the
   controller through the existing vibration path; it was accepted and dropped. From the Selevet
   fork (`49e2ed7`); not tried with a controller yet.
