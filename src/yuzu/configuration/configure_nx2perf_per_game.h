@@ -13,7 +13,7 @@
 
 class QCheckBox;
 class QComboBox;
-class QPushButton;
+class QToolButton;
 
 // The per-game Tuning tab: the preset and each box of the Tuning tab (core/nx2_perf_settings.h) as
 // this game runs them. They mirror the global ones; a cross appears next to one this game changed
@@ -31,7 +31,7 @@ public:
 private:
     struct Row {
         QCheckBox* box;
-        QPushButton* reset;
+        QToolButton* reset;
         std::size_t key; ///< the index in Core::Nx2PerfSettings::KeyAt
     };
 
@@ -43,6 +43,6 @@ private:
     Core::Nx2PerfSettings::Game game;
     Core::Nx2PerfSettings::Overrides own;
     QComboBox* preset = nullptr;
-    QPushButton* preset_reset = nullptr;
+    QToolButton* preset_reset = nullptr;
     std::vector<Row> rows;
 };
