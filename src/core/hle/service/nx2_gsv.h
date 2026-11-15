@@ -1291,10 +1291,12 @@ private:
                     Nx2OsdSpeed::g_counter.Add(
                         frame, Nx2OsdSpeed::GameUs(m_dk_dyn_applied, interval, frame));
                 }
+                const u32 frame_sample =
+                    static_cast<u32>(std::clamp<long long>(frame, 0, 0xffffffffLL));
                 if (m_stats.samples < m_frame_samples.size()) {
-                    m_frame_samples[m_stats.samples++] =
-                        static_cast<u32>((std::min<long long>)(frame, 0xffffffffLL));
+                    m_frame_samples[m_stats.samples++] = frame_sample;
                 }
+                m_run_frames.Add(frame_sample);
             } else {
                 m_stats.output_frames = Core::g_output_frames.load(std::memory_order_relaxed);
             }
@@ -1332,9 +1334,18 @@ private:
                                          "estimate {:.3f}x",
                                          m_stats.dyn_step.capped, m_stats.dyn_step.Speed());
                 }
-                const u32 p95 =
-                    Nx2FrameStats::P95(std::span{m_frame_samples}.first(m_stats.samples));
-                extra += fmt::format(", p95 frame {} us", p95);
+                const auto block = std::span{m_frame_samples}.first(m_stats.samples);
+                const u32 p95 = Nx2FrameStats::P95(block);
+                const u32 p99 = Nx2FrameStats::Percentile(block, 990);
+                extra += fmt::format(", p95 frame {} us, p99 frame {} us", p95, p99);
+                // The lows since the game started (loading screens included), as the fps of the
+                // 99th and 99.9th percentile frame times.
+                const u32 low1 = m_run_frames.Percentile(990);
+                const u32 low01 = m_run_frames.Percentile(999);
+                const auto fps = [](u32 us) { return us != 0 ? 1e6 / us : 0.0; };
+                extra += fmt::format(", since start {} frames: 1% low {:.1f} fps ({} us), 0.1% "
+                                     "low {:.1f} fps ({} us)",
+                                     m_run_frames.Count(), fps(low1), low1, fps(low01), low01);
                 // Images sent to the screen meanwhile, frame generation's included: the display
                 // rate is the game's (from the frame time) times this.
                 const u64 output_frames = Core::g_output_frames.load(std::memory_order_relaxed);
@@ -1375,6 +1386,7 @@ private:
         u32 samples{};       // frame times in m_frame_samples
     } m_stats{};
     std::array<u32, 600> m_frame_samples{}; // this block's frame times, us
+    Nx2FrameStats::Histogram m_run_frames;   // every frame time since the game started
     u32 m_previous_fence_id{~0U}; // none yet (WaitForFrame ignores ids >= 192)
     u32 m_previous_fence_value{};
     u32 m_rate{};       // EDEN_NX2_PRESENT_RATE: the last present's rate, 0: 60 Hz
