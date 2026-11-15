@@ -436,3 +436,69 @@ TEST_CASE("Nx2PerfSettings: the frame generation choice and the Graphics setting
     REQUIRE(!FrameGenFor(Preset::Reactive).has_value());
     REQUIRE(!FrameGenFor(Preset::Custom).has_value());
 }
+
+TEST_CASE("Nx2PerfSettings: a game's own boxes go over the global ones", "[core]") {
+    const Switches global = Performance();
+    REQUIRE(!global.read_traps);
+
+    // No overrides: the global settings as they are.
+    REQUIRE(Overrides{}.Empty());
+    REQUIRE(WithOverrides(global, Overrides{}) == global);
+
+    // Mario Kart World with read traps on, the others as the global ones.
+    Overrides mkw;
+    mkw.boxes[0] = true;
+    REQUIRE(Keys[0].name == "read_traps");
+    REQUIRE(!mkw.Empty());
+    const Switches with_traps = WithOverrides(global, mkw);
+    REQUIRE(with_traps.read_traps);
+    REQUIRE(with_traps.preset == global.preset);
+    REQUIRE(with_traps.osd == global.osd);
+
+    // Read traps on leave EDEN_NX2_READ_TRAPS unset; off sets it to 0.
+    const auto has_read_traps = [](const std::vector<Var>& vars) {
+        for (const Var& var : vars) {
+            if (var.name == "EDEN_NX2_READ_TRAPS") {
+                return true;
+            }
+        }
+        return false;
+    };
+    REQUIRE(has_read_traps(Wanted(global, Game::Bananza)));
+    REQUIRE(!has_read_traps(Wanted(with_traps, Game::MarioKartWorld)));
+    // The two games differ in the variables, so the session asks for a restart between them.
+    const auto bananza = Plan(global, Game::Bananza, NoneOutside);
+    const auto mario_kart = Plan(with_traps, Game::MarioKartWorld, NoneOutside);
+    REQUIRE(NeedsRestart(bananza, mario_kart));
+
+    // A game-specific box is an override like the others.
+    Overrides dyn;
+    dyn.boxes[Keys.size() + 1] = false;
+    REQUIRE(GameKeys[1].name == "mariokart_dynamic_fps");
+    REQUIRE(!WithOverrides(global, dyn).mkw_dyn);
+    REQUIRE(WithOverrides(global, dyn).dk_dyn);
+}
+
+TEST_CASE("Nx2PerfSettings: a game's overrides read back what was written", "[core]") {
+    Overrides overrides;
+    overrides.boxes[0] = true;
+    overrides.boxes[3] = false;
+    overrides.boxes[KeyCount - 1] = true;
+
+    std::map<std::string, int> ini;
+    SaveOverrides(overrides, [&](std::string_view key, int value) { ini[std::string{key}] = value; });
+    REQUIRE(ini.size() == KeyCount);
+    REQUIRE(ini.at("read_traps") == 1);
+    REQUIRE(ini.at("jit_same") == 0);
+    REQUIRE(ini.at("acquire_peek") == -1);
+
+    const auto read = [&](std::string_view key) {
+        const auto it = ini.find(std::string{key});
+        return it == ini.end() ? -1 : it->second;
+    };
+    REQUIRE(LoadOverrides(read) == overrides);
+
+    // Missing keys and values that mean nothing: no override.
+    REQUIRE(LoadOverrides([](std::string_view) { return -1; }).Empty());
+    REQUIRE(LoadOverrides([](std::string_view) { return 7; }).Empty());
+}

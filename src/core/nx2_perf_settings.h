@@ -116,6 +116,62 @@ inline constexpr std::array<Key, 2> GameKeys{{
     {"mariokart_dynamic_fps", &Switches::mkw_dyn},
 }};
 
+inline constexpr std::size_t KeyCount = Keys.size() + GameKeys.size();
+
+/// The key at `index`: Keys, then GameKeys.
+constexpr const Key& KeyAt(std::size_t index) {
+    return index < Keys.size() ? Keys[index] : GameKeys[index - Keys.size()];
+}
+
+/// One game's own choices over the global settings, one slot per KeyAt(): a box it sets, or none
+/// (it follows the global one). The preset stays the global one.
+struct Overrides {
+    std::array<std::optional<bool>, KeyCount> boxes{};
+
+    constexpr bool Empty() const {
+        for (const auto& box : boxes) {
+            if (box) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool operator==(const Overrides&) const = default;
+};
+
+/// The global settings with the game's own boxes over them.
+constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) {
+    for (std::size_t i = 0; i < KeyCount; ++i) {
+        if (overrides.boxes[i]) {
+            switches.*KeyAt(i).field = *overrides.boxes[i];
+        }
+    }
+    return switches;
+}
+
+/// Reads a game's overrides through `read(key)`: -1 for no override, 0 off, 1 on.
+template <typename Read>
+Overrides LoadOverrides(Read&& read) {
+    Overrides overrides;
+    for (std::size_t i = 0; i < KeyCount; ++i) {
+        const int value = read(KeyAt(i).name);
+        if (value == 0 || value == 1) {
+            overrides.boxes[i] = value == 1;
+        }
+    }
+    return overrides;
+}
+
+/// Writes a game's overrides through `write(key, value)`, with the values `LoadOverrides` reads.
+template <typename Write>
+void SaveOverrides(const Overrides& overrides, Write&& write) {
+    for (std::size_t i = 0; i < KeyCount; ++i) {
+        const auto& box = overrides.boxes[i];
+        write(KeyAt(i).name, box ? static_cast<int>(*box) : -1);
+    }
+}
+
 /// A stored preset number. Anything else is Custom (a file edited by hand).
 constexpr Preset PresetFromInt(int value) {
     switch (value) {

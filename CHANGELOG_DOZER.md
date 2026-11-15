@@ -8,6 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Per-game tuning: a game's Properties window has a Tuning tab where each Tuning box can follow the
+  global setting (Default) or be set on or off for that game only (for example read traps on for
+  Mario Kart World, off for Bananza). Only the differences are kept, in `qt-config.ini`
+  (`[AnkaGames]`); the Tuning tab stays the default. A game whose settings differ from the
+  session's first game asks to restart, as before.
+
 ## Dozer 0.1.2 (`v0.1.2`)
 
 - AMD RDNA2 fixes: shader code the AMD drivers miscompile is avoided (read-before-write registers

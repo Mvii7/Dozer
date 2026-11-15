@@ -3912,6 +3912,14 @@ void MainWindow::OpenPerGameConfiguration(u64 title_id, const std::string& file_
     if (!is_powered_on) {
         config->SaveAllValues();
     }
+
+    // This game's tuning settings may differ from the ones this session already set.
+    if (Nx2PerfSession::OfferRestart(this, emulation_running ? current_game_path : QString{},
+                                     ui->action_Fullscreen->isChecked())) {
+        if (!close()) {
+            Nx2PerfSession::CancelRestart();
+        }
+    }
 }
 
 void MainWindow::OnLoadAmiibo() {

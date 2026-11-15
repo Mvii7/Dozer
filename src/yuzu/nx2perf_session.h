@@ -31,6 +31,9 @@ void CaptureOutsideSwitches();
 /// Whether `name` was in the environment before the program set any (CaptureOutsideSwitches).
 bool SetOutside(std::string_view name);
 
+/// The tuning settings for a title: the global ones with the title's own boxes over them.
+Core::Nx2PerfSettings::Switches SwitchesFor(u64 program_id);
+
 enum class Boot {
     Go,      ///< the variables are right for this game: boot it
     Restart, ///< RequestRestart was called: close the window, main() starts the game again
