@@ -304,6 +304,13 @@
 # Diagnostics (they defeat reactive flushing; for tests only):
 # REACTIVE_STATS=1: counters and one "nx2 reactive:" log line about every 10 s.
 #EDEN_NX2_REACTIVE_STATS=1
+# DISARM_MEMO=1 (read traps): a core skips the read trap mutex when it reads a page it already
+# disarmed in the current trap generation (a new trap opens a new generation). Off: every slow
+# read of an armed page takes the mutex.
+#EDEN_NX2_DISARM_MEMO=1
+# RC3_DISARM=1 (read traps): a slow read disarms only when it misses the core's cached flush
+# area, as Eglantine rc3 does; other armed pages in the area stay trapped. For comparison.
+#EDEN_NX2_RC3_DISARM=1
 # RX_NO_COPYBACK=1: CPU reads note no buffer page (nothing copied back at fences).
 #EDEN_NX2_RX_NO_COPYBACK=1
 # RX_NO_RT_LATCH=1: CPU reads latch no image (images never downloaded for them).

@@ -57,6 +57,21 @@ namespace Common::Nx2Reactive {
     return enabled;
 }
 
+/// EDEN_NX2_DISARM_MEMO=1: each core remembers the single pages it disarmed in the current read
+/// trap generation, and a repeat read of one skips the read trap mutex (any new arm opens a new
+/// generation, which drops what the cores remember).
+[[nodiscard]] inline bool DisarmMemo() noexcept {
+    static const bool enabled = ParseFlag(GetEnv("EDEN_NX2_DISARM_MEMO"));
+    return enabled;
+}
+
+/// EDEN_NX2_RC3_DISARM=1: a slow read disarms its read traps only when it misses the core's
+/// cached flush area, as Eglantine rc3 does, instead of on every slow read.
+[[nodiscard]] inline bool Rc3Disarm() noexcept {
+    static const bool enabled = ParseFlag(GetEnv("EDEN_NX2_RC3_DISARM"));
+    return enabled;
+}
+
 enum class Counter : u32 {
     CpuReads,               ///< GPU::OnCPURead calls
     SyncFlushes,            ///< Of them, the ones that flushed and waited for it (not preemptive)
@@ -103,6 +118,9 @@ enum class Counter : u32 {
     Draws,                  ///< Guest draws (RasterizerVulkan::Draw / DrawIndirect calls)
     FitInPassBarriers,      ///< EDEN_NX2_RX_RT_FIT=3: feedback barriers inside the render pass
     FitInPassLightBarriers, ///< Of them, recorded by light draws
+    SlowReadsInArea,        ///< Slow reads inside the core's cached flush area (no GPU call)
+    SlowReadsMissed,        ///< Slow reads outside it (they called GPU::OnCPURead)
+    DisarmLocks,            ///< Slow reads that took the read trap mutex to disarm pages
     Count,
 };
 
@@ -276,7 +294,10 @@ struct Window {
                        w.Get(C::RepeatViewCpuModified), w.Get(C::RepeatViewAlias),
                        w.Get(C::MaskedColorTargets), w.Get(C::MaskedDepthTargets),
                        w.Get(C::Draws), w.Get(C::FitInPassBarriers),
-                       w.Get(C::FitInPassLightBarriers));
+                       w.Get(C::FitInPassLightBarriers)) +
+           fmt::format("; slow reads in area {} missed {}; disarm locks {}",
+                       w.Get(C::SlowReadsInArea), w.Get(C::SlowReadsMissed),
+                       w.Get(C::DisarmLocks));
 }
 
 [[nodiscard]] inline std::string FormatWindow(const Window& w) {

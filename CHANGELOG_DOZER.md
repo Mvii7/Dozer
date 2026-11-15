@@ -8,6 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Read traps, to cut the cost of the trapped-read path in Mario Kart World (both off by default,
+  untested): `EDEN_NX2_DISARM_MEMO=1` lets a core skip the read trap mutex for a page it already
+  disarmed in the current trap generation; `EDEN_NX2_RC3_DISARM=1` disarms only on a read that
+  misses the core's flush area, as Eglantine rc3 does. `EDEN_NX2_REACTIVE_STATS=1` now also
+  splits the slow reads into in-area and missed, and counts the mutex takes.
+
 ## Dozer 0.1.2 (`v0.1.2`)
 
 - AMD RDNA2 fixes: shader code the AMD drivers miscompile is avoided (read-before-write registers

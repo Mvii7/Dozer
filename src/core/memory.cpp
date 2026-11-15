@@ -640,6 +640,9 @@ struct Memory::Impl {
         if (read_traps.Empty()) {
             return;
         }
+        if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
+            Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::DisarmLocks, 1);
+        }
         std::scoped_lock lk{read_trap_mutex};
         const u64 page_end = ((vaddr + size - 1) >> YUZU_PAGEBITS) + 1;
         read_traps.Disarm(vaddr >> YUZU_PAGEBITS, page_end, flushed_generation, [&](u64 page) {
@@ -877,17 +880,40 @@ struct Memory::Impl {
             rasterizer_read_epochs[core] = epoch;
             current_area = {};
         }
+        bool missed = false;
         gpu_device_memory->ApplyOpOnPointer(p, scratch_buffers[core], [&](DAddr address) {
             const DAddr end_address = address + size;
             if (current_area.start_address <= address && end_address <= current_area.end_address)
                 [[likely]] {
                 return;
             }
+            missed = true;
             current_area = system.GPU().OnCPURead(address, size);
         });
-        // Only once every device alias is flushed (or inside an area flushed after this
-        // generation's traps were armed): a disarmed page is read through fastmem without trapping.
-        DisarmReadTraps(v_address, size, generation);
+        if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
+            Common::Nx2Reactive::Add(missed ? Common::Nx2Reactive::Counter::SlowReadsMissed
+                                            : Common::Nx2Reactive::Counter::SlowReadsInArea,
+                                     1);
+        }
+        // EDEN_NX2_RC3_DISARM=1: only a read that missed its area disarms, as in rc3.
+        if (missed || !Common::Nx2Reactive::Rc3Disarm()) {
+            // Only once every device alias is flushed (or inside an area flushed after this
+            // generation's traps were armed): a disarmed page is read through fastmem without
+            // trapping.
+            const u64 first_page = v_address >> YUZU_PAGEBITS;
+            const bool one_page = ((v_address + size - 1) >> YUZU_PAGEBITS) == first_page;
+            auto& memo = disarm_memos[core];
+            const std::size_t slot = first_page % memo.pages.size();
+            if (one_page && Common::Nx2Reactive::DisarmMemo() && memo.pages[slot] == first_page &&
+                memo.generations[slot] == generation) {
+                return;
+            }
+            DisarmReadTraps(v_address, size, generation);
+            if (one_page) {
+                memo.pages[slot] = first_page;
+                memo.generations[slot] = generation;
+            }
+        }
     }
 
     void HandleRasterizerWrite(VAddr v_address, size_t size) {
@@ -961,6 +987,12 @@ struct Memory::Impl {
     std::array<VideoCore::RasterizerDownloadArea, Core::Hardware::NUM_CPU_CORES> rasterizer_read_areas{};
     std::array<u32, Core::Hardware::NUM_CPU_CORES> rasterizer_read_epochs{};
     std::array<u64, Core::Hardware::NUM_CPU_CORES> read_area_generations{};
+    /// Pages a core disarmed in a read trap generation (EDEN_NX2_DISARM_MEMO).
+    struct DisarmMemo {
+        std::array<u64, 32> pages{};
+        std::array<u64, 32> generations{};
+    };
+    std::array<DisarmMemo, Core::Hardware::NUM_CPU_CORES> disarm_memos{};
     ReadTraps read_traps;
     std::mutex read_trap_mutex;
     std::array<GPUDirtyState, Core::Hardware::NUM_CPU_CORES> rasterizer_write_areas{};
