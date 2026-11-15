@@ -11,6 +11,9 @@ and `=0` brings back the 2.0.0 code path.
 - CPU (x86 host): `LDAR`/`LDAPR`/`LDAXR`-style ordered loads are plain loads instead of `lock xadd`,
   `DMB LD` and `DMB ST` emit no barrier, and each core's exclusive reservation sits on its own cache
   line. From Lichii build 160 (PRs #1327, #1331, #1329); not built or run here.
+
+## Dozer 0.1.3 (`v0.1.3`)
+
 - Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
   and boxes as that game runs them. A setting changed for the game gets a cross that resets it to
   the global one. Donkey Kong Bananza starts with the Performance preset (read traps off) instead
