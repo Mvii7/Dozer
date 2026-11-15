@@ -2299,7 +2299,12 @@ void RasterizerVulkan::InnerInvalidation(std::span<const std::pair<DAddr, std::s
             Profile::Add(Profile::Counter::CbDataOnPools, 1);
         }
     };
-    {
+    // Most of the GPU's cached writes land where no image was ever registered: no lock for those.
+    const bool on_images =
+        std::ranges::any_of(sequences, [&](const auto& range) {
+            return texture_cache.page_filter.Any(range.first, range.second);
+        });
+    if (on_images || diagnose) {
         std::scoped_lock lock{texture_cache.mutex};
         for (const auto& [addr, size] : sequences) {
             const u64 image_hits = diagnose ? texture_cache.WriteHits() : 0;
