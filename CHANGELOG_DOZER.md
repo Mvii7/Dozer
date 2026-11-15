@@ -22,6 +22,12 @@ and `=0` brings back the 2.0.0 code path.
   whose GPU writes are already in a committed copy back waits for it instead of a sync flush
   (`EDEN_NX2_COPYBACK_WAIT=0`: always the sync flush). Disarming re-protects pages in runs.
 
+- Shader cache: a graphics pipeline key no longer includes the Vulkan driver id or version, so a
+  driver update still uses the pipelines in `vulkan.bin` instead of building them all again during
+  play. Older caches are read as they are; the driver words are cleared when a record is loaded, and
+  a pipeline saved under two driver versions is built once. If the driver rejects the device static
+  pipeline cache, that file is dropped and a new one is started.
+
 ## Dozer 0.1.2 (`v0.1.2`)
 
 - AMD RDNA2 fixes: shader code the AMD drivers miscompile is avoided (read-before-write registers
