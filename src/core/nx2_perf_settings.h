@@ -129,14 +129,16 @@ constexpr const Key& KeyAt(std::size_t index) {
     return index < Keys.size() ? Keys[index] : GameKeys[index - Keys.size()];
 }
 
-/// One game's own choices over its defaults: a preset, and a box per KeyAt() slot, each or none
-/// (it follows the default).
+/// One game's own choices over what it would run with: a preset, and a box per KeyAt() slot, each
+/// or none (it follows the global one). A game with a preset of its own (GamePreset) follows the
+/// global preset instead when `global_preset` is set.
 struct Overrides {
     std::optional<Preset> preset;
+    bool global_preset = false;
     std::array<std::optional<bool>, KeyCount> boxes{};
 
     constexpr bool Empty() const {
-        if (preset) {
+        if (preset || global_preset) {
             return false;
         }
         for (const auto& box : boxes) {
@@ -160,12 +162,16 @@ constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) 
     return switches;
 }
 
+/// What a game's "preset" is stored as when it follows the global preset.
+inline constexpr int FollowGlobalPreset = -2;
+
 /// Reads a game's overrides through `read(key)`: -1 for no override, 0 off, 1 on; "preset" is
-/// a preset number (Custom, or anything else, is none).
+/// a preset number, FollowGlobalPreset, or -1 (Custom, or anything else, is none).
 template <typename Read>
 Overrides LoadOverrides(Read&& read) {
     Overrides overrides;
     const int preset = read("preset");
+    overrides.global_preset = preset == FollowGlobalPreset;
     if (preset != static_cast<int>(Preset::Custom) && preset >= 0 &&
         preset <= static_cast<int>(Preset::Performance)) {
         overrides.preset = static_cast<Preset>(preset);
@@ -182,7 +188,11 @@ Overrides LoadOverrides(Read&& read) {
 /// Writes a game's overrides through `write(key, value)`, with the values `LoadOverrides` reads.
 template <typename Write>
 void SaveOverrides(const Overrides& overrides, Write&& write) {
-    write("preset", overrides.preset ? static_cast<int>(*overrides.preset) : -1);
+    int preset = overrides.preset ? static_cast<int>(*overrides.preset) : -1;
+    if (overrides.global_preset) {
+        preset = FollowGlobalPreset;
+    }
+    write("preset", preset);
     for (std::size_t i = 0; i < KeyCount; ++i) {
         const auto& box = overrides.boxes[i];
         write(KeyAt(i).name, box ? static_cast<int>(*box) : -1);
@@ -385,24 +395,28 @@ constexpr Game GameOf(u64 program_id) {
     return Game::Other;
 }
 
-/// The preset a game runs with unless told otherwise, instead of the global one: Bananza
-/// Performance (read traps off). Other games: none, they follow the global preset (Balanced from
-/// the first start).
+/// The preset a game starts from instead of the global one: Bananza Performance (read traps off).
+/// Other games: none, they follow the global preset (Balanced from the first start).
 constexpr std::optional<Preset> GamePreset(Game game) {
     return game == Game::Bananza ? std::optional{Preset::Performance} : std::nullopt;
 }
 
-/// The settings a game starts from: its own preset's, else the global ones.
-constexpr Switches GameBase(const Switches& global, Game game) {
-    const auto preset = GamePreset(game);
-    return preset ? FromPreset(*preset, global) : global;
+/// The preset a game runs with: its own choice, else its starting one (unless it follows the
+/// global preset), else the global one.
+constexpr Preset PresetFor(Preset global, Game game, const Overrides& own) {
+    if (own.preset) {
+        return *own.preset;
+    }
+    const auto start = GamePreset(game);
+    return start && !own.global_preset ? *start : global;
 }
 
-/// The settings a game runs with: its base, then its own preset and boxes.
+/// The settings a game runs with: its preset's, then its own boxes.
 constexpr Switches ForGame(const Switches& global, Game game, const Overrides& own) {
-    Switches switches = GameBase(global, game);
-    if (own.preset) {
-        switches = FromPreset(*own.preset, switches);
+    Switches switches = global;
+    const Preset preset = PresetFor(global.preset, game, own);
+    if (preset != global.preset) {
+        switches = FromPreset(preset, global);
     }
     return WithOverrides(switches, own);
 }

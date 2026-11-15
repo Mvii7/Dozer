@@ -11,12 +11,14 @@
 #include "common/common_types.h"
 #include "core/nx2_perf_settings.h"
 
+class QCheckBox;
 class QComboBox;
+class QPushButton;
 
-// The per-game Tuning tab: the preset and each box of the Tuning tab (core/nx2_perf_settings.h) can
-// follow the game's default (the global setting; Bananza and Mario Kart World have a preset of
-// their own) or be set for this game only. Only the choices made here are kept
-// (UISettings::values.nx2perf_games).
+// The per-game Tuning tab: the preset and each box of the Tuning tab (core/nx2_perf_settings.h) as
+// this game runs them. They mirror the global ones; a cross appears next to one this game changed
+// (Bananza's preset starts changed), and resets it to the global setting. Only the changes are
+// kept (UISettings::values.nx2perf_games).
 class ConfigureNx2PerfPerGame : public QWidget {
     Q_OBJECT
 
@@ -28,15 +30,19 @@ public:
 
 private:
     struct Row {
-        QComboBox* combo;
+        QCheckBox* box;
+        QPushButton* reset;
         std::size_t key; ///< the index in Core::Nx2PerfSettings::KeyAt
     };
 
-    /// The settings the boxes' Default is: the game's base with the chosen preset.
-    Core::Nx2PerfSettings::Switches Base() const;
-    void ShowDefaults();
+    void Refresh();
+    void ChoosePreset(Core::Nx2PerfSettings::Preset chosen);
+    void ChooseBox(const Row& row, bool checked);
 
     u64 title_id;
+    Core::Nx2PerfSettings::Game game;
+    Core::Nx2PerfSettings::Overrides own;
     QComboBox* preset = nullptr;
+    QPushButton* preset_reset = nullptr;
     std::vector<Row> rows;
 };

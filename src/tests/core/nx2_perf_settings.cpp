@@ -568,3 +568,37 @@ TEST_CASE("Nx2PerfSettings: Bananza starts from Performance, the others from the
     };
     REQUIRE(NeedsRestart(plan(Game::Bananza), plan(Game::MarioKartWorld)));
 }
+
+TEST_CASE("Nx2PerfSettings: a game with its own preset can follow the global one", "[core]") {
+    const Switches global = FirstStart();
+    REQUIRE(PresetFor(global.preset, Game::Bananza, {}) == Preset::Performance);
+    REQUIRE(PresetFor(global.preset, Game::MarioKartWorld, {}) == global.preset);
+
+    Overrides follow;
+    follow.global_preset = true;
+    REQUIRE(!follow.Empty());
+    REQUIRE(PresetFor(global.preset, Game::Bananza, follow) == global.preset);
+    REQUIRE(ForGame(global, Game::Bananza, follow) == global);
+    REQUIRE(ForGame(global, Game::Bananza, follow).read_traps);
+    // A game with no preset of its own follows it anyway.
+    REQUIRE(ForGame(global, Game::Other, follow) == global);
+    // Its own choice wins over following.
+    follow.preset = Preset::Safe;
+    REQUIRE(PresetFor(global.preset, Game::Bananza, follow) == Preset::Safe);
+
+    // Stored as its own value, apart from a preset and from no choice.
+    Overrides stored;
+    stored.global_preset = true;
+    int preset = 0;
+    SaveOverrides(stored, [&](std::string_view key, int value) {
+        if (key == "preset") {
+            preset = value;
+        }
+    });
+    REQUIRE(preset == FollowGlobalPreset);
+    const Overrides loaded = LoadOverrides([&](std::string_view key) {
+        return key == "preset" ? FollowGlobalPreset : -1;
+    });
+    REQUIRE(loaded == stored);
+    REQUIRE(!loaded.preset);
+}
