@@ -40,9 +40,22 @@ ConfigureVibration::ConfigureVibration(QWidget* parent, Core::HID::HIDCore& hid_
 
     ui->checkBoxAccurateVibration->setChecked(
         Settings::values.enable_accurate_vibrations.GetValue());
+    ui->checkBoxDualSenseHaptics->setChecked(Settings::values.enable_dualsense_haptics.GetValue());
+    ui->sliderDualSenseHapticsStrength->setValue(
+        Settings::values.dualsense_haptics_strength.GetValue());
+    connect(ui->sliderDualSenseHapticsStrength, &QSlider::valueChanged, this, [this](int value) {
+        ui->labelDualSenseHapticsStrengthValue->setText(QStringLiteral("%1%").arg(value));
+    });
+    ui->labelDualSenseHapticsStrengthValue->setText(
+        QStringLiteral("%1%").arg(ui->sliderDualSenseHapticsStrength->value()));
+
+    ui->checkBoxFrequencyRumble->setChecked(Settings::values.rumble_frequency_mapping.GetValue());
 
     if (!Settings::IsConfiguringGlobal()) {
         ui->checkBoxAccurateVibration->setDisabled(true);
+        ui->checkBoxFrequencyRumble->setDisabled(true);
+        ui->checkBoxDualSenseHaptics->setDisabled(true);
+        ui->sliderDualSenseHapticsStrength->setDisabled(true);
     }
 
     RetranslateUI();
@@ -67,6 +80,10 @@ void ConfigureVibration::ApplyConfiguration() {
 
     Settings::values.enable_accurate_vibrations.SetValue(
         ui->checkBoxAccurateVibration->isChecked());
+    Settings::values.enable_dualsense_haptics.SetValue(ui->checkBoxDualSenseHaptics->isChecked());
+    Settings::values.dualsense_haptics_strength.SetValue(
+        ui->sliderDualSenseHapticsStrength->value());
+    Settings::values.rumble_frequency_mapping.SetValue(ui->checkBoxFrequencyRumble->isChecked());
 }
 
 void ConfigureVibration::changeEvent(QEvent* event) {

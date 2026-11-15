@@ -267,6 +267,12 @@ struct UserConfig {
     /// accesses will hit the memory callbacks.
     bool recompile_on_fastmem_failure = true;
 
+    /// With recompile_on_fastmem_failure: a faulting fastmem read (not an exclusive one) is
+    /// taken as transient, as when the embedder read-protects a page only until its next read.
+    /// It goes through the callbacks once and keeps fastmem; a location that keeps faulting is
+    /// recompiled anyway.
+    bool fastmem_read_faults_transient = false;
+
     /// Determines what happens if the guest accesses an entry that is off the end of the
     /// fastmem arena. If true, Dynarmic will silently mirror fastmem's address space. If
     /// false, accessing memory outside of fastmem bounds will result in a call to the

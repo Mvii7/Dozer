@@ -642,14 +642,39 @@ struct Memory::Impl {
         }
         std::scoped_lock lk{read_trap_mutex};
         const u64 page_end = ((vaddr + size - 1) >> YUZU_PAGEBITS) + 1;
-        read_traps.Disarm(vaddr >> YUZU_PAGEBITS, page_end, flushed_generation, [&](u64 page) {
-            // Still cached (this read came through the rasterizer path): writes stay trapped.
-            if (std::as_const(current_page_table->entries)[page].Type() ==
-                Common::PageType::RasterizerCachedMemory) {
-                host_buffer->Protect(page << YUZU_PAGEBITS, YUZU_PAGESIZE,
+        // Still cached pages (this read came through the rasterizer path) keep writes trapped,
+        // one Protect for each run of them.
+        u64 run_begin = 0;
+        u64 run_pages = 0;
+        const auto protect_run = [&] {
+            if (run_pages > 0) {
+                host_buffer->Protect(run_begin << YUZU_PAGEBITS, run_pages << YUZU_PAGEBITS,
                                      Common::MemoryPermission::Read);
+                run_pages = 0;
             }
+        };
+        read_traps.Disarm(vaddr >> YUZU_PAGEBITS, page_end, flushed_generation, [&](u64 page) {
+            if (std::as_const(current_page_table->entries)[page].Type() !=
+                Common::PageType::RasterizerCachedMemory) {
+                return;
+            }
+            if (run_pages == 0 || page != run_begin + run_pages) {
+                protect_run();
+                run_begin = page;
+            }
+            ++run_pages;
         });
+        protect_run();
+    }
+
+    /// The buffer cache copied the GPU writes in this range back to guest memory, and the GPU
+    /// has not written it since (BufferCache::PopAsyncBuffers holds its lock across both).
+    void RasterizerDisarmReadTraps(u64 vaddr, u64 size) {
+        if (vaddr == 0 || size == 0 || !AddressSpaceContains(*current_page_table, vaddr, size) ||
+            !ReadTrapsEnabled()) {
+            return;
+        }
+        DisarmReadTraps(vaddr, size, ~0ULL);
     }
 
     /**
@@ -1157,6 +1182,10 @@ void Memory::RasterizerMarkRegionCached(Common::ProcessAddress vaddr, u64 size, 
 
 void Memory::RasterizerArmReadTraps(Common::ProcessAddress vaddr, u64 size) {
     impl->RasterizerArmReadTraps(GetInteger(vaddr), size);
+}
+
+void Memory::RasterizerDisarmReadTraps(Common::ProcessAddress vaddr, u64 size) {
+    impl->RasterizerDisarmReadTraps(GetInteger(vaddr), size);
 }
 
 void Memory::MarkRegionDebug(Common::ProcessAddress vaddr, u64 size, bool debug) {
