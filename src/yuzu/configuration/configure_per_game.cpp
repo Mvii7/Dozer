@@ -78,6 +78,7 @@ ConfigurePerGame::ConfigurePerGame(QWidget* parent, u64 title_id_, const std::st
     ui->setupUi(this);
 
     ui->tabWidget->addTab(addons_tab.get(), tr("Add-Ons"));
+    ui->tabWidget->addTab(nx2perf_tab.get(), tr("Tuning"));
     ui->tabWidget->addTab(system_tab.get(), tr("System"));
     ui->tabWidget->addTab(cpu_tab.get(), tr("CPU"));
     ui->tabWidget->addTab(graphics_tab.get(), tr("Graphics"));
@@ -87,7 +88,6 @@ ConfigurePerGame::ConfigurePerGame(QWidget* parent, u64 title_id_, const std::st
     ui->tabWidget->addTab(input_tab.get(), tr("Input Profiles"));
     ui->tabWidget->addTab(network_tab.get(), tr("Network"));
     ui->tabWidget->addTab(applets_tab.get(), tr("Applets"));
-    ui->tabWidget->addTab(nx2perf_tab.get(), tr("Tuning"));
 
     setFocusPolicy(Qt::ClickFocus);
     setWindowTitle(tr("Properties"));
