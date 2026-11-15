@@ -50,7 +50,8 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     : QWidget(parent), title_id{title_id_} {
     auto* layout = new QVBoxLayout(this);
     auto* intro = new QLabel(
-        tr("Settings here replace the Tuning tab's for this game only; Default follows it. They "
+        tr("Settings here replace the Tuning tab's for this game only; Default follows it (Donkey "
+           "Kong Bananza and Mario Kart World have defaults of their own for read traps). They "
            "take effect when the game starts. If a game has already run since Dozer was opened, "
            "Dozer will ask to restart before a change applies."),
         this);
@@ -62,6 +63,7 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     layout->addStretch();
 
     const Perf::Game game = Perf::GameOf(title_id);
+    const Perf::Switches base = Perf::GameBase(UISettings::values.nx2perf, game);
     const auto games = UISettings::values.nx2perf_games.find(title_id);
     for (std::size_t key = 0; key < Perf::KeyCount; ++key) {
         const Entry* entry = EntryOf(key);
@@ -69,7 +71,7 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
             continue;
         }
         auto* combo = new QComboBox(this);
-        const bool global = UISettings::values.nx2perf.*entry->field;
+        const bool global = base.*entry->field;
         combo->addItem(tr("Default (%1)").arg(global ? tr("On") : tr("Off")));
         combo->addItem(tr("On"));
         combo->addItem(tr("Off"));

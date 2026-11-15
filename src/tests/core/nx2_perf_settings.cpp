@@ -502,3 +502,41 @@ TEST_CASE("Nx2PerfSettings: a game's overrides read back what was written", "[co
     REQUIRE(LoadOverrides([](std::string_view) { return -1; }).Empty());
     REQUIRE(LoadOverrides([](std::string_view) { return 7; }).Empty());
 }
+
+TEST_CASE("Nx2PerfSettings: Bananza and Mario Kart World have their own read traps", "[core]") {
+    REQUIRE(Keys[ReadTrapsKey].name == "read_traps");
+    for (const Preset preset : {Preset::Performance, Preset::Balanced, Preset::Custom}) {
+        const Switches global = FromPreset(preset, Balanced());
+        REQUIRE(!ForGame(global, Game::Bananza, {}).read_traps);
+        REQUIRE(ForGame(global, Game::MarioKartWorld, {}).read_traps);
+        // Any other game: the global settings as they are.
+        REQUIRE(ForGame(global, Game::Other, {}) == global);
+    }
+    // Safe and Experimental keep their own.
+    for (const Preset preset : {Preset::Safe, Preset::Reactive}) {
+        const Switches global = FromPreset(preset, Balanced());
+        for (const Game game : {Game::Bananza, Game::MarioKartWorld, Game::Other}) {
+            REQUIRE(ForGame(global, game, {}) == global);
+        }
+    }
+    // The game's own choice goes over its default, and the other boxes are untouched.
+    const Switches global = Performance();
+    Overrides own;
+    own.boxes[ReadTrapsKey] = true;
+    REQUIRE(ForGame(global, Game::Bananza, own).read_traps);
+    own.boxes[ReadTrapsKey] = false;
+    REQUIRE(!ForGame(global, Game::MarioKartWorld, own).read_traps);
+    REQUIRE(ForGame(global, Game::MarioKartWorld, {}).osd == global.osd);
+    // What the game's variables say: Bananza sets READ_TRAPS=0, Mario Kart World leaves it unset.
+    const auto has_read_traps = [](const std::vector<Var>& vars) {
+        for (const Var& var : vars) {
+            if (var.name == "EDEN_NX2_READ_TRAPS") {
+                return true;
+            }
+        }
+        return false;
+    };
+    REQUIRE(has_read_traps(Wanted(ForGame(Balanced(), Game::Bananza, {}), Game::Bananza)));
+    REQUIRE(!has_read_traps(
+        Wanted(ForGame(Performance(), Game::MarioKartWorld, {}), Game::MarioKartWorld)));
+}

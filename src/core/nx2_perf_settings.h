@@ -368,6 +368,35 @@ constexpr Game GameOf(u64 program_id) {
     return Game::Other;
 }
 
+/// Overrides' slot of read_traps (Keys[0]).
+inline constexpr std::size_t ReadTrapsKey = 0;
+
+/// What a game gets over the global settings before its own choices: Bananza runs with read traps
+/// off, Mario Kart World needs them on; other games have none. Safe (everything off) and
+/// Experimental (Reactive Flushing instead of read traps) keep their own.
+constexpr Overrides GameDefaults(Game game, Preset preset) {
+    Overrides defaults;
+    if (preset == Preset::Safe || preset == Preset::Reactive) {
+        return defaults;
+    }
+    if (game == Game::Bananza) {
+        defaults.boxes[ReadTrapsKey] = false;
+    } else if (game == Game::MarioKartWorld) {
+        defaults.boxes[ReadTrapsKey] = true;
+    }
+    return defaults;
+}
+
+/// The global settings with the game's built-in defaults: what the game's own choices go over.
+constexpr Switches GameBase(const Switches& global, Game game) {
+    return WithOverrides(global, GameDefaults(game, global.preset));
+}
+
+/// The settings a game runs with: global, the game's defaults, then its own choices.
+constexpr Switches ForGame(const Switches& global, Game game, const Overrides& own) {
+    return WithOverrides(GameBase(global, game), own);
+}
+
 struct Var {
     std::string_view name;
     std::string_view value;

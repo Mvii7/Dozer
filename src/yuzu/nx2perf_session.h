@@ -31,7 +31,8 @@ void CaptureOutsideSwitches();
 /// Whether `name` was in the environment before the program set any (CaptureOutsideSwitches).
 bool SetOutside(std::string_view name);
 
-/// The tuning settings for a title: the global ones with the title's own boxes over them.
+/// The tuning settings for a title: the global ones, the built-in defaults of Bananza and Mario
+/// Kart World, then the title's own boxes.
 Core::Nx2PerfSettings::Switches SwitchesFor(u64 program_id);
 
 enum class Boot {

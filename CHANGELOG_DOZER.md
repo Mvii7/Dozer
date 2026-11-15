@@ -10,7 +10,9 @@ and `=0` brings back the 2.0.0 code path.
 
 - Per-game tuning: a game's Properties window has a Tuning tab where each Tuning box can follow the
   global setting (Default) or be set on or off for that game only (for example read traps on for
-  Mario Kart World, off for Bananza). Only the differences are kept, in `qt-config.ini`
+  Mario Kart World, off for Bananza). Those two games also get read traps off (Bananza) and on
+  (Mario Kart World) by default, except under Safe and Experimental; other games use the global
+  settings. Only the differences are kept, in `qt-config.ini`
   (`[AnkaGames]`); the Tuning tab stays the default. A game whose settings differ from the
   session's first game asks to restart, as before.
 

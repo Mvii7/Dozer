@@ -141,10 +141,10 @@ under it.
 
 **Per game.** The tab sets the defaults for every game. A game's **Properties > Tuning** tab (right-click
 the game, or **Emulation > Configure Current Game**) can set a box on or off for that game only;
-**Default** follows this tab. The preset and frame generation stay global. A game with its own
+**Default** follows this tab, except for two games with defaults of their own: **Read traps** are off
+for Donkey Kong Bananza and on for Mario Kart World (not under Safe and Experimental, which keep
+their own). Every other game uses this tab as it is. The preset and frame generation stay global. A game with its own
 boxes starts with them, and Dozer asks to restart when the session's first game used others.
-Example: Mario Kart World with **Read traps** on, with the Performance preset (read traps off)
-kept for Donkey Kong Bananza.
 
 **Frame generation.** The tab also has a **Frame generation** box with three choices:
 

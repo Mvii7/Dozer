@@ -13,8 +13,8 @@
 class QComboBox;
 
 // The per-game Tuning tab: each box of the Tuning tab (core/nx2_perf_settings.h) can follow the
-// global setting or be set on / off for this game only. Only the choices that differ from the
-// global ones are kept (UISettings::values.nx2perf_games).
+// global setting (for Bananza and Mario Kart World, their built-in default) or be set on / off for
+// this game only. Only the choices made here are kept (UISettings::values.nx2perf_games).
 class ConfigureNx2PerfPerGame : public QWidget {
     Q_OBJECT
 
