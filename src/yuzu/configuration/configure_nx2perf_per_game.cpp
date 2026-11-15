@@ -17,6 +17,7 @@
 #include <QStyle>
 #include <QVBoxLayout>
 
+#include "configuration/shared_widget.h"
 #include "core/nx2_perf_settings.h"
 #include "qt_common/config/uisettings.h"
 
@@ -63,19 +64,16 @@ QString PresetName(Perf::Preset preset) {
     return QObject::tr("Custom");
 }
 
-// The cross next to a changed setting, set up like the other tabs' (shared_widget.cpp); it keeps
-// its room when hidden.
+// The cross next to a changed setting: the other tabs' own restore button (hidden until shown).
 QPushButton* CreateResetButton(QWidget* parent) {
-    auto* button = new QPushButton(
-        parent->style()->standardIcon(QStyle::SP_LineEditClearButton), QString{}, parent);
+    QPushButton* button = ConfigurationShared::Widget::CreateRestoreGlobalButton(true, parent);
     button->setToolTip(QObject::tr("Reset to the global setting"));
-    // Dark themes give buttons a wide minimum width
-    button->setStyleSheet(QStringLiteral("min-width: 0px;"));
-    QSizePolicy policy{QSizePolicy::Preferred, QSizePolicy::Preferred};
-    policy.setRetainSizeWhenHidden(true);
-    button->setSizePolicy(policy);
-    button->setVisible(false);
     return button;
+}
+
+void ShowReset(QPushButton* button, bool shown) {
+    button->setEnabled(shown);
+    button->setVisible(shown);
 }
 
 } // Anonymous namespace
@@ -160,14 +158,14 @@ void ConfigureNx2PerfPerGame::Refresh() {
         const QSignalBlocker blocker{preset};
         preset->setCurrentIndex(Perf::IndexOf(now.preset));
     }
-    preset_reset->setVisible(now.preset != global.preset);
+    ShowReset(preset_reset, now.preset != global.preset);
     for (const Row& row : rows) {
         {
             const QSignalBlocker blocker{row.box};
             row.box->setChecked(now.*EntryOf(row.key)->field);
         }
         // The game's own boxes have no global setting to go back to.
-        row.reset->setVisible(row.key < Perf::Keys.size() && own.boxes[row.key].has_value());
+        ShowReset(row.reset, row.key < Perf::Keys.size() && own.boxes[row.key].has_value());
     }
 }
 
