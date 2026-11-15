@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdlib>
 #include <optional>
 #include <set>
 #include <span>
@@ -325,6 +326,22 @@ public:
     /// 2D images whose memory can be bound in parts, on the graphics queue.
     bool IsSparseResidencyImage2DSupported() const {
         return IsSparseBindingSupported() && features.features.sparseResidencyImage2D;
+    }
+
+    /// Whether images with no memory bound may be sampled and used as attachments. AMD's drivers
+    /// fault on it or sample black, so large images there are backed normally.
+    /// EDEN_NX2_SPARSE_UNBACKED=1 allows unbound images on any driver, =0 on none.
+    bool CanUseUnbackedSparseImages() const {
+        static const char forced = [] {
+            const char* value = std::getenv("EDEN_NX2_SPARSE_UNBACKED");
+            return value == nullptr ? '\0' : value[0];
+        }();
+        if (forced == '0' || forced == '1') {
+            return forced == '1';
+        }
+        const VkDriverIdKHR id = GetDriverID();
+        return id != VK_DRIVER_ID_AMD_PROPRIETARY && id != VK_DRIVER_ID_AMD_OPEN_SOURCE &&
+               id != VK_DRIVER_ID_MESA_RADV;
     }
 
     /// Returns true for tile-based deferred renderers.
@@ -983,6 +1000,10 @@ FN_MAX_LIMIT_LIST
     /// GetDeviceMemoryUsage() terms: the usage at which the main device-local heap reaches its
     /// budget. 0 without the extension.
     u64 GetDeviceMemoryBudget() const;
+
+    /// Bytes inside the allocator's blocks that no allocation uses: real VRAM that
+    /// GetDeviceMemoryUsage() leaves out.
+    u64 GetDeviceMemorySlack() const;
 
     u32 GetSetsPerPool() const {
         return sets_per_pool;

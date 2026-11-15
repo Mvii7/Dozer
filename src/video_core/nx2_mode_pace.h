@@ -32,7 +32,7 @@ extern std::atomic<u32> g_nx2_session;        // core/core.h: emulation sessions
 
 namespace VideoCommon::Nx2ModePace {
 
-// EDEN_NX2_MODE_PACE=1 (multicore, off by default; needs EDEN_NX2_PRESENT_INTERVAL_WORD for the
+// EDEN_NX2_BANANZA_MODE_PACE=1 (multicore, off by default; needs EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD for the
 // game's mode): steer Donkey Kong Bananza's 60 / 30 / 20 fps mode by holding its vi2 229 presents
 // for a few frames (late frames, which is what it switches on), the GPU timer left at
 // fast_gpu_time's /256. Decisions in nx2_mode_pace_logic.h; this part times the presents, holds
@@ -40,12 +40,12 @@ namespace VideoCommon::Nx2ModePace {
 // EDEN_NX2_PRESENT_INTERVAL > 1, EDEN_NX2_GPU_BUSY_CLOCK (both make the game read GPU time and drop
 // its resolution) and EDEN_NX2_VBLANK_GRID (its grid would not move with a hold: the next frame
 // would come early); it turns EDEN_NX2_MODE_GOV off (nx2_mode_gov.h). Holds only at speed limit
-// 100%. EDEN_NX2_MODE_PACE=2: v2.1 (V21 below), which holds only inside 30's window and releases
+// 100%. EDEN_NX2_BANANZA_MODE_PACE=2: v2.1 (V21 below), which holds only inside 30's window and releases
 // presents early to take 20 up, by the emulator's own frame capacity.
 // The controller's clock is the sum of the present intervals, each at most 1 s: across a pause or
 // a long load its rests run slower than the wall clock.
 //
-// EDEN_NX2_PACE_SPIN_US=<0-3000> (default 0, with or without the controller): every vblank pacing
+// EDEN_NX2_BANANZA_PACE_SPIN_US=<0-3000> (default 0, with or without the controller): every vblank pacing
 // sleep (and the hold) wakes that long before its target and yields until it; 0 sleeps as before.
 // EDEN_NX2_PACE_GUEST_SLEEP (below): those sleeps in the guest kernel.
 
@@ -55,44 +55,44 @@ inline bool On(const char* text) {
 
 inline bool Enabled() {
     static const bool env_enabled = [] {
-        if (!On(std::getenv("EDEN_NX2_MODE_PACE"))) {
+        if (!On(std::getenv("EDEN_NX2_BANANZA_MODE_PACE"))) {
             return false;
         }
         if (!Settings::values.use_multi_core.GetValue()) {
-            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE needs multicore: off");
+            LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE needs multicore: off");
             return false;
         }
-        if (std::getenv("EDEN_NX2_PRESENT_INTERVAL_WORD") == nullptr) {
-            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE needs EDEN_NX2_PRESENT_INTERVAL_WORD: off");
+        if (std::getenv("EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD") == nullptr) {
+            LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE needs EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD: off");
             return false;
         }
         if (const char* text = std::getenv("EDEN_NX2_PRESENT_INTERVAL");
             text != nullptr && std::strtol(text, nullptr, 10) > 1) {
-            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE with EDEN_NX2_PRESENT_INTERVAL > 1 (the game's "
+            LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE with EDEN_NX2_PRESENT_INTERVAL > 1 (the game's "
                                 "mode would read as at least that): off");
             return false;
         }
         if (On(std::getenv("EDEN_NX2_GPU_BUSY_CLOCK"))) {
-            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE with EDEN_NX2_GPU_BUSY_CLOCK (the game would "
+            LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE with EDEN_NX2_GPU_BUSY_CLOCK (the game would "
                                 "read GPU time and drop its resolution): off");
             return false;
         }
         // nx2_gsv.h's VblankGridMode reads it the same way (0-2).
         if (const char* text = std::getenv("EDEN_NX2_VBLANK_GRID");
             text != nullptr && std::strtol(text, nullptr, 10) > 0) {
-            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE with EDEN_NX2_VBLANK_GRID (the grid does not "
+            LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE with EDEN_NX2_VBLANK_GRID (the grid does not "
                                 "move with a hold, the next frame would come early): off");
             return false;
         }
         if (const char* text = std::getenv("EDEN_NX2_GPU_TICK_DIV")) {
             const double div = std::strtod(text, nullptr);
             if (div >= 1.0 && div < 64.0) {
-                LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE with EDEN_NX2_GPU_TICK_DIV={}: the game "
+                LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE with EDEN_NX2_GPU_TICK_DIV={}: the game "
                                     "reads GPU time and may drop its resolution",
                             div);
             }
         } else if (Settings::values.gpu_clock.GetValue() == Settings::GpuClock::Normal) {
-            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE with fast_gpu_time off (/1): the game reads "
+            LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE with fast_gpu_time off (/1): the game reads "
                                 "GPU time and may drop its resolution");
         }
         return true;
@@ -100,26 +100,26 @@ inline bool Enabled() {
     return env_enabled && Tegra::Nx2IsBananza();
 }
 
-/// EDEN_NX2_PACE_SPIN_US: 0-3000, default 0.
+/// EDEN_NX2_BANANZA_PACE_SPIN_US: 0-3000, default 0.
 inline u32 SpinUs() {
     static const u32 spin = [] {
-        const char* text = std::getenv("EDEN_NX2_PACE_SPIN_US");
+        const char* text = std::getenv("EDEN_NX2_BANANZA_PACE_SPIN_US");
         if (text == nullptr) {
             return 0U;
         }
         const long value = std::strtol(text, nullptr, 10);
         if (value < 0 || value > 3000) {
-            LOG_WARNING(HW_GPU, "EDEN_NX2_PACE_SPIN_US={} out of 0-3000: 0", text);
+            LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_PACE_SPIN_US={} out of 0-3000: 0", text);
             return 0U;
         }
         if (value > 0) {
             LOG_INFO(HW_GPU, "vblank pacing wakes {} us early and yields to its target "
-                             "(EDEN_NX2_PACE_SPIN_US)",
+                             "(EDEN_NX2_BANANZA_PACE_SPIN_US)",
                      value);
         }
         return static_cast<u32>(value);
     }();
-    return spin;
+    return Tegra::Nx2IsBananza() ? spin : 0U;
 }
 
 // EDEN_NX2_PACE_GUEST_SLEEP=1 (multicore, off by default): the vblank pacing and the hold sleep
@@ -158,7 +158,7 @@ inline u32 GuestTailUs() {
     return tail;
 }
 
-/// Nanoseconds the pacing sleeps yielded (EDEN_NX2_PACE_SPIN_US), for the 10 s line.
+/// Nanoseconds the pacing sleeps yielded (EDEN_NX2_BANANZA_PACE_SPIN_US), for the 10 s line.
 inline std::atomic<u64> g_spun_ns{};
 
 /// EDEN_NX2_PACE_GUEST_SLEEP's guest kernel sleeps, for vi2's 600 present line (nx2_gsv.h).
@@ -189,7 +189,7 @@ inline void SleepFor(std::chrono::nanoseconds duration, const GuestSleeper* gues
     SleepUntil(std::chrono::steady_clock::now() + duration, guest);
 }
 
-/// EDEN_NX2_MODE_PACE_<NAME>: a value out of its range is ignored (warning).
+/// EDEN_NX2_BANANZA_MODE_PACE_<NAME>: a value out of its range is ignored (warning).
 inline Params ReadParams() {
     Params p{};
     const auto number = [](const char* name, double& value, double low, double high) {
@@ -219,66 +219,66 @@ inline Params ReadParams() {
             value = text[0] != '0';
         }
     };
-    flag("EDEN_NX2_MODE_PACE_AUTO", p.auto_push);
-    flag("EDEN_NX2_MODE_PACE_60", p.allow60);
-    number("EDEN_NX2_MODE_PACE_FROM60", p.from60_ms, 10.0, 33.0);
-    number("EDEN_NX2_MODE_PACE_SELF60", p.self60_ms, 20.0, 60.0);
-    number("EDEN_NX2_MODE_PACE_DOWN_DWELL", p.down_dwell_s, 0.0, 5.0);
-    number("EDEN_NX2_MODE_PACE_TO60", p.to60_ms, 5.0, 17.0);
-    number("EDEN_NX2_MODE_PACE_UP_DWELL", p.up_dwell_s, 1.0, 120.0);
-    number("EDEN_NX2_MODE_PACE_UP_DWELL_MAX", p.up_dwell_max_s, 1.0, 600.0);
-    number("EDEN_NX2_MODE_PACE_VERIFY60", p.verify60_s, 0.0, 60.0);
-    number("EDEN_NX2_MODE_PACE_STABLE60", p.stable60_s, 10.0, 600.0);
-    number("EDEN_NX2_MODE_PACE_TO30", p.to30_ms, 15.0, 33.0);
-    number("EDEN_NX2_MODE_PACE_VERIFY30", p.verify30_s, 0.0, 60.0);
-    number("EDEN_NX2_MODE_PACE_UP20_DWELL", p.up20_dwell_s, 0.5, 10.0);
-    number("EDEN_NX2_MODE_PACE_AFTER_UP20", p.after_up20_s, 0.0, 60.0);
-    number("EDEN_NX2_MODE_PACE_HOLD", p.hold_ms, 34.5, 60.0);
-    number("EDEN_NX2_MODE_PACE_HOLD_LATE", p.hold_late_ms, 34.5, 80.0);
-    number("EDEN_NX2_MODE_PACE_HOLD20", p.hold20_ms, 51.0, 80.0);
-    number("EDEN_NX2_MODE_PACE_HOLD20_STEP", p.hold20_step_ms, 0.0, 20.0);
-    number("EDEN_NX2_MODE_PACE_HOLD20_MAX", p.hold20_max_ms, 51.0, 90.0);
-    count("EDEN_NX2_MODE_PACE_HOLD20_EVERY", p.hold20_step_frames, 1, 100);
-    if (const char* text = std::getenv("EDEN_NX2_MODE_PACE_UP_SINGLE")) {
+    flag("EDEN_NX2_BANANZA_MODE_PACE_AUTO", p.auto_push);
+    flag("EDEN_NX2_BANANZA_MODE_PACE_60", p.allow60);
+    number("EDEN_NX2_BANANZA_MODE_PACE_FROM60", p.from60_ms, 10.0, 33.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_SELF60", p.self60_ms, 20.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_DOWN_DWELL", p.down_dwell_s, 0.0, 5.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_TO60", p.to60_ms, 5.0, 17.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_UP_DWELL", p.up_dwell_s, 1.0, 120.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_UP_DWELL_MAX", p.up_dwell_max_s, 1.0, 600.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_VERIFY60", p.verify60_s, 0.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_STABLE60", p.stable60_s, 10.0, 600.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_TO30", p.to30_ms, 15.0, 33.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_VERIFY30", p.verify30_s, 0.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_UP20_DWELL", p.up20_dwell_s, 0.5, 10.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_AFTER_UP20", p.after_up20_s, 0.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_HOLD", p.hold_ms, 34.5, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_HOLD_LATE", p.hold_late_ms, 34.5, 80.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_HOLD20", p.hold20_ms, 51.0, 80.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_HOLD20_STEP", p.hold20_step_ms, 0.0, 20.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_HOLD20_MAX", p.hold20_max_ms, 51.0, 90.0);
+    count("EDEN_NX2_BANANZA_MODE_PACE_HOLD20_EVERY", p.hold20_step_frames, 1, 100);
+    if (const char* text = std::getenv("EDEN_NX2_BANANZA_MODE_PACE_UP_SINGLE")) {
         const double parsed = std::strtod(text, nullptr);
         if (parsed == 0.0 || (parsed >= 50.0 && parsed <= 95.0)) {
             p.up_single_ms = parsed;
         } else {
-            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE_UP_SINGLE={} not 0 or 50-95: 0", text);
+            LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE_UP_SINGLE={} not 0 or 50-95: 0", text);
         }
     }
-    count("EDEN_NX2_MODE_PACE_DOWN_FRAMES", p.down_frames, 3, 300);
-    count("EDEN_NX2_MODE_PACE_UP_FRAMES", p.up_frames, 10, 300);
-    count("EDEN_NX2_MODE_PACE_UP20_FRAMES", p.up20_frames, 5, 200);
-    number("EDEN_NX2_MODE_PACE_DOWN_REST", p.down_rest_s, 0.0, 60.0);
-    number("EDEN_NX2_MODE_PACE_DOWN_REST_MAX", p.down_rest_max_s, 0.0, 600.0);
-    count("EDEN_NX2_MODE_PACE_DOWN_TRIES", p.down_tries, 1, 20);
-    number("EDEN_NX2_MODE_PACE_UP_REST", p.up_rest_s, 0.0, 300.0);
-    number("EDEN_NX2_MODE_PACE_UP_REST_MAX", p.up_rest_max_s, 0.0, 600.0);
-    count("EDEN_NX2_MODE_PACE_UP_TRIES", p.up_tries, 1, 20);
-    number("EDEN_NX2_MODE_PACE_UP20_REST", p.up20_rest_s, 0.0, 60.0);
-    number("EDEN_NX2_MODE_PACE_UP20_REST_MAX", p.up20_rest_max_s, 0.0, 600.0);
-    count("EDEN_NX2_MODE_PACE_UP20_TRIES", p.up20_tries, 1, 20);
-    number("EDEN_NX2_MODE_PACE_STALL", p.stall_ms, 50.0, 500.0);
-    number("EDEN_NX2_MODE_PACE_STALL_QUIET", p.stall_quiet_s, 0.0, 10.0);
-    number("EDEN_NX2_MODE_PACE_MODE_QUIET", p.mode_quiet_s, 0.0, 10.0);
-    number("EDEN_NX2_MODE_PACE_MODE_QUIET60", p.mode_quiet60_s, 0.0, 10.0);
-    flag("EDEN_NX2_MODE_PACE_TO20", p.to20);
-    number("EDEN_NX2_MODE_PACE_TO20_K", p.to20_k_ms, 30.0, 60.0);
-    number("EDEN_NX2_MODE_PACE_TO20_MS", p.to20_ms, 100.0, 300.0);
-    count("EDEN_NX2_MODE_PACE_TO20_FRAMES", p.to20_frames, 1, 4);
-    number("EDEN_NX2_MODE_PACE_TO20_REST", p.to20_rest_s, 5.0, 300.0);
+    count("EDEN_NX2_BANANZA_MODE_PACE_DOWN_FRAMES", p.down_frames, 3, 300);
+    count("EDEN_NX2_BANANZA_MODE_PACE_UP_FRAMES", p.up_frames, 10, 300);
+    count("EDEN_NX2_BANANZA_MODE_PACE_UP20_FRAMES", p.up20_frames, 5, 200);
+    number("EDEN_NX2_BANANZA_MODE_PACE_DOWN_REST", p.down_rest_s, 0.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_DOWN_REST_MAX", p.down_rest_max_s, 0.0, 600.0);
+    count("EDEN_NX2_BANANZA_MODE_PACE_DOWN_TRIES", p.down_tries, 1, 20);
+    number("EDEN_NX2_BANANZA_MODE_PACE_UP_REST", p.up_rest_s, 0.0, 300.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_UP_REST_MAX", p.up_rest_max_s, 0.0, 600.0);
+    count("EDEN_NX2_BANANZA_MODE_PACE_UP_TRIES", p.up_tries, 1, 20);
+    number("EDEN_NX2_BANANZA_MODE_PACE_UP20_REST", p.up20_rest_s, 0.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_UP20_REST_MAX", p.up20_rest_max_s, 0.0, 600.0);
+    count("EDEN_NX2_BANANZA_MODE_PACE_UP20_TRIES", p.up20_tries, 1, 20);
+    number("EDEN_NX2_BANANZA_MODE_PACE_STALL", p.stall_ms, 50.0, 500.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_STALL_QUIET", p.stall_quiet_s, 0.0, 10.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_MODE_QUIET", p.mode_quiet_s, 0.0, 10.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_MODE_QUIET60", p.mode_quiet60_s, 0.0, 10.0);
+    flag("EDEN_NX2_BANANZA_MODE_PACE_TO20", p.to20);
+    number("EDEN_NX2_BANANZA_MODE_PACE_TO20_K", p.to20_k_ms, 30.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE_TO20_MS", p.to20_ms, 100.0, 300.0);
+    count("EDEN_NX2_BANANZA_MODE_PACE_TO20_FRAMES", p.to20_frames, 1, 4);
+    number("EDEN_NX2_BANANZA_MODE_PACE_TO20_REST", p.to20_rest_s, 5.0, 300.0);
     return p;
 }
 
 inline std::optional<Probe> ReadProbe() {
-    const char* text = std::getenv("EDEN_NX2_MODE_PACE_PROBE");
+    const char* text = std::getenv("EDEN_NX2_BANANZA_MODE_PACE_PROBE");
     if (text == nullptr) {
         return std::nullopt;
     }
     auto probe = ParseProbe(text);
     if (!probe) {
-        LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE_PROBE={} is not <down|up|up20|to20|cycle>:<1-3600 "
+        LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE_PROBE={} is not <down|up|up20|to20|cycle>:<1-3600 "
                             "s>: no probe",
                     text);
     }
@@ -345,15 +345,15 @@ inline bool SpeedOk() {
     return Settings::values.use_speed_limit.GetValue() && Settings::SpeedLimit() == 100;
 }
 
-// EDEN_NX2_MODE_PACE=2: v2.1 (nx2_mode_pace21_logic.h), the same conditions as =1. Its settings are
-// EDEN_NX2_MODE_PACE21_<NAME>; =1 and its EDEN_NX2_MODE_PACE_<NAME> stay as they were.
+// EDEN_NX2_BANANZA_MODE_PACE=2: v2.1 (nx2_mode_pace21_logic.h), the same conditions as =1. Its settings are
+// EDEN_NX2_BANANZA_MODE_PACE21_<NAME>; =1 and its EDEN_NX2_BANANZA_MODE_PACE_<NAME> stay as they were.
 inline bool V21() {
     static const bool v21 =
-        Enabled() && std::strtol(std::getenv("EDEN_NX2_MODE_PACE"), nullptr, 10) == 2;
+        Enabled() && std::strtol(std::getenv("EDEN_NX2_BANANZA_MODE_PACE"), nullptr, 10) == 2;
     return v21;
 }
 
-/// EDEN_NX2_MODE_PACE21_<NAME>: a value out of its range is ignored (warning).
+/// EDEN_NX2_BANANZA_MODE_PACE21_<NAME>: a value out of its range is ignored (warning).
 inline Params21 ReadParams21() {
     Params21 p{};
     const auto number = [](const char* name, double& value, double low, double high) {
@@ -383,43 +383,43 @@ inline Params21 ReadParams21() {
             value = text[0] != '0';
         }
     };
-    flag("EDEN_NX2_MODE_PACE21_AUTO", p.auto_push);
-    number("EDEN_NX2_MODE_PACE21_CAP60", p.cap60_ms, 10.0, 25.0);
-    number("EDEN_NX2_MODE_PACE21_SELF60", p.self60_ms, 20.0, 60.0);
-    number("EDEN_NX2_MODE_PACE21_DOWN_DWELL", p.down_dwell_s, 0.0, 5.0);
-    number("EDEN_NX2_MODE_PACE21_DOWN_HOLD", p.down_hold_ms, 34.5, 41.5);
-    count("EDEN_NX2_MODE_PACE21_DOWN_FRAMES", p.down_frames, 3, 300);
-    number("EDEN_NX2_MODE_PACE21_DOWN_REST", p.down_rest_s, 0.0, 60.0);
-    number("EDEN_NX2_MODE_PACE21_DOWN_REST_MAX", p.down_rest_max_s, 0.0, 600.0);
-    number("EDEN_NX2_MODE_PACE21_CAP20", p.cap20_ms, 25.0, 45.0);
-    number("EDEN_NX2_MODE_PACE21_TO20_DWELL", p.to20_dwell_s, 0.5, 60.0);
-    number("EDEN_NX2_MODE_PACE21_TO20_HOLD", p.to20_hold_ms, 42.0, 80.0);
-    count("EDEN_NX2_MODE_PACE21_TO20_FRAMES", p.to20_frames, 3, 60);
-    number("EDEN_NX2_MODE_PACE21_TO20_REST", p.to20_rest_s, 0.0, 300.0);
-    number("EDEN_NX2_MODE_PACE21_TO20_REST_MAX", p.to20_rest_max_s, 0.0, 600.0);
-    count("EDEN_NX2_MODE_PACE21_FULL30_ESCAPES", p.full30_escapes, 1, 4);
-    number("EDEN_NX2_MODE_PACE21_ESCAPE", p.escape_s, 0.0, 300.0);
-    number("EDEN_NX2_MODE_PACE21_CAP30", p.cap30_ms, 15.0, 33.0);
-    number("EDEN_NX2_MODE_PACE21_REL_DWELL", p.rel_dwell_s, 0.2, 30.0);
-    number("EDEN_NX2_MODE_PACE21_REL", p.rel_ms, 17.0, 40.0);
-    count("EDEN_NX2_MODE_PACE21_REL_FRAMES", p.rel_frames, 1, 60);
-    count("EDEN_NX2_MODE_PACE21_REL_WAIT", p.rel_wait, 1, 60);
-    number("EDEN_NX2_MODE_PACE21_REL_REST", p.rel_rest_s, 0.0, 60.0);
-    number("EDEN_NX2_MODE_PACE21_REL_REST_MAX", p.rel_rest_max_s, 0.0, 600.0);
-    number("EDEN_NX2_MODE_PACE21_VERIFY30", p.verify30_s, 0.0, 60.0);
-    flag("EDEN_NX2_MODE_PACE21_UP_REL", p.up_rel);
-    number("EDEN_NX2_MODE_PACE21_CAP_UP", p.cap_up_ms, 5.0, 17.0);
-    number("EDEN_NX2_MODE_PACE21_UP_DWELL", p.up_dwell_s, 1.0, 120.0);
-    number("EDEN_NX2_MODE_PACE21_UP_REL_MS", p.up_rel_ms, 5.0, 17.0);
-    number("EDEN_NX2_MODE_PACE21_UP_REST", p.up_rest_s, 0.0, 300.0);
-    number("EDEN_NX2_MODE_PACE21_UP_REST_MAX", p.up_rest_max_s, 0.0, 600.0);
-    number("EDEN_NX2_MODE_PACE21_VERIFY60", p.verify60_s, 0.0, 60.0);
-    number("EDEN_NX2_MODE_PACE21_STALL", p.stall_ms, 50.0, 500.0);
-    number("EDEN_NX2_MODE_PACE21_STALL_QUIET", p.stall_quiet_s, 0.0, 10.0);
-    number("EDEN_NX2_MODE_PACE21_MODE_QUIET", p.mode_quiet_s, 0.0, 10.0);
-    number("EDEN_NX2_MODE_PACE21_MODE_QUIET60", p.mode_quiet60_s, 0.0, 10.0);
+    flag("EDEN_NX2_BANANZA_MODE_PACE21_AUTO", p.auto_push);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_CAP60", p.cap60_ms, 10.0, 25.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_SELF60", p.self60_ms, 20.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_DOWN_DWELL", p.down_dwell_s, 0.0, 5.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_DOWN_HOLD", p.down_hold_ms, 34.5, 41.5);
+    count("EDEN_NX2_BANANZA_MODE_PACE21_DOWN_FRAMES", p.down_frames, 3, 300);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_DOWN_REST", p.down_rest_s, 0.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_DOWN_REST_MAX", p.down_rest_max_s, 0.0, 600.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_CAP20", p.cap20_ms, 25.0, 45.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_TO20_DWELL", p.to20_dwell_s, 0.5, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_TO20_HOLD", p.to20_hold_ms, 42.0, 80.0);
+    count("EDEN_NX2_BANANZA_MODE_PACE21_TO20_FRAMES", p.to20_frames, 3, 60);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_TO20_REST", p.to20_rest_s, 0.0, 300.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_TO20_REST_MAX", p.to20_rest_max_s, 0.0, 600.0);
+    count("EDEN_NX2_BANANZA_MODE_PACE21_FULL30_ESCAPES", p.full30_escapes, 1, 4);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_ESCAPE", p.escape_s, 0.0, 300.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_CAP30", p.cap30_ms, 15.0, 33.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_REL_DWELL", p.rel_dwell_s, 0.2, 30.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_REL", p.rel_ms, 17.0, 40.0);
+    count("EDEN_NX2_BANANZA_MODE_PACE21_REL_FRAMES", p.rel_frames, 1, 60);
+    count("EDEN_NX2_BANANZA_MODE_PACE21_REL_WAIT", p.rel_wait, 1, 60);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_REL_REST", p.rel_rest_s, 0.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_REL_REST_MAX", p.rel_rest_max_s, 0.0, 600.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_VERIFY30", p.verify30_s, 0.0, 60.0);
+    flag("EDEN_NX2_BANANZA_MODE_PACE21_UP_REL", p.up_rel);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_CAP_UP", p.cap_up_ms, 5.0, 17.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_UP_DWELL", p.up_dwell_s, 1.0, 120.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_UP_REL_MS", p.up_rel_ms, 5.0, 17.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_UP_REST", p.up_rest_s, 0.0, 300.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_UP_REST_MAX", p.up_rest_max_s, 0.0, 600.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_VERIFY60", p.verify60_s, 0.0, 60.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_STALL", p.stall_ms, 50.0, 500.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_STALL_QUIET", p.stall_quiet_s, 0.0, 10.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_MODE_QUIET", p.mode_quiet_s, 0.0, 10.0);
+    number("EDEN_NX2_BANANZA_MODE_PACE21_MODE_QUIET60", p.mode_quiet60_s, 0.0, 10.0);
     if (p.cap20_ms < p.cap30_ms) {
-        LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE21_CAP20 {} below CAP30 {}: {}", p.cap20_ms,
+        LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE21_CAP20 {} below CAP30 {}: {}", p.cap20_ms,
                     p.cap30_ms, p.cap30_ms);
         p.cap20_ms = p.cap30_ms;
     }
@@ -427,13 +427,13 @@ inline Params21 ReadParams21() {
 }
 
 inline std::optional<Probe21> ReadProbe21() {
-    const char* text = std::getenv("EDEN_NX2_MODE_PACE21_PROBE");
+    const char* text = std::getenv("EDEN_NX2_BANANZA_MODE_PACE21_PROBE");
     if (text == nullptr) {
         return std::nullopt;
     }
     auto probe = ParseProbe21(text);
     if (!probe) {
-        LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_PACE21_PROBE={} is not <down|to20|rel20|rel60|cycle>:"
+        LOG_WARNING(HW_GPU, "EDEN_NX2_BANANZA_MODE_PACE21_PROBE={} is not <down|to20|rel20|rel60|cycle>:"
                             "<1-3600 s>: no probe",
                     text);
     }

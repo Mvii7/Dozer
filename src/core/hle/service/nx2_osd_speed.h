@@ -24,7 +24,7 @@ inline bool Enabled() {
 /// The game time a present's interval `frame_us` stepped. DK-DYN applied (`dk_dyn`): the patched
 /// clock's step, the frame up to 2.5 vblanks (Nx2DkDynPace::StepEstimate, the 600 present
 /// line's "speed estimate"). Else `interval` vblanks at 60 Hz when the swap interval word is
-/// known (EDEN_NX2_PRESENT_INTERVAL_WORD: Bananza's 60/30/20 modes step a whole interval a
+/// known (EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD: Bananza's 60/30/20 modes step a whole interval a
 /// frame); 0: no estimate (`interval` 0), the OSD falls back to the emulated clock.
 constexpr long long GameUs(bool dk_dyn, u32 interval, long long frame_us) {
     if (frame_us <= 0) {

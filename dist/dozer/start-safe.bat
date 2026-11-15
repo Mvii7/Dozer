@@ -44,9 +44,9 @@ set EDEN_NX2_ACQUIRE_PEEK=
 set EDEN_NX2_JIT_SAME=
 set EDEN_NX2_FRONT_MACRO_LEAN=
 set EDEN_NX2_PRESENT_INTERVAL=
-set EDEN_NX2_PRESENT_INTERVAL_WORD=
-set EDEN_NX2_MODE_PACE=
-set EDEN_NX2_PACE_SPIN_US=
+set EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD=
+set EDEN_NX2_BANANZA_MODE_PACE=
+set EDEN_NX2_BANANZA_PACE_SPIN_US=
 set EDEN_NX2_MODE_GOV=
 set EDEN_NX2_DK_DYN=
 set EDEN_NX2_DK_DYN_MIN_FPS=
@@ -181,7 +181,7 @@ pause
 exit /b 1
 :noexe
 echo.
-echo  dozer-cli.exe is not next to this .bat. Put both in the Dozer folder (README_DOZER.md).
+echo  dozer-cli.exe is not next to this .bat. Put both in the Dozer folder (README.md).
 echo.
 pause
 exit /b 1

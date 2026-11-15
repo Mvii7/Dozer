@@ -122,6 +122,8 @@ add_executable(yuzu
     configuration/configure_nx2perf.cpp
     configuration/configure_nx2perf.h
     configuration/configure_nx2perf.ui
+    configuration/configure_nx2perf_per_game.cpp
+    configuration/configure_nx2perf_per_game.h
     configuration/configure_network.cpp
     configuration/configure_network.h
     configuration/configure_network.ui
@@ -250,11 +252,6 @@ set_target_properties(yuzu PROPERTIES OUTPUT_NAME "dozer")
 add_custom_command(TARGET yuzu PRE_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${PROJECT_SOURCE_DIR}/dist/nx2_switches.txt" "$<TARGET_FILE_DIR:yuzu>/nx2_switches.txt"
-    VERBATIM)
-
-# An empty "user" folder next to the executable makes the build portable.
-add_custom_command(TARGET yuzu POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:yuzu>/user"
     VERBATIM)
 
 if (YUZU_CRASH_DUMPS)

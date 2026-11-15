@@ -15,7 +15,7 @@
 // the ZendNevs fork (v2.0.5, nso.cpp, setting dk_dynamic_fps, on by default there). It rewrites the
 // game's main module as it loads; unset or any other value leaves the module untouched. Applied,
 // it sets Core::g_nx2_dk_dyn_applied, which nx2_gsv.h reads: vi2 107 then reports VRR support and
-// presents are paced to every vblank (EDEN_NX2_MODE_PACE and the present interval word set aside).
+// presents are paced to every vblank (EDEN_NX2_BANANZA_MODE_PACE and the present interval word set aside).
 namespace Loader::Nx2DkDynamicFps {
 
 constexpr u64 ProgramId = 0x040074A01BF12000ULL;

@@ -26,6 +26,14 @@
 #EDEN_NX2_INLINE_DEFER=0
 #EDEN_NX2_SPLIT_SKIP=1
 #EDEN_NX2_AUTO_STUB=1
+# UNDEF_ZERO: shader registers read before any write are zero instead of OpUndef (zero is what
+# NVIDIA gives; AMD showed garbage, e.g. green patches near glowing objects). On for AMD drivers
+# only; =1 forces it on for every GPU, =0 turns it off.
+#EDEN_NX2_UNDEF_ZERO=1
+# SPARSE_UNBACKED: large Switch 2 sparse images may be created with no memory and sampled. Off on
+# AMD drivers (they sample black or fault on unbound memory, which left Mario Kart World's terrain
+# dark): those images are backed normally. =1 allows unbound images on every GPU, =0 on none.
+#EDEN_NX2_SPARSE_UNBACKED=0
 
 # --- GPU thread shortcuts (on by default; =0 as before; added by Dozer) ---
 # =2 keeps them on and logs what they would get wrong: VERTEX_CLEAN, LIGHT_SYNC_SKIP,
@@ -51,7 +59,7 @@
 #EDEN_NX2_PACE_GUEST_TAIL_US=1000
 # vi2 104 = GetHdrStatus, SDR reply (one line "104: 1 0 0" in a file works too)
 #EDEN_NX2_VI2_REPLY=104:1,0,0
-# pace by the swap interval word's refresh rate too (needs EDEN_NX2_PRESENT_INTERVAL_WORD=12:16:4)
+# pace by the swap interval word's refresh rate too (needs EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD=12:16:4)
 #EDEN_NX2_PRESENT_RATE=1
 # MEM_OP_D MEMBAR and WaitForIdle record a real memory barrier (H1 experiment)
 #EDEN_NX2_MEMBAR=1
@@ -192,14 +200,14 @@
 # PRESENT_INTERVAL_WORD=<word>[:<shift>[:<bits>]]: take the interval from that word of the
 # game's present request. Donkey Kong Bananza: 12:16:4 (recommended: the game's own 60/30/20
 # modes keep their speed).
-#EDEN_NX2_PRESENT_INTERVAL_WORD=12:16:4
+#EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD=12:16:4
 # MODE_PACE: steer Bananza's 60/30/20 fps mode by holding presents (multicore, needs
 # PRESENT_INTERVAL_WORD). 0 off (default), 1 first controller, 2 v2.1 (recommended).
 # Set aside while DK_DYN is applied.
-#EDEN_NX2_MODE_PACE=2
+#EDEN_NX2_BANANZA_MODE_PACE=2
 # PACE_SPIN_US=<0-3000>: pacing sleeps wake that long early and yield until the target
 # (default 0; recommended 1500).
-#EDEN_NX2_PACE_SPIN_US=1500
+#EDEN_NX2_BANANZA_PACE_SPIN_US=1500
 # (PACE_GUEST_SLEEP=1 and PACE_GUEST_TAIL_US=<0-5000>, default 1000, are listed above.)
 # PACE_ONE=0: with DK_DYN applied, presents are not paced to every vblank (default: paced).
 #EDEN_NX2_PACE_ONE=0
@@ -216,7 +224,7 @@
 #EDEN_NX2_GPU_TICK_DIV=256
 # Controller tuning (advanced; a value out of range is ignored with a warning). Defaults
 # (ms, s or frames):
-# EDEN_NX2_MODE_PACE_<NAME> (MODE_PACE=1): AUTO=1 60=1 FROM60=17.5 SELF60=34 DOWN_DWELL=0.5
+# EDEN_NX2_BANANZA_MODE_PACE_<NAME> (MODE_PACE=1): AUTO=1 60=1 FROM60=17.5 SELF60=34 DOWN_DWELL=0.5
 #   TO60=13 UP_DWELL=5 UP_DWELL_MAX=60 VERIFY60=10 STABLE60=60 TO30=25 VERIFY30=10
 #   UP20_DWELL=2 AFTER_UP20=10 HOLD=42 HOLD_LATE=46 HOLD20=56 HOLD20_STEP=6 HOLD20_MAX=68
 #   HOLD20_EVERY=10 DOWN_FRAMES=30 UP_FRAMES=90 UP20_FRAMES=40 DOWN_REST=2 DOWN_REST_MAX=60
@@ -224,7 +232,7 @@
 #   UP20_TRIES=3 STALL=100 STALL_QUIET=2 MODE_QUIET=1 MODE_QUIET60=0.5 TO20=0 TO20_K=34
 #   TO20_MS=110 TO20_FRAMES=2 TO20_REST=30
 #   UP_SINGLE=0 (0 or 50-95 ms); PROBE=<down|up|up20|to20|cycle>:<1-3600 s> (a test push)
-# EDEN_NX2_MODE_PACE21_<NAME> (MODE_PACE=2): AUTO=1 CAP60=15 SELF60=34 DOWN_DWELL=0.5
+# EDEN_NX2_BANANZA_MODE_PACE21_<NAME> (MODE_PACE=2): AUTO=1 CAP60=15 SELF60=34 DOWN_DWELL=0.5
 #   DOWN_HOLD=37 DOWN_FRAMES=40 DOWN_REST=2 DOWN_REST_MAX=30 CAP20=31 TO20_DWELL=3
 #   TO20_HOLD=42 TO20_FRAMES=10 TO20_REST=10 TO20_REST_MAX=60 FULL30_ESCAPES=2 ESCAPE=30
 #   CAP30=28 REL_DWELL=2 REL=30 REL_FRAMES=6 REL_WAIT=6 REL_REST=3 REL_REST_MAX=60
@@ -233,7 +241,7 @@
 #   PROBE=<down|to20|rel20|rel60|cycle>:<1-3600 s> (a test push)
 # EDEN_NX2_MODE_GOV_<NAME> (MODE_GOV=1): HOLD=10 UP=36 DOWN=34 SPIKE=70 TO60=17 FROM60=19.5
 #   TO30=31 FROM30=36, and UP_FRAMES, DOWN_FRAMES, COOLDOWN (video_core/nx2_mode_gov.h).
-#EDEN_NX2_MODE_PACE21_DOWN_HOLD=37
+#EDEN_NX2_BANANZA_MODE_PACE21_DOWN_HOLD=37
 
 # --- Donkey Kong Bananza dynamic frame rate (game-specific; core/loader/nx2_dk_dynamic_fps.h) ---
 # DK_DYN=1: while Bananza's main module loads, patch its frame rate controller in memory (a
@@ -254,7 +262,8 @@
 #EDEN_NX2_MKW_DYN=1
 
 # --- read traps (core/memory/read_traps.h; ported from the ZendNevs fork) ---
-# On by default with use_reactive_flushing=false (Switch 2 titles, fastmem, not NCE): a buffer
+# Off by default: Performance, the default preset, sets 0. Unset means on (Switch 2 titles,
+# use_reactive_flushing=false, fastmem, not NCE): a buffer
 # page the GPU writes is read-protected until the guest CPU's first read, which flushes it and
 # notes it, so later GPU writes there are copied back at fences. Bananza's foliage comes from such
 # GPU-written data: rendered at a performance cost with this on, and not rendered when this and
@@ -262,6 +271,27 @@
 # Balanced leaves this unset. Performance, Experimental and Safe set 0 (start-performance.bat,
 # start-reactive-experimental.bat, start-safe.bat).
 #EDEN_NX2_READ_TRAPS=0
+# TRAP_FASTMEM=0: a guest instruction whose read hits a read trap leaves fastmem for good, as
+# after any other fastmem fault (every later read of a GPU-cached page it makes then takes the
+# slow path). Unset (on): it takes the slow path for that one read and keeps fastmem; one that
+# faults more than 1000 times in a second leaves fastmem anyway. Only with read traps on; the
+# reactive stats line shows "fastmem read fallbacks" and "read faults kept".
+#EDEN_NX2_TRAP_FASTMEM=0
+# TRAP_REARM=0: a buffer page's read trap is armed by the GPU's first write there only; after
+# the guest's first read, later GPU writes reach it only through the copies back at fences, so a
+# read before the next fence can find older data. Unset (on): each read lets the next GPU write
+# arm the page again, and a read after that write flushes it.
+#EDEN_NX2_TRAP_REARM=0
+# TRAP_POP_DISARM=0: a copy back at a fence leaves the read traps of its pages armed, so the
+# guest's next read still faults (and finds nothing left to flush). Unset (on): the copy back
+# disarms the pages the GPU has not written since; the next GPU write arms them again.
+#EDEN_NX2_TRAP_POP_DISARM=0
+# COPYBACK_WAIT=0: a read trap that finds GPU writes not in guest memory yet always sync flushes
+# (the CPU waits for the GPU thread to reach it and for a new download). Unset (on): when all of
+# them are in copies back already committed at a fence, it waits for those to land instead
+# (8 ms at most, then the sync flush). The reactive stats line shows "traps disarmed at copy
+# back" and "copy back waits".
+#EDEN_NX2_COPYBACK_WAIT=0
 
 # --- reactive flushing (video_core/nx2_reactive_flush.h, common/nx2_reactive.h) ---
 # All off by default. Most matter only with use_reactive_flushing=true in the config;

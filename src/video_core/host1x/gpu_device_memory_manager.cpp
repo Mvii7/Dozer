@@ -17,6 +17,11 @@ struct MaxwellDeviceMethods {
                                           size_t size) {
         interface->RasterizerArmReadTraps(address, size);
     }
+
+    static inline void DisarmRegionReadTrap(Core::Memory::Memory* interface, VAddr address,
+                                            size_t size) {
+        interface->RasterizerDisarmReadTraps(address, size);
+    }
 };
 
 } // namespace Tegra

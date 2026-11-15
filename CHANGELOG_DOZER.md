@@ -8,6 +8,83 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
+  and boxes as that game runs them. A setting changed for the game gets a cross that resets it to
+  the global one. Donkey Kong Bananza starts with the Performance preset (read traps off) instead
+  of the global one, shown as a changed preset that the cross resets to the global preset; other
+  games use the global settings. Only the changes are kept, in `qt-config.ini` (`[AnkaGames]`). A
+  game whose settings differ from the session's first game asks to restart, as before. The
+  Bananza and Mario Kart World dynamic frame rate boxes move from the global tab to those games'
+  own Tuning tabs (on by default, no cross); a game that had its box off keeps it off.
+
+- Tuning: the first start's preset is now Balanced (read traps on, which Mario Kart World needs)
+  instead of Performance. A `qt-config.ini` that already has a preset keeps it.
+
+- Read traps: a guest read that hits one no longer takes its instruction off fastmem for good.
+  Dynarmic sends that one read down the slow path and keeps the instruction on fastmem, so later
+  reads of pages already flushed stay fast. An instruction that faults more than 1000 times in a
+  second is still recompiled. `EDEN_NX2_TRAP_FASTMEM=0` brings back the old behaviour. The
+  reactive stats line also counts the read fallbacks and the faults kept on fastmem.
+  A buffer page's trap is also armed again by the next GPU write after each read
+  (`EDEN_NX2_TRAP_REARM=0`: only the first). Before, the instructions that left fastmem flushed
+  on their reads; without them, distant terrain in Bananza flickered on data the fences had not
+  copied back yet.
+  A copy back at a fence now disarms the traps of its pages (`EDEN_NX2_TRAP_POP_DISARM=0`: they
+  stay armed until a read), so reads after it no longer fault for nothing, and a trapped read
+  whose GPU writes are already in a committed copy back waits for it instead of a sync flush
+  (`EDEN_NX2_COPYBACK_WAIT=0`: always the sync flush). Disarming re-protects pages in runs.
+
+- Shader cache: a graphics pipeline key no longer includes the Vulkan driver id or version, so a
+  driver update still uses the pipelines in `vulkan.bin` instead of building them all again during
+  play. Older caches are read as they are; the driver words are cleared when a record is loaded, and
+  a pipeline saved under two driver versions is built once. If the driver rejects the device static
+  pipeline cache, that file is dropped and a new one is started.
+
+## Dozer 0.1.2 (`v0.1.2`)
+
+- AMD RDNA2 fixes: shader code the AMD drivers miscompile is avoided (read-before-write registers
+  become zero, `EDEN_NX2_UNDEF_ZERO`; CAS loops, 64/128-bit storage accesses, fragment shuffles
+  and geometry outputs worked around), large sparse images are backed normally on AMD and RADV so
+  Mario Kart World's terrain is no longer dark (`EDEN_NX2_SPARSE_UNBACKED` overrides), and a few
+  AMD-only Vulkan driver workarounds (memory overallocation, pipeline cache rebuild, full
+  pipeline barriers) apply. Other GPUs keep their paths. Tested on an RX 6700 XT.
+
+- Texture cache thresholds keep at least an eighth of the driver budget in reserve for the
+  allocator's unused block space even before any is measured. In an 8-minute Mario Kart World run
+  on a 16 GB card the memory peaked 0.4 GB under the budget with the measured value alone; the
+  reserve keeps the peak 1.5-2 GB under it.
+
+- Texture cache collector, to cut the hitches when a course changes (Mario Kart World): a
+  GPU-modified image is only evicted at the critical line and at most one is downloaded (a full
+  GPU wait) per pass; past the expected line, costly (ASTC) images unused for 600 frames
+  (`EDEN_NX2_TC_STALE_COSTLY=<frames>`, 0 = off) go a few per frame instead of all at once at the
+  critical line. A pass stops after 1.5 ms (`EDEN_NX2_TC_GC_BUDGET_US=<us>`, 0 = no limit; not
+  applied once memory is 1 GiB over the critical line), spreading a burst over frames. The views,
+  framebuffers and image tables of the deleted images are cleared once at the end of a pass
+  instead of once per image, which was most of the time a pass took. Tested on Mario Kart World
+  with a 16 GB card only.
+
+## Dozer 0.1.1 (`v0.1.1`)
+
+- Texture cache thresholds follow the allocator's unused block space as well as the driver
+  budget, so `EDEN_NX2_TC_EXPECTED_MIB` and `EDEN_NX2_TC_CRITICAL_MIB` are no longer needed on a
+  16 GB card to avoid the lag after about 12 minutes of Mario Kart World. The overrides still win.
+
+- One readme: `README.md` is now the full manual (it was `README_DOZER.md`), replacing the upstream
+  `README.md` and the shorter `.github/README.md` that GitHub showed as the front page. It names
+  Mario Kart World as the second tuned game. The release zip, the launchers and the load-error
+  message point to `README.md`.
+
+- ASTC recompression now defaults to BC3 instead of Uncompressed. In Mario Kart World on a 16 GB
+  card, uncompressed ASTC kept device memory at the collector's critical line (12.6-13.7 GiB),
+  evicting and decoding textures again every few seconds; with BC3 the first race stays near
+  9.5 GiB with no evictions (over a full grand prix the cache still fills up to its limit), and
+  Donkey Kong Bananza stays at about 4.6 GiB with no evictions and looks the same to the
+  maintainer. Only configs without a saved value change; set ASTC Recompression
+  Method (advanced graphics settings) to Uncompressed for the best quality.
+
+## Dozer 0.1.0 (`v0.1.0`)
+
 - Mario Kart World dynamic frame rate (`MKW_DYN=1` / `EDEN_NX2_MKW_DYN=1`): its frame mode
   choice is patched in memory so the game picks 1 or 2 vblanks a frame from its real frame time,
   with presents paced to every vblank. After the Lichii fork's patch (zortos293/Lichii#1332),
@@ -48,9 +125,6 @@ and `=0` brings back the 2.0.0 code path.
   when the update has none, the en-us name is preferred, and a file without a name shows its
   file name; a damaged `.zs` texture (no zstd header) is replaced by a neighbouring one with a
   warning in the log. Still read only.
-- Consecutive NVN indexed indirect draws merge into one host multi-draw again (`INDIRECT_BATCH`,
-  on). The terrain damage that had it off by default was not this merge. `=0` is one host draw
-  per call.
 - Rumble: HID command 214 (the Switch 2 titles' vibration, sent every frame) is forwarded to the
   controller through the existing vibration path; it was accepted and dropped. From the Selevet
   fork (`49e2ed7`); not tried with a controller yet.

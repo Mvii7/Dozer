@@ -30,16 +30,16 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_FG_TIMED", "1"},
     {"EDEN_NX2_OSD", "1"},
     {"EDEN_NX2_DK_DYN", "1"},
-    {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
-    {"EDEN_NX2_MODE_PACE", "2"},
-    {"EDEN_NX2_PACE_SPIN_US", "1500"},
+    {"EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD", "12:16:4"},
+    {"EDEN_NX2_BANANZA_MODE_PACE", "2"},
+    {"EDEN_NX2_BANANZA_PACE_SPIN_US", "1500"},
 };
 
 const std::vector<Var> BananzaVars{
     {"EDEN_NX2_DK_DYN", "1"},
-    {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
-    {"EDEN_NX2_MODE_PACE", "2"},
-    {"EDEN_NX2_PACE_SPIN_US", "1500"},
+    {"EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD", "12:16:4"},
+    {"EDEN_NX2_BANANZA_MODE_PACE", "2"},
+    {"EDEN_NX2_BANANZA_PACE_SPIN_US", "1500"},
 };
 
 const std::vector<Var> MkwVars{
@@ -61,9 +61,9 @@ std::vector<Var> GameVars(Game game) {
 
 const std::set<std::string_view> BananzaOnly{
     "EDEN_NX2_DK_DYN",
-    "EDEN_NX2_PRESENT_INTERVAL_WORD",
-    "EDEN_NX2_MODE_PACE",
-    "EDEN_NX2_PACE_SPIN_US",
+    "EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD",
+    "EDEN_NX2_BANANZA_MODE_PACE",
+    "EDEN_NX2_BANANZA_PACE_SPIN_US",
 };
 
 // An ini group as the config sees it: the on / off keys and "preset".
@@ -308,7 +308,7 @@ TEST_CASE("Nx2PerfSettings: a game's settings never reach another game", "[core]
     no_dk.dk_dyn = false;
     const auto pacing = Wanted(no_dk, Game::Bananza);
     REQUIRE(pacing.size() == other.size() + 3);
-    REQUIRE(pacing.back() == Var{"EDEN_NX2_PACE_SPIN_US", "1500"});
+    REQUIRE(pacing.back() == Var{"EDEN_NX2_BANANZA_PACE_SPIN_US", "1500"});
     // Mario Kart World's switch is its own: Bananza's box does not touch it.
     REQUIRE(Wanted(no_dk, Game::MarioKartWorld) == Wanted(Balanced(), Game::MarioKartWorld));
     auto mkw = other;
@@ -324,7 +324,7 @@ TEST_CASE("Nx2PerfSettings: a variable set outside the program wins", "[core]") 
     REQUIRE(Plan(Balanced(), Game::Bananza, NoneOutside) == BalancedBananza);
 
     // A launcher (or the user) set two of them: those are left out, whatever their value.
-    const std::set<std::string_view> outside{"EDEN_NX2_JIT_SAME", "EDEN_NX2_MODE_PACE"};
+    const std::set<std::string_view> outside{"EDEN_NX2_JIT_SAME", "EDEN_NX2_BANANZA_MODE_PACE"};
     const auto is_outside = [&](std::string_view name) { return outside.count(name) != 0; };
     const auto plan = Plan(Balanced(), Game::Bananza, is_outside);
     REQUIRE(plan.size() == BalancedBananza.size() - 2);
@@ -435,4 +435,170 @@ TEST_CASE("Nx2PerfSettings: the frame generation choice and the Graphics setting
     REQUIRE(!FrameGenFor(Preset::Performance).has_value());
     REQUIRE(!FrameGenFor(Preset::Reactive).has_value());
     REQUIRE(!FrameGenFor(Preset::Custom).has_value());
+}
+
+TEST_CASE("Nx2PerfSettings: a game's own boxes go over the global ones", "[core]") {
+    const Switches global = Performance();
+    REQUIRE(!global.read_traps);
+
+    // No overrides: the global settings as they are.
+    REQUIRE(Overrides{}.Empty());
+    REQUIRE(WithOverrides(global, Overrides{}) == global);
+
+    // Mario Kart World with read traps on, the others as the global ones.
+    Overrides mkw;
+    mkw.boxes[0] = true;
+    REQUIRE(Keys[0].name == "read_traps");
+    REQUIRE(!mkw.Empty());
+    const Switches with_traps = WithOverrides(global, mkw);
+    REQUIRE(with_traps.read_traps);
+    REQUIRE(with_traps.preset == global.preset);
+    REQUIRE(with_traps.osd == global.osd);
+
+    // Read traps on leave EDEN_NX2_READ_TRAPS unset; off sets it to 0.
+    const auto has_read_traps = [](const std::vector<Var>& vars) {
+        for (const Var& var : vars) {
+            if (var.name == "EDEN_NX2_READ_TRAPS") {
+                return true;
+            }
+        }
+        return false;
+    };
+    REQUIRE(has_read_traps(Wanted(global, Game::Bananza)));
+    REQUIRE(!has_read_traps(Wanted(with_traps, Game::MarioKartWorld)));
+    // The two games differ in the variables, so the session asks for a restart between them.
+    const auto bananza = Plan(global, Game::Bananza, NoneOutside);
+    const auto mario_kart = Plan(with_traps, Game::MarioKartWorld, NoneOutside);
+    REQUIRE(NeedsRestart(bananza, mario_kart));
+
+    // A game-specific box is an override like the others.
+    Overrides dyn;
+    dyn.boxes[Keys.size() + 1] = false;
+    REQUIRE(GameKeys[1].name == "mariokart_dynamic_fps");
+    REQUIRE(!WithOverrides(global, dyn).mkw_dyn);
+    REQUIRE(WithOverrides(global, dyn).dk_dyn);
+}
+
+TEST_CASE("Nx2PerfSettings: a game's overrides read back what was written", "[core]") {
+    Overrides overrides;
+    overrides.boxes[0] = true;
+    overrides.boxes[3] = false;
+    overrides.boxes[KeyCount - 1] = true;
+    overrides.preset = Preset::Safe;
+
+    std::map<std::string, int> ini;
+    SaveOverrides(overrides, [&](std::string_view key, int value) { ini[std::string{key}] = value; });
+    REQUIRE(ini.size() == KeyCount + 1);
+    REQUIRE(ini.at("preset") == static_cast<int>(Preset::Safe));
+    REQUIRE(ini.at("read_traps") == 1);
+    REQUIRE(ini.at("jit_same") == 0);
+    REQUIRE(ini.at("acquire_peek") == -1);
+
+    const auto read = [&](std::string_view key) {
+        const auto it = ini.find(std::string{key});
+        return it == ini.end() ? -1 : it->second;
+    };
+    REQUIRE(LoadOverrides(read) == overrides);
+
+    // Missing keys and values that mean nothing: no override.
+    REQUIRE(LoadOverrides([](std::string_view) { return -1; }).Empty());
+    REQUIRE(LoadOverrides([](std::string_view) { return 7; }).Empty());
+    // Custom is no preset to choose.
+    Overrides custom;
+    custom.preset = Preset::Custom;
+    std::map<std::string, int> custom_ini;
+    SaveOverrides(custom, [&](std::string_view key, int value) {
+        custom_ini[std::string{key}] = value;
+    });
+    REQUIRE(LoadOverrides([&](std::string_view key) { return custom_ini.at(std::string{key}); })
+                .Empty());
+}
+
+TEST_CASE("Nx2PerfSettings: Bananza starts from Performance, the others from the global preset",
+          "[core]") {
+    REQUIRE(Keys[0].name == "read_traps");
+    // A first start is Balanced; a file with no stored choice still reads as Performance.
+    REQUIRE(FirstStart() == Balanced());
+    REQUIRE(FirstStart().preset == Preset::Balanced);
+    REQUIRE(FirstStart().read_traps);
+    // Whatever the global preset is, Bananza is Performance.
+    for (const Preset preset : {Preset::Performance, Preset::Balanced, Preset::Reactive,
+                                Preset::Safe, Preset::Custom}) {
+        const Switches global = FromPreset(preset, Balanced());
+        REQUIRE(ForGame(global, Game::Bananza, {}) == FromPreset(Preset::Performance, global));
+        REQUIRE(!ForGame(global, Game::Bananza, {}).read_traps);
+        // Any other game, Mario Kart World too: the global settings as they are.
+        REQUIRE(ForGame(global, Game::MarioKartWorld, {}) == global);
+        REQUIRE(ForGame(global, Game::Other, {}) == global);
+    }
+    REQUIRE(ForGame(FirstStart(), Game::MarioKartWorld, {}).read_traps);
+    // The game-specific boxes are the global ones.
+    Switches global = Performance();
+    global.dk_dyn = false;
+    global.mkw_dyn = false;
+    REQUIRE(!ForGame(global, Game::Bananza, {}).dk_dyn);
+    REQUIRE(!ForGame(global, Game::MarioKartWorld, {}).mkw_dyn);
+
+    // The game's own preset goes over its default, its boxes over the preset.
+    Overrides own;
+    own.preset = Preset::Safe;
+    REQUIRE(ForGame(global, Game::Bananza, own).preset == Preset::Safe);
+    own = {};
+    own.boxes[0] = true;
+    REQUIRE(ForGame(global, Game::Bananza, own).read_traps);
+    REQUIRE(ForGame(global, Game::Bananza, own).preset == Preset::Performance);
+    REQUIRE(ForGame(global, Game::Bananza, own).osd == global.osd);
+
+    // What the game's variables say: Bananza sets READ_TRAPS=0, Mario Kart World leaves it unset.
+    const auto has_read_traps = [](const std::vector<Var>& vars) {
+        for (const Var& var : vars) {
+            if (var.name == "EDEN_NX2_READ_TRAPS") {
+                return true;
+            }
+        }
+        return false;
+    };
+    REQUIRE(has_read_traps(Wanted(ForGame(Balanced(), Game::Bananza, {}), Game::Bananza)));
+    REQUIRE(!has_read_traps(
+        Wanted(ForGame(FirstStart(), Game::MarioKartWorld, {}), Game::MarioKartWorld)));
+    // With the first start's preset the two games differ, so a session asks to restart between
+    // them.
+    const auto plan = [&](Game game) {
+        return Plan(ForGame(FirstStart(), game, {}), game, NoneOutside);
+    };
+    REQUIRE(NeedsRestart(plan(Game::Bananza), plan(Game::MarioKartWorld)));
+}
+
+TEST_CASE("Nx2PerfSettings: a game with its own preset can follow the global one", "[core]") {
+    const Switches global = FirstStart();
+    REQUIRE(PresetFor(global.preset, Game::Bananza, {}) == Preset::Performance);
+    REQUIRE(PresetFor(global.preset, Game::MarioKartWorld, {}) == global.preset);
+
+    Overrides follow;
+    follow.global_preset = true;
+    REQUIRE(!follow.Empty());
+    REQUIRE(PresetFor(global.preset, Game::Bananza, follow) == global.preset);
+    REQUIRE(ForGame(global, Game::Bananza, follow) == global);
+    REQUIRE(ForGame(global, Game::Bananza, follow).read_traps);
+    // A game with no preset of its own follows it anyway.
+    REQUIRE(ForGame(global, Game::Other, follow) == global);
+    // Its own choice wins over following.
+    follow.preset = Preset::Safe;
+    REQUIRE(PresetFor(global.preset, Game::Bananza, follow) == Preset::Safe);
+
+    // Stored as its own value, apart from a preset and from no choice.
+    Overrides stored;
+    stored.global_preset = true;
+    int preset = 0;
+    SaveOverrides(stored, [&](std::string_view key, int value) {
+        if (key == "preset") {
+            preset = value;
+        }
+    });
+    REQUIRE(preset == FollowGlobalPreset);
+    const Overrides loaded = LoadOverrides([&](std::string_view key) {
+        return key == "preset" ? FollowGlobalPreset : -1;
+    });
+    REQUIRE(loaded == stored);
+    REQUIRE(!loaded.preset);
 }

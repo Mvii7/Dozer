@@ -18,7 +18,7 @@
 
 namespace VideoCommon::Nx2ModeGov {
 
-// EDEN_NX2_MODE_GOV=1 (multicore, off by default; needs EDEN_NX2_PRESENT_INTERVAL_WORD for the
+// EDEN_NX2_MODE_GOV=1 (multicore, off by default; needs EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD for the
 // game's mode): pick Donkey Kong Bananza's 60 / 30 / 20 fps mode from the frame time Eden reaches
 // and steer the game there through the GPU time it reads, without holding that time where its
 // dynamic resolution drops (its tensor-core upscaler is rejected and the frame turns purple).
@@ -217,7 +217,7 @@ inline bool Enabled() {
         // Both steer the same mode, one through the GPU time, one through late presents. Only
         // when the pace controller is really on (it turns itself off with some settings).
         if (Nx2ModePace::Enabled()) {
-            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_GOV with EDEN_NX2_MODE_PACE: off (the pace "
+            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_GOV with EDEN_NX2_BANANZA_MODE_PACE: off (the pace "
                                 "controller steers the mode)");
             return false;
         }
@@ -225,8 +225,8 @@ inline bool Enabled() {
             LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_GOV needs multicore: off");
             return false;
         }
-        if (std::getenv("EDEN_NX2_PRESENT_INTERVAL_WORD") == nullptr) {
-            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_GOV needs EDEN_NX2_PRESENT_INTERVAL_WORD: off");
+        if (std::getenv("EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD") == nullptr) {
+            LOG_WARNING(HW_GPU, "EDEN_NX2_MODE_GOV needs EDEN_NX2_BANANZA_PRESENT_INTERVAL_WORD: off");
             return false;
         }
         return true;

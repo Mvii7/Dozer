@@ -46,6 +46,7 @@ bool g_pending_unasked = false; // the waiting settings changed since the restar
 struct Applied {
     std::vector<Perf::Var> plan;
     Perf::Game game;
+    u64 program_id;
 };
 std::optional<Applied> g_applied; // set at the first boot
 
@@ -74,7 +75,26 @@ QString Describe(const std::vector<Perf::Var>& plan) {
     return lines.isEmpty() ? QStringLiteral("none") : lines.join(QLatin1Char(' '));
 }
 
+const char* GameName(Perf::Game game) {
+    switch (game) {
+    case Perf::Game::Bananza:
+        return "Donkey Kong Bananza";
+    case Perf::Game::MarioKartWorld:
+        return "Mario Kart World";
+    case Perf::Game::Other:
+        break;
+    }
+    return "";
+}
+
 } // Anonymous namespace
+
+Perf::Switches SwitchesFor(u64 program_id) {
+    const auto& games = UISettings::values.nx2perf_games;
+    const auto it = games.find(program_id);
+    return Perf::ForGame(UISettings::values.nx2perf, Perf::GameOf(program_id),
+                         it == games.end() ? Perf::Overrides{} : it->second);
+}
 
 void CaptureStartEnvironment() {
     // The log is not open yet: nothing is logged here.
@@ -106,18 +126,6 @@ void CaptureOutsideSwitches() {
     });
 }
 
-const char* GameName(Perf::Game game) {
-    switch (game) {
-    case Perf::Game::Bananza:
-        return "Donkey Kong Bananza";
-    case Perf::Game::MarioKartWorld:
-        return "Mario Kart World";
-    case Perf::Game::Other:
-        break;
-    }
-    return "";
-}
-
 bool SetOutside(std::string_view name) {
     for (const std::string_view outside : g_set_outside) {
         if (outside == name) {
@@ -130,7 +138,7 @@ bool SetOutside(std::string_view name) {
 Boot Prepare(QWidget* parent, u64 program_id, const QString& game, bool fullscreen,
              bool applet) {
     const Perf::Game kind = Perf::GameOf(program_id);
-    auto plan = Perf::Plan(UISettings::values.nx2perf, kind, SetOutside);
+    auto plan = Perf::Plan(SwitchesFor(program_id), kind, SetOutside);
     if (!g_applied) {
         for (const auto& var : plan) {
             SetVariable(var);
@@ -141,7 +149,7 @@ Boot Prepare(QWidget* parent, u64 program_id, const QString& game, bool fullscre
         for (const std::string_view name : g_set_outside) {
             LOG_INFO(Frontend, "Dozer: {} was set outside the program, left as it is", name);
         }
-        g_applied = Applied{std::move(plan), kind};
+        g_applied = Applied{std::move(plan), kind, program_id};
         return Boot::Go;
     }
     if (plan == g_applied->plan) {
@@ -154,9 +162,16 @@ Boot Prepare(QWidget* parent, u64 program_id, const QString& game, bool fullscre
     }
 
     // A game's own variables only act on that game, so one after it just carries them along.
-    if (kind == Perf::Game::Other &&
-        Perf::Plan(UISettings::values.nx2perf, g_applied->game, SetOutside) == g_applied->plan) {
-        return Boot::Go;
+    if (kind == Perf::Game::Other) {
+        std::vector<Perf::Var> carried;
+        for (const Perf::Var& var : g_applied->plan) {
+            if (!Perf::IsGameOnly(var.name)) {
+                carried.push_back(var);
+            }
+        }
+        if (carried == plan) {
+            return Boot::Go;
+        }
     }
 
     QString why;
@@ -164,6 +179,8 @@ Boot Prepare(QWidget* parent, u64 program_id, const QString& game, bool fullscre
         why = QObject::tr("%1's own settings are off in this session, which started with "
                           "another game.")
                   .arg(QString::fromUtf8(GameName(kind)));
+    } else if (program_id != g_applied->program_id) {
+        why = QObject::tr("This game's tuning settings differ from this session's first game's.");
     } else {
         why = QObject::tr("The tuning settings changed since this session's first game.");
     }
@@ -196,11 +213,13 @@ Boot Prepare(QWidget* parent, u64 program_id, const QString& game, bool fullscre
 bool OfferRestart(QWidget* parent, const QString& running_game, bool fullscreen) {
     std::optional<std::vector<Perf::Var>> applied;
     Perf::Game game = Perf::Game::Other;
+    u64 program_id = 0;
     if (g_applied) {
         applied = g_applied->plan;
         game = g_applied->game;
+        program_id = g_applied->program_id;
     }
-    const auto plan = Perf::Plan(UISettings::values.nx2perf, game, SetOutside);
+    const auto plan = Perf::Plan(SwitchesFor(program_id), game, SetOutside);
     const bool pending = HasPendingGraphics();
     const bool pending_new = std::exchange(g_pending_unasked, false);
     if (!Perf::NeedsRestart(applied, plan) && !(applied && pending_new)) {
