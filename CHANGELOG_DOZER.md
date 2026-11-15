@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Donkey Kong Bananza: `EDEN_NX2_RX_ONE_SUBMIT=1` is set for it by the Tuning settings and the
+  launchers (start-safe.bat clears it). A real fence no longer submits a second, empty command
+  buffer after its own: about half the game's submissions, no visible change in play.
+
 ## Dozer 0.1.3 (`v0.1.3`)
 
 - Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
