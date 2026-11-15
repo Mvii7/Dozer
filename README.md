@@ -71,7 +71,7 @@ saves (`user\nand`), shader caches and log (`user\log\eden_log.txt`) in it, and 
 program" under "The Tuning tab").
 
 Settings: **Emulation > Configure... > Tuning**. On the first start the preset is
-**Performance**, and Dozer also turns *Enable Reactive Flushing* off in
+**Balanced** (Donkey Kong Bananza runs with Performance; see "Per game"), and Dozer also turns *Enable Reactive Flushing* off in
 its `qt-config.ini` (Graphics > Advanced).
 
 GPU Mode (GPU accuracy) starts at **Fast** (Low), as in newer Eden versions (2.0.0 started at
@@ -86,9 +86,9 @@ files in `Games`, and the `user` folder (your keys, firmware and saves).
 - **Use `.nx` instead of `.nup`.** It usually stutters less. Right-click a game in the list and
   choose **Convert to NX...** (see "Game files"). Dozer also offers to convert a `.nup` the first
   time you start it.
-- **Performance is the default preset.** It gives the most speed, but foliage is not drawn. To
-  get foliage back, open **Emulation > Configure... > Tuning** and pick **Balanced**, which costs
-  some performance.
+- **Balanced is the default preset.** Foliage is drawn, at some cost in performance. For more
+  speed without foliage, open **Emulation > Configure... > Tuning** and pick **Performance**
+  (Donkey Kong Bananza always starts from Performance).
 - **If your system is struggling, try handheld mode.** It trades resolution for performance. It
   made little difference on the maintainer's machine, so it mainly helps weaker systems.
 - **Keep asynchronous presentation and asynchronous shader compilation on** (Graphics > Extras).
@@ -133,11 +133,21 @@ under it.
 
 | Preset | What it sets | Same as |
 |---|---|---|
-| **Performance** (the first start's choice) | the fastest settings with read traps and Reactive Flushing off (`EDEN_NX2_READ_TRAPS=0`). Foliage is not rendered for a performance gain. Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Performance or Balanced later turns it off too | `start-performance.bat` |
-| **Balanced** | all nine settings below on, *Enable Reactive Flushing* off (Graphics > Advanced). Foliage is rendered at a performance cost | `start-balanced.bat` |
+| **Performance** | the fastest settings with read traps and Reactive Flushing off (`EDEN_NX2_READ_TRAPS=0`). Foliage is not rendered for a performance gain. Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Performance or Balanced later turns it off too | `start-performance.bat` |
+| **Balanced** (the first start's choice) | all nine settings below on, *Enable Reactive Flushing* off (Graphics > Advanced). Foliage is rendered at a performance cost | `start-balanced.bat` |
 | **Experimental** | the balanced settings with Reactive Flushing instead of read traps: barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and `EDEN_NX2_RX_RT_FIT=3` | `start-reactive-experimental.bat` |
 | **Safe** | all nine off, Frame generation off, and the GPU shortcuts Dozer keeps on by default off too (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
 | **Custom** | chosen by itself when you change a box by hand | - |
+
+**Per game.** A game's **Properties > Tuning** tab (right-click the game, or **Emulation >
+Configure Current Game**) shows this tab's preset and boxes as that game runs them, the same as
+here. Change one for that game only and a cross appears next to it; the cross resets it to this
+tab's. **Donkey Kong Bananza** starts with the **Performance** preset (read traps off) instead of
+this tab's, so its cross is there from the start; press it and Bananza follows this tab's preset.
+Frame generation stays as it is here. Bananza and Mario Kart World also have a **Dynamic frame
+rate** box, only in their own Properties (on by default, no cross: it has no global setting). A game with changes starts with
+them, and Dozer asks to restart when the session's first game used others. Mario Kart World needs
+read traps on, so keep the preset here on Balanced (or tick Read traps in its own Tuning tab).
 
 **Frame generation.** The tab also has a **Frame generation** box with three choices:
 
@@ -157,21 +167,20 @@ Below the preset are the nine settings, in two groups:
 
 | Setting | Switches it sets (`EDEN_NX2_...`) | Group |
 |---|---|---|
-| Read traps | Off by default (the first start's Performance preset leaves it unticked): `READ_TRAPS=0`. With Reactive Flushing off as well, foliage is not rendered. On: left unset; foliage is rendered at a performance cost. Does nothing while Reactive Flushing is on. Balanced ticks it; Performance and Experimental leave it unticked. Unticking it while Balanced is selected changes the preset to Custom | All games |
+| Read traps | On in the Balanced preset (the first start's), off in Performance and Experimental: `READ_TRAPS=0`. With Reactive Flushing off as well, foliage is not rendered. On: left unset; foliage is rendered at a performance cost. Does nothing while Reactive Flushing is on. Balanced ticks it; Performance and Experimental leave it unticked. Unticking it while Balanced is selected changes the preset to Custom | All games |
 | Split GPU thread | `BACK_STAGES=1`, `BACK_CUTS=a` | All games |
 | Acquire peek | `ACQUIRE_PEEK=1` | All games |
 | Same-value filter in the macro JIT | `JIT_SAME=1` | All games |
 | Lean front macro path | `FRONT_MACRO_LEAN=1` | All games |
 | Timed frame generation | `FG_TIMED=1` (only does something with frame generation on) | All games |
 | FPS overlay in RivaTuner | `OSD=1` (RTSS, if it runs) | All games |
-| Donkey Kong Bananza dynamic frame rate | `DK_DYN=1` | Specific Games: Bananza only, no preset changes it |
-| Mario Kart World dynamic frame rate | `MKW_DYN=1` | Specific Games: Mario Kart World only, no preset changes it |
 
 These are the switches `start-balanced.bat` sets ("Launchers", "Main switches"). The program
-sets them in its own environment just before a game starts. The Specific Games settings are set
-only for their game, by title id: Bananza's 040074A01BF12000 and Mario Kart World's
-0400C3F00006E000 (the ones the patches check); for any other game they stay off. They are no part
-of the presets (not even Safe changes them) and both are on until unticked. For Bananza the
+sets them in its own environment just before a game starts. The dynamic frame rate settings
+(`DK_DYN=1`, `MKW_DYN=1`) are per game: a **Dynamic frame rate** box in the Tuning tab of the
+game's Properties, for Bananza (040074A01BF12000) and Mario Kart World (0400C3F00006E000), the ones
+the patches check; for any other game they stay off. They are on until unticked, no preset
+changes them (not even Safe), and they have no global setting. For Bananza the
 program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`,
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
 it steers the game when the patch is unticked or finds nothing to patch. The log says which were set ("Dozer settings for <title id>
@@ -183,7 +192,7 @@ it. If you change them with **OK** or **Apply** after a game was already started
 session, Dozer asks "Restart Dozer now to apply?": **Restart Now** closes Dozer and opens it again,
 with the running game if one is running (unsaved game progress is lost), otherwise with the same
 command line; **Later** keeps the session's switches. When you start a game that needs other
-switches than the session's first game (a game with Specific Games settings after another game,
+switches than the session's first game (a game with other tuning settings after another game,
 or the other way round),
 Dozer asks: **Restart** (opens again with that game), **Start Anyway** (keeps the session's
 switches) or **Cancel**.
@@ -328,15 +337,15 @@ moves the 40 fps limit.
 
 It is off by default in dozer-cli; `start-balanced.bat`, `start-performance.bat` and
 `start-reactive-experimental.bat` turn it on (`DK_DYN=1` at the top), and so does the menu
-program's Tuning tab (Donkey Kong Bananza dynamic frame rate, under Specific Games, on until
-unticked, no preset changes it). With it the game's frame time varies by design (any rate between 40 and 60, in
+program's Tuning tab (the Dynamic frame rate box in Bananza's Properties, on until unticked, no
+preset changes it). With it the game's frame time varies by design (any rate between 40 and 60, in
 steps of 2); below 40 fps its target is 30 fps, and its speed stays right down to 24 fps. While it is applied,
 `PRESENT_INTERVAL_WORD` and `MODE_PACE` are set aside and presents are paced to every vblank.
 
 ## Mario Kart World dynamic frame rate (MKW-DYN)
 
 `EDEN_NX2_MKW_DYN=1` (`MKW_DYN=1` in `start-balanced.bat`, `start-performance.bat` and
-`start-reactive-experimental.bat`, and the menu program's Tuning tab, Specific Games) applies a game-specific patch: when Mario Kart World's main
+`start-reactive-experimental.bat`, and the Dynamic frame rate box in the game's Properties > Tuning) applies a game-specific patch: when Mario Kart World's main
 module is loaded, three instructions of its frame mode choice are rewritten **in memory** so that
 the game picks 1 or 2 vblanks a frame from its real frame time instead of staying at 30 fps, and
 presents are paced to every vblank (`PACE_ONE=0` keeps the interval). It follows the Lichii

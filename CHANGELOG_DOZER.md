@@ -8,6 +8,18 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
+  and boxes as that game runs them. A setting changed for the game gets a cross that resets it to
+  the global one. Donkey Kong Bananza starts with the Performance preset (read traps off) instead
+  of the global one, shown as a changed preset that the cross resets to the global preset; other
+  games use the global settings. Only the changes are kept, in `qt-config.ini` (`[AnkaGames]`). A
+  game whose settings differ from the session's first game asks to restart, as before. The
+  Bananza and Mario Kart World dynamic frame rate boxes move from the global tab to those games'
+  own Tuning tabs (on by default, no cross); a game that had its box off keeps it off.
+
+- Tuning: the first start's preset is now Balanced (read traps on, which Mario Kart World needs)
+  instead of Performance. A `qt-config.ini` that already has a preset keeps it.
+
 - Read traps: a guest read that hits one no longer takes its instruction off fastmem for good.
   Dynarmic sends that one read down the slow path and keeps the instruction on fastmem, so later
   reads of pages already flushed stay fast. An instruction that faults more than 1000 times in a
