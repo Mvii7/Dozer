@@ -21,6 +21,7 @@ namespace Vulkan {
 using Maxwell = Tegra::Engines::Maxwell3D::Regs;
 
 struct DynamicFeatures {
+    u32 driver_id; // Not part of the pipeline key
     bool has_extended_dynamic_state;
     bool has_extended_dynamic_state_2;
     bool has_extended_dynamic_state_2_logic_op;

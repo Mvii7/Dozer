@@ -705,6 +705,7 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
     LOG_INFO(Render_Vulkan, "DynamicState setting value: {}", u32(Settings::values.dyna_state.GetValue()));
 
     dynamic_features = {};
+    dynamic_features.driver_id = device.GetDriverID();
 
     // User granularity enforced in vulkan_device.cpp switch statement:
     //   Level 0: Core Dynamic States only
