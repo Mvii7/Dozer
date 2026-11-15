@@ -30,7 +30,7 @@ namespace VideoCommon::Nx2ModeDiag {
 // Donkey Kong Bananza picks its 60 / 30 / 20 fps mode (vi2 229 word 12 >> 16) and why a real
 // GPU time turns the screen purple. Logs:
 //  - every second a "nx2 mode diag" line: presents per mode (the interval
-//    EDEN_NX2_DK_PRESENT_INTERVAL_WORD takes from the request, else 1), timestamp writes
+//    EDEN_NX2_DKB_PRESENT_INTERVAL_WORD takes from the request, else 1), timestamp writes
 //    (GPU::GetTicks values in query / semaphore reports) and their span within a frame (written
 //    ticks, host wall time, busy time of the GPU pipeline), the age of 229 word 10 (the CNTPCT of
 //    the game)

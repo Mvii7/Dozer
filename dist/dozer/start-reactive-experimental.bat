@@ -10,7 +10,7 @@ rem config\qt-config.ini (the controller and settings of the menu program, dozer
 rem sdl2-config.ini is never changed. The .ini edits are made by dozer-config.ps1 next to this file
 rem (a small, readable PowerShell script). Quit the game with Alt+F4.
 rem The second choice next to start-balanced.bat. Reactive flushing copies GPU-written data
-rem back to the game. On our PC (5 Nov, DK_DYN on, frame generation off) it traded the opening
+rem back to the game. On our PC (5 Nov, DKB_DYN on, frame generation off) it traded the opening
 rem for open areas: with RX_RT_FIT=3, -7 percent FPS at the game's opening and +15 percent in
 rem the open area against the same build with it off. Not checked yet: together with frame
 rem generation, and the image with RX_RT_FIT=3. If you see wrong
@@ -25,8 +25,8 @@ rem CONFIG: a separate sdl2-config .ini to use; empty = automatic (above, README
 set "CONFIG="
 rem FULLSCREEN: -f starts in full screen; empty = window.
 set "FULLSCREEN=-f"
-rem DK_DYN: 1 = Bananza dynamic frame rate patch (in memory, README), 0 = off.
-set "DK_DYN=1"
+rem DKB_DYN: 1 = Bananza dynamic frame rate patch (in memory, README), 0 = off.
+set "DKB_DYN=1"
 rem MKW_DYN: 1 = Mario Kart World dynamic frame rate patch (in memory, README), 0 = off.
 set "MKW_DYN=1"
 rem OSD: 1 = FPS / speed overlay through RivaTuner Statistics Server (if running).
@@ -53,7 +53,7 @@ if not exist "%CONFIG%" goto noconfig
 rem Opt-in switches this launcher does not use: cleared.
 set EDEN_NX2_PRESENT_INTERVAL=
 set EDEN_NX2_MODE_GOV=
-set EDEN_NX2_DK_DYN_MIN_FPS=
+set EDEN_NX2_DKB_DYN_MIN_FPS=
 set EDEN_NX2_BACK_CPU=
 set EDEN_NX2_SEMEXEC_DEFER=
 set EDEN_NX2_SKIP_EMPTY_DRAWS=
@@ -90,11 +90,11 @@ set EDEN_NX2_ACQUIRE_PEEK=1
 set EDEN_NX2_JIT_SAME=1
 set EDEN_NX2_FRONT_MACRO_LEAN=1
 rem Donkey Kong Bananza: follow the game's own 60/30/20 fps choice at the right speed.
-set EDEN_NX2_DK_PRESENT_INTERVAL_WORD=12:16:4
-set EDEN_NX2_DK_MODE_PACE=2
-set EDEN_NX2_DK_PACE_SPIN_US=1500
-rem Donkey Kong Bananza dynamic frame rate (DK_DYN above; 0 = the game's own 60/30 rule).
-set EDEN_NX2_DK_DYN=%DK_DYN%
+set EDEN_NX2_DKB_PRESENT_INTERVAL_WORD=12:16:4
+set EDEN_NX2_DKB_MODE_PACE=2
+set EDEN_NX2_DKB_PACE_SPIN_US=1500
+rem Donkey Kong Bananza dynamic frame rate (DKB_DYN above; 0 = the game's own 60/30 rule).
+set EDEN_NX2_DKB_DYN=%DKB_DYN%
 rem Mario Kart World dynamic frame rate (MKW_DYN above).
 set EDEN_NX2_MKW_DYN=%MKW_DYN%
 rem FSR3 frame generation: generated frames blended for the time they are shown (only

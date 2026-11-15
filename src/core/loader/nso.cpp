@@ -179,15 +179,15 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
         std::copy(pi_header.begin() + sizeof(NSOHeader), pi_header.end(), patchable_section.data());
     }
 
-    // EDEN_NX2_DK_DYN=1 (off by default): Donkey Kong Bananza's dynamic frame rate
+    // EDEN_NX2_DKB_DYN=1 (off by default): Donkey Kong Bananza's dynamic frame rate
     // (nx2_dk_dynamic_fps.h). Off, no module is touched.
-    static const char* const dk_dyn_switch = std::getenv("EDEN_NX2_DK_DYN");
-    // EDEN_NX2_DK_DYN_MIN_FPS=<1-60> (unset: the game's 40): below it the whole interval.
+    static const char* const dk_dyn_switch = std::getenv("EDEN_NX2_DKB_DYN");
+    // EDEN_NX2_DKB_DYN_MIN_FPS=<1-60> (unset: the game's 40): below it the whole interval.
     static const Nx2DkDynamicFps::MinFps dk_dyn_min_fps = [] {
-        const char* value = std::getenv("EDEN_NX2_DK_DYN_MIN_FPS");
+        const char* value = std::getenv("EDEN_NX2_DKB_DYN_MIN_FPS");
         const auto parsed = Nx2DkDynamicFps::ParseMinFps(value);
         if (parsed.refused) {
-            LOG_WARNING(Loader, "EDEN_NX2_DK_DYN_MIN_FPS=\"{}\": not a whole number of 1-60, the "
+            LOG_WARNING(Loader, "EDEN_NX2_DKB_DYN_MIN_FPS=\"{}\": not a whole number of 1-60, the "
                                 "game's 40 kept",
                         value);
         }
@@ -206,26 +206,26 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
             if (dk_dyn->applied) {
                 LOG_INFO(Loader,
                          "Donkey Kong Bananza: dynamic FPS on (main+{:#x}, main+{:#x}, main+{:#x}; "
-                         "EDEN_NX2_DK_DYN)",
+                         "EDEN_NX2_DKB_DYN)",
                          text.location + dk_dyn->controller * sizeof(u32),
                          text.location + dk_dyn->sleep * sizeof(u32),
                          text.location + dk_dyn->step * sizeof(u32));
                 if (dk_dyn->min_fps != 0) {
                     LOG_INFO(Loader,
                              "Donkey Kong Bananza: the whole interval below {} fps instead of 40 "
-                             "(main+{:#x}; EDEN_NX2_DK_DYN_MIN_FPS)",
+                             "(main+{:#x}; EDEN_NX2_DKB_DYN_MIN_FPS)",
                              dk_dyn->min_fps,
                              text.location +
                                  (dk_dyn->controller + Nx2DkDynamicFps::LowTargetOffset) *
                                      sizeof(u32));
                 } else if (dk_dyn->min_fps_missed) {
-                    LOG_WARNING(Loader, "Donkey Kong Bananza: EDEN_NX2_DK_DYN_MIN_FPS not "
+                    LOG_WARNING(Loader, "Donkey Kong Bananza: EDEN_NX2_DKB_DYN_MIN_FPS not "
                                         "applied: the 40 fps check is not where expected");
                 }
             } else {
                 LOG_WARNING(Loader,
                             "Donkey Kong Bananza: dynamic FPS not applied ({}, {}, {} matches; "
-                            "EDEN_NX2_DK_DYN)",
+                            "EDEN_NX2_DKB_DYN)",
                             dk_dyn->controller_matches, dk_dyn->sleep_matches,
                             dk_dyn->step_matches);
             }

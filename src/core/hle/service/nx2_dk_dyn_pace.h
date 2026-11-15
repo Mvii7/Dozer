@@ -8,7 +8,7 @@
 
 #include "common/common_types.h"
 
-// EDEN_NX2_DK_DYN on the vi2 side (nx2_gsv.h), once Bananza's dynamic frame rate patch went into
+// EDEN_NX2_DKB_DYN on the vi2 side (nx2_gsv.h), once Bananza's dynamic frame rate patch went into
 // its main module (core/loader/nx2_dk_dynamic_fps.h, Core::g_nx2_dk_dyn_applied) and Bananza is
 // the application. Only then: told VRR works the patched game times its own frames, while the
 // unpatched game on its VRR path kept its rate at 60 and ran at ~0.73x (E-2).
@@ -25,9 +25,9 @@ constexpr bool ReportVrr(bool applied, u64 application) {
 }
 
 /// Presents paced to every vblank (60 Hz at most) instead of the 2 or 3 the game asks for, and
-/// EDEN_NX2_DK_MODE_PACE set aside: holding a frame for its interval stretched the whole frame time
+/// EDEN_NX2_DKB_MODE_PACE set aside: holding a frame for its interval stretched the whole frame time
 /// the patched game measures and kept it at 20-30 fps (ZendNevs's pace_one). EDEN_NX2_PACE_ONE=0
-/// keeps the interval. EDEN_NX2_MODE_GOV (off with EDEN_NX2_DK_MODE_PACE) is left as it is: it also
+/// keeps the interval. EDEN_NX2_MODE_GOV (off with EDEN_NX2_DKB_MODE_PACE) is left as it is: it also
 /// drives the GPU timer.
 constexpr bool PaceOne(bool applied, u64 application, const char* pace_one) {
     return ReportVrr(applied, application) && !(pace_one != nullptr && pace_one[0] == '0');
