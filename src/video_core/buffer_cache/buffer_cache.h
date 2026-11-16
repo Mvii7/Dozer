@@ -2340,7 +2340,7 @@ BufferId BufferCache<P>::FindBuffer(DAddr device_addr, u32 size, bool sparse_com
     if (buffer_id) {
         Buffer& buffer = slot_buffers[buffer_id];
         if (buffer.IsInBounds(device_addr, size)) {
-            const bool should_sync = Settings::IsGPUFenceBehaviorAccurate();
+            const bool should_sync = fence_accurate;
             if (should_sync) {
                 SynchronizeBufferWrites(buffer);
             }
@@ -2843,7 +2843,7 @@ bool BufferCache<P>::InlineMemoryBatched(DAddr dest_address, size_t copy_size,
     // writes keep their order), and when it is full. Until then this records only uploads of
     // CPU-modified guest memory into the buffer (SynchronizeBuffer), the bytes an upload made
     // in its place would have found there: each byte of the buffer ends up as it would have.
-    if (Settings::IsGPUFenceBehaviorAccurate()) [[unlikely]] {
+    if (fence_accurate) {
         FlushInlineBatch(batch);
         return InlineMemory(dest_address, copy_size, inlined_buffer);
     }
