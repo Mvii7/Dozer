@@ -193,6 +193,32 @@ bool IsRawSurfaceCopy(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
     return src.pitch == dst.pitch;
 }
 
+// True when a blit copies between two tiled surfaces of one format without scaling, from and to
+// GOB boundaries, so CopyTiledRect can move whole GOBs.
+bool CanCopyTiledRect(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
+                      const Fermi2D::Config& config, const SurfaceWindow& src_window,
+                      const SurfaceWindow& dst_window, u32 bytes_per_pixel) {
+    if (src.format != dst.format || src.linear != Fermi2D::MemoryLayout::BlockLinear ||
+        dst.linear != Fermi2D::MemoryLayout::BlockLinear || src.depth != 1 || dst.depth != 1 ||
+        src.block_depth != 0 || dst.block_depth != 0 || config.src_x0 < 0 || config.dst_x0 < 0 ||
+        config.src_y0 < 0 || config.dst_y0 < 0 ||
+        config.src_x1 - config.src_x0 != config.dst_x1 - config.dst_x0 ||
+        config.src_y1 - config.src_y0 != config.dst_y1 - config.dst_y0 ||
+        static_cast<u32>(config.src_x1) > src.width ||
+        static_cast<u32>(config.dst_x1) > dst.width ||
+        static_cast<u32>(config.src_y1) > src.height ||
+        static_cast<u32>(config.dst_y1) > dst.height) {
+        return false;
+    }
+    if (bytes_per_pixel == 0 || bytes_per_pixel > 16 ||
+        (bytes_per_pixel & (bytes_per_pixel - 1)) != 0) {
+        return false;
+    }
+    return (config.src_x0 * bytes_per_pixel) % GOB_SIZE_X == 0 &&
+           (config.dst_x0 * bytes_per_pixel) % GOB_SIZE_X == 0 &&
+           src_window.y0 % GOB_SIZE_Y == 0 && dst_window.y0 % GOB_SIZE_Y == 0;
+}
+
 // EDEN_NX2_RT_TRACE: log the first CPU-fallback blits that take 2 ms or more.
 void TraceSlowBlit(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
                    const Fermi2D::Config& config, std::chrono::steady_clock::time_point start,
@@ -225,6 +251,7 @@ void TraceSlowBlit(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
 
 struct SoftwareBlitEngine::BlitEngineImpl {
     Common::ScratchBuffer<u8> tmp_buffer;
+    Common::ScratchBuffer<u8> tmp_dst_buffer;
     Common::ScratchBuffer<u8> src_buffer;
     Common::ScratchBuffer<u8> dst_buffer;
     Common::ScratchBuffer<f32> intermediate_src;
@@ -249,6 +276,15 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
     const u32 dst_extent_y = config.dst_y1 - config.dst_y0;
     const auto src_bytes_per_pixel = BytesPerBlock(PixelFormatFromRenderTargetFormat(src.format));
     const auto dst_bytes_per_pixel = BytesPerBlock(PixelFormatFromRenderTargetFormat(dst.format));
+    // Switch 2 titles use a different GOB order; EDEN_NX2_BLIT_NATIVE_TILING=0 restores the old one.
+    const auto UseNativeTiling = [this] {
+        static const bool enabled = [] {
+            const char* value = std::getenv("EDEN_NX2_BLIT_NATIVE_TILING");
+            return value == nullptr || value[0] != '0';
+        }();
+        return enabled && memory_manager.UsesNativeTiling();
+    };
+
     const SurfaceWindow src_window =
         GetSurfaceWindow(src, src_bytes_per_pixel, config.src_y0, config.src_y1);
 
@@ -260,6 +296,38 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
             memory_manager.WriteBlock(dst.Address(), tmp_buffer.data(), src_window.size);
         }
         TraceSlowBlit(src, dst, config, start, "raw");
+        return true;
+    }
+
+    const SurfaceWindow dst_window =
+        GetSurfaceWindow(dst, dst_bytes_per_pixel, config.dst_y0, config.dst_y1);
+    // A blit that writes every byte of the window (no padding in it) needs no read of the old
+    // destination.
+    const bool covers_window =
+        config.dst_x0 == 0 && dst_extent_x == dst.width && dst_window.y0 == 0 &&
+        dst_extent_y == dst_window.height &&
+        dst_window.size == size_t{dst_extent_x} * dst_extent_y * dst_bytes_per_pixel;
+
+    if (CanCopyTiledRect(src, dst, config, src_window, dst_window, src_bytes_per_pixel)) {
+        const auto copy = [&](auto& dst_memory) {
+            CopyTiledRect(dst_memory, tmp_buffer, src_bytes_per_pixel, dst.width,
+                          dst.block_height, config.dst_x0, dst_window.y0, src.width,
+                          src.block_height, config.src_x0, src_window.y0, src_extent_x,
+                          src_extent_y, UseNativeTiling());
+        };
+        if (covers_window) {
+            Tegra::Memory::GpuGuestMemoryScoped<u8, Tegra::Memory::GuestMemoryFlags::SafeWrite>
+                dst_memory(memory_manager, dst_window.address, dst_window.size,
+                           &impl->tmp_dst_buffer);
+            copy(dst_memory);
+        } else {
+            Tegra::Memory::GpuGuestMemoryScoped<u8,
+                                                Tegra::Memory::GuestMemoryFlags::SafeReadWrite>
+                dst_memory(memory_manager, dst_window.address, dst_window.size,
+                           &impl->tmp_dst_buffer);
+            copy(dst_memory);
+        }
+        TraceSlowBlit(src, dst, config, start, covers_window ? "gob whole" : "gob part");
         return true;
     }
 
@@ -296,15 +364,6 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
         output_converter->ConvertFrom(impl->intermediate_dst, impl->dst_buffer);
     };
 
-    // Switch 2 titles use a different GOB order; EDEN_NX2_BLIT_NATIVE_TILING=0 restores the old one.
-    const auto UseNativeTiling = [this] {
-        static const bool enabled = [] {
-            const char* value = std::getenv("EDEN_NX2_BLIT_NATIVE_TILING");
-            return value == nullptr || value[0] != '0';
-        }();
-        return enabled && memory_manager.UsesNativeTiling();
-    };
-
     // Do actual Blit
 
     impl->dst_buffer.resize_destructive(dst_copy_size);
@@ -330,8 +389,6 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
         impl->dst_buffer.swap(impl->src_buffer);
     }
 
-    const SurfaceWindow dst_window =
-        GetSurfaceWindow(dst, dst_bytes_per_pixel, config.dst_y0, config.dst_y1);
     const auto write_destination = [&](auto& tmp_buffer2) {
         if (dst.linear == Fermi2D::MemoryLayout::BlockLinear) {
             SwizzleSubrect(tmp_buffer2, impl->dst_buffer, dst_bytes_per_pixel, dst.width,
@@ -344,11 +401,6 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
                                      static_cast<size_t>(dst_bytes_per_pixel));
         }
     };
-    // A blit that writes every byte of the window (no padding in it) needs no read of the old
-    // destination.
-    const bool covers_window = config.dst_x0 == 0 && dst_extent_x == dst.width &&
-                               dst_window.y0 == 0 && dst_extent_y == dst_window.height &&
-                               dst_window.size == dst_copy_size;
     if (covers_window) {
         Tegra::Memory::GpuGuestMemoryScoped<u8, Tegra::Memory::GuestMemoryFlags::SafeWrite>
             tmp_buffer2(memory_manager, dst_window.address, dst_window.size, &impl->tmp_buffer);
