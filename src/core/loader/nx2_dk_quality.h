@@ -132,7 +132,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"foliage_cap", "EDEN_NX2_DKQ_FOLIAGE_CAP", 1, 100, 100},
     {"foliage_frustum_off", "EDEN_NX2_DKQ_FOLIAGE_FRUSTUM_OFF", 1, 1, 0},
     {"foliage_density", "EDEN_NX2_DKQ_FOLIAGE_DENSITY", 1, 100, 100},
-    {"foliage_far_clip", "EDEN_NX2_DKQ_FOLIAGE_FAR_CLIP", 5, 100, 100},
+    {"foliage_far_clip", "EDEN_NX2_DKQ_FOLIAGE_FAR_CLIP", 1, 100, 100},
     {"foliage_lod", "EDEN_NX2_DKQ_FOLIAGE_LOD", 100, 1000, 100},
     {"effect_emit_cap", "EDEN_NX2_DKQ_EFFECT_EMIT_CAP", 5, 100, 100},
     {"effect_particle_cap", "EDEN_NX2_DKQ_EFFECT_PARTICLE_CAP", 5, 100, 100},
