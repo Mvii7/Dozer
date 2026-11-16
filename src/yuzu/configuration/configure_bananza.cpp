@@ -284,9 +284,9 @@ void ConfigureBananza::RetranslateUI() {
            "the effect settings and in each material's own limit.")};
     texts[Quality::VoxelCellSize] = {
         tr("Terrain cell size"),
-        tr("Scales the terrain's cell size (a bigger cell: fewer cells). Not in the presets: the "
-           "saved terrain may be laid out for the game's own size, so this may corrupt the "
-           "terrain. For testing.")};
+        tr("Scales the terrain's cell size up (a bigger cell: fewer cells). Not in the presets: "
+           "the saved terrain is laid out for the game's own size, so this can make the terrain "
+           "disappear. For testing.")};
     texts[Quality::VoxelBorderMeshOff] = {
         tr("Terrain border mesh off"),
         tr("Builds no border mesh between neighbouring terrain chunks. Cracks may show. For "

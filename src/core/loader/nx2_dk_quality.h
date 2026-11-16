@@ -111,7 +111,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"occlusion_depth", "EDEN_NX2_DKQ_OCCLUSION_DEPTH", 10, 400, 100},
     {"occlusion_radius", "EDEN_NX2_DKQ_OCCLUSION_RADIUS", 10, 400, 100},
     {"occlusion_polygon", "EDEN_NX2_DKQ_OCCLUSION_POLYGON", 10, 400, 100},
-    {"voxel_cell_size", "EDEN_NX2_DKQ_VOXEL_CELL_SIZE", 50, 300, 100},
+    {"voxel_cell_size", "EDEN_NX2_DKQ_VOXEL_CELL_SIZE", 100, 300, 100},
     {"voxel_border_mesh_off", "EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF", 1, 1, 0},
     {"shadow_mask_off", "EDEN_NX2_DKQ_SHADOW_MASK_OFF", 1, 1, 0},
     {"decal_off", "EDEN_NX2_DKQ_DECAL_OFF", 1, 1, 0},
