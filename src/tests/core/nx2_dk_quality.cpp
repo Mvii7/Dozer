@@ -16,11 +16,11 @@ namespace {
 using namespace Loader::Nx2DkQuality;
 
 constexpr u32 Filler = 0x12345678;
-// A text segment of 0x2f04 bytes in 0x3000: the free space starts at word 0xbc4, the terrain
-// LOD routines at 0xbc4 + CaveOffset.
-constexpr u32 TextSize = 0x2f04;
+// A text segment of 0x2ef0 bytes in 0x3000: the free space starts at word 0xbbc, the terrain
+// LOD routines at 0xbbc + CaveOffset.
+constexpr u32 TextSize = 0x2ef0;
 constexpr u32 AlignedSize = 0x3000;
-constexpr size_t Cave = 0xbc4 + CaveOffset;
+constexpr size_t Cave = 0xbbc + CaveOffset;
 constexpr size_t MinNear = 0x100, MaxFar = 0x120, MaxNear = 0x140, MinFar = 0x160;
 constexpr size_t GpuGetter = 0x200, FrameGetter = 0x210, BlurScaleGetter = 0x220;
 constexpr size_t BlurSamplesGetter = 0x230, CubeMapGetter = 0x240;
@@ -30,6 +30,7 @@ constexpr size_t DepthGetter = 0x290, RadiusGetter = 0x2a0, PolygonGetter = 0x2b
 constexpr size_t MeshStore = 0x500;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
 constexpr size_t Voxel = 0x400;
+constexpr size_t CellSite = 0x700, BorderSite = 0x740;
 
 struct Text {
     std::vector<u32> words;
@@ -69,6 +70,10 @@ struct Text {
         std::copy(std::begin(third), std::end(third), &words[FarC]);
         words[MeshStore] = 0xB90097E8;     // str w8, [sp, #0x94]
         words[MeshStore + 1] = 0xF9403260; // ldr x0, [x19, #0x60]
+        const u32 cell[]{0xF9400280, 0xD000A7E2, 0x91176842, 0x910263E1, 0x2D3E03A0};
+        std::copy(std::begin(cell), std::end(cell), &words[CellSite]);
+        const u32 border[]{0x3941F3E8, 0xF94017E6, 0x7100011F, 0x1A9F17E8};
+        std::copy(std::begin(border), std::end(border), &words[BorderSite]);
         words[BloomFirst] = LdrX(8, 8, BloomScaleParam);
         words[BloomFirst + 1] = LdrS(1, 8, ValueOffset);
         for (const size_t at : {BloomSecond, BloomThird}) {
@@ -392,4 +397,25 @@ TEST_CASE("Nx2DkQuality: the presets", "[core]") {
     changed[BloomScale] = 11;
     REQUIRE(PresetOf(changed) == Preset::Custom);
     REQUIRE(PresetOf(Only(ResBest, 60)) == Preset::Custom);
+}
+
+TEST_CASE("Nx2DkQuality: the terrain cell size and the border mesh", "[core]") {
+    Text text;
+    Values values{};
+    values[VoxelCellSize] = 150;
+    values[VoxelBorderMeshOff] = 1;
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
+    REQUIRE(result[VoxelCellSize] == State::Applied);
+    REQUIRE(result[VoxelBorderMeshOff] == State::Applied);
+    REQUIRE(text.words[BorderSite] == 0x52800028); // mov w8, #1
+    // The load became a jump into the cave, whose routine scales the cell and jumps back
+    const u32 jump = text.words[CellSite];
+    REQUIRE((jump >> 26) == 0x5);
+    const size_t routine = CellSite + (jump & 0x3FFFFFF);
+    REQUIRE(text.words[routine] == 0xF9400280);
+    REQUIRE(text.words[routine + 3] == 0xBC5EC3B1);
+    REQUIRE(text.words[routine + 5] == 0xBC1EC3B1);
+    const u32 back = text.words[routine + 7];
+    const auto offset = static_cast<s32>(back << 6) >> 6; // sign-extended 26 bits
+    REQUIRE(static_cast<s64>(routine + 7) + offset == static_cast<s64>(CellSite + 1));
 }

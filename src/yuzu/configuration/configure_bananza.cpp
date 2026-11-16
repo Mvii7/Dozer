@@ -176,6 +176,15 @@ void ConfigureBananza::RetranslateUI() {
         tr("Occlusion query polygons"),
         tr("Scales the polygon count threshold of the game's occlusion queries (its own is "
            "1000). For testing.")};
+    texts[Quality::VoxelCellSize] = {
+        tr("Terrain cell size"),
+        tr("Scales the terrain's cell size (a bigger cell: fewer cells). Not in the presets: the "
+           "saved terrain may be laid out for the game's own size, so this may corrupt the "
+           "terrain. For testing.")};
+    texts[Quality::VoxelBorderMeshOff] = {
+        tr("Terrain border mesh off"),
+        tr("Builds no border mesh between neighbouring terrain chunks. Cracks may show. For "
+           "testing.")};
     for (std::size_t i = 0; i < rows.size(); ++i) {
         rows[i].box->setText(texts[i].first);
         QString tip = texts[i].second;
