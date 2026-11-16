@@ -222,54 +222,21 @@ void ConfigureBananza::RetranslateUI() {
     texts[Quality::CubeMapOff] = {
         tr("Cube maps off"),
         tr("Skips the reflection cube maps altogether. Something that expects it may break. For testing.")};
-    texts[Quality::EmissionPresetOff] = {
-        tr("Emission presets off"),
-        tr("Skips the emission preset control. Something that expects it may break. For testing.")};
-    texts[Quality::ExposureOff] = {
-        tr("Exposure control off"),
-        tr("Skips the exposure control (the brightness may stay fixed). Something that expects it may break. For testing.")};
     texts[Quality::FogOff] = {
         tr("Fog off"),
         tr("Skips the fog. Something that expects it may break. For testing.")};
     texts[Quality::LightMapOff] = {
         tr("Light maps off"),
         tr("Skips the light map director. Something that expects it may break. For testing.")};
-    texts[Quality::MaterialEffectOff] = {
-        tr("Material effects off"),
-        tr("Skips the material effect director. Something that expects it may break. For testing.")};
     texts[Quality::ModelForegroundOff] = {
         tr("Foreground models off"),
         tr("Skips the foreground model drawer. Something that expects it may break. For testing.")};
-    texts[Quality::ModelTextureReplacerOff] = {
-        tr("Model texture replacer off"),
-        tr("Skips the model texture replacer. Something that expects it may break. For testing.")};
     texts[Quality::PrePassLightOff] = {
         tr("Pre-pass light off"),
         tr("Skips the pre-pass light. Something that expects it may break. For testing.")};
-    texts[Quality::NoiseTextureKeeperOff] = {
-        tr("Procedural noise textures off"),
-        tr("Skips the procedural noise texture keeper. Something that expects it may break. For testing.")};
     texts[Quality::SkyModelOff] = {
         tr("Sky model off"),
         tr("Skips the sky model. Something that expects it may break. For testing.")};
-    texts[Quality::ShadowBufferAOff] = {
-        tr("Shadow mask to buffer A off"),
-        tr("Stops the shadow mask writing to shadow buffer A. Something that expects it may break. For testing.")};
-    texts[Quality::ScreenFaderOff] = {
-        tr("Screen fader off"),
-        tr("Skips the screen fader (fades may not show). Something that expects it may break. For testing.")};
-    texts[Quality::SceneColorExtensionOff] = {
-        tr("Scene colour buffer extension off"),
-        tr("Skips the scene colour buffer extension. Something that expects it may break. For testing.")};
-    texts[Quality::HdrComposeOff] = {
-        tr("HDR compose off"),
-        tr("Skips the HDR compose step. Something that expects it may break. For testing.")};
-    texts[Quality::OcclusionCullingOff] = {
-        tr("Occlusion culling judge off"),
-        tr("Skips the occlusion culling judge (more may be drawn). Something that expects it may break. For testing.")};
-    texts[Quality::MultiViewFrustumOff] = {
-        tr("Multi-view frustum off"),
-        tr("Skips the multi-view frustum. Something that expects it may break. For testing.")};
     texts[Quality::VoxelCellSize] = {
         tr("Terrain cell size"),
         tr("Scales the terrain's cell size (a bigger cell: fewer cells). Not in the presets: the "

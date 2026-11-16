@@ -57,22 +57,11 @@ enum Id : size_t {
     DofIndirectOff,    ///< IsUseDofIndirectCtrl forced off
     AglSkyOff, ///< IsUseAglSky forced off
     CubeMapOff, ///< IsUseCubeMap forced off
-    EmissionPresetOff, ///< IsUseEmissionPresetCtrl forced off
-    ExposureOff, ///< IsUseExposureCtrl forced off
     FogOff, ///< IsUseFog forced off
     LightMapOff, ///< IsUseLightMapDirector forced off
-    MaterialEffectOff, ///< IsUseMaterialEffectDirector forced off
     ModelForegroundOff, ///< IsUseModelForegroundDrawer forced off
-    ModelTextureReplacerOff, ///< IsUseModelTextureReplacer forced off
     PrePassLightOff, ///< IsUsePrePassLight forced off
-    NoiseTextureKeeperOff, ///< IsUseProceduralNoiseTextureKeeper forced off
     SkyModelOff, ///< IsUseSkyModel forced off
-    ShadowBufferAOff, ///< IsShadowMaskOutputShadowBufferA forced off
-    ScreenFaderOff, ///< IsUseScreenFader forced off
-    SceneColorExtensionOff, ///< IsUseSceneColorBufferExtension forced off
-    HdrComposeOff, ///< IsUseProjectHDRCompose forced off
-    OcclusionCullingOff, ///< IsUseOcclusionCullingJudge forced off
-    MultiViewFrustumOff, ///< IsUseMultiViewFrustum forced off
     Count,
 };
 
@@ -122,22 +111,11 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"dof_off", "EDEN_NX2_DKQ_DOF_OFF", 1, 1, 0},
     {"aglsky_off", "EDEN_NX2_DKQ_AGLSKY_OFF", 1, 1, 0},
     {"cubemap_off", "EDEN_NX2_DKQ_CUBEMAP_OFF", 1, 1, 0},
-    {"emission_preset_off", "EDEN_NX2_DKQ_EMISSION_PRESET_OFF", 1, 1, 0},
-    {"exposure_off", "EDEN_NX2_DKQ_EXPOSURE_OFF", 1, 1, 0},
     {"fog_off", "EDEN_NX2_DKQ_FOG_OFF", 1, 1, 0},
     {"lightmap_off", "EDEN_NX2_DKQ_LIGHTMAP_OFF", 1, 1, 0},
-    {"material_effect_off", "EDEN_NX2_DKQ_MATERIAL_EFFECT_OFF", 1, 1, 0},
     {"model_foreground_off", "EDEN_NX2_DKQ_MODEL_FOREGROUND_OFF", 1, 1, 0},
-    {"texture_replacer_off", "EDEN_NX2_DKQ_TEXTURE_REPLACER_OFF", 1, 1, 0},
     {"prepass_light_off", "EDEN_NX2_DKQ_PREPASS_LIGHT_OFF", 1, 1, 0},
-    {"noise_keeper_off", "EDEN_NX2_DKQ_NOISE_KEEPER_OFF", 1, 1, 0},
     {"sky_model_off", "EDEN_NX2_DKQ_SKY_MODEL_OFF", 1, 1, 0},
-    {"shadow_buffer_a_off", "EDEN_NX2_DKQ_SHADOW_BUFFER_A_OFF", 1, 1, 0},
-    {"screen_fader_off", "EDEN_NX2_DKQ_SCREEN_FADER_OFF", 1, 1, 0},
-    {"scene_color_ext_off", "EDEN_NX2_DKQ_SCENE_COLOR_EXT_OFF", 1, 1, 0},
-    {"hdr_compose_off", "EDEN_NX2_DKQ_HDR_COMPOSE_OFF", 1, 1, 0},
-    {"occlusion_culling_off", "EDEN_NX2_DKQ_OCCLUSION_CULLING_OFF", 1, 1, 0},
-    {"multiview_frustum_off", "EDEN_NX2_DKQ_MULTIVIEW_FRUSTUM_OFF", 1, 1, 0},
 }};
 
 /// One number per knob; 0 leaves the game's own.
@@ -319,7 +297,7 @@ constexpr u32 RadialBlurSamplesParam = 0x500; // RadialBlurSamplingNum
 constexpr u32 ColorDecalMaxParam = 0x280;     // ColorDecalMaxNum
 constexpr u32 GgxFilterParam = 0x210;         // IsUseGGXFilter
 // The switches read in place, where the game builds its directors: the param's offset
-constexpr std::array<std::pair<Id, u32>, 26> FeatureFlags{{
+constexpr std::array<std::pair<Id, u32>, 15> FeatureFlags{{
     {DecalOff, 0x80}, // IsUseDecal
     {DepthBloomOff, 0x118}, // IsUseDepthBloom
     {BloomExtensionOff, 0x110}, // IsUseBloomExtention
@@ -330,22 +308,11 @@ constexpr std::array<std::pair<Id, u32>, 26> FeatureFlags{{
     {DofIndirectOff, 0x128}, // IsUseDofIndirectCtrl
     {AglSkyOff, 0x1c0}, // IsUseAglSky
     {CubeMapOff, 0x28}, // IsUseCubeMap
-    {EmissionPresetOff, 0x108}, // IsUseEmissionPresetCtrl
-    {ExposureOff, 0x120}, // IsUseExposureCtrl
     {FogOff, 0x60}, // IsUseFog
     {LightMapOff, 0x130}, // IsUseLightMapDirector
-    {MaterialEffectOff, 0x90}, // IsUseMaterialEffectDirector
     {ModelForegroundOff, 0x160}, // IsUseModelForegroundDrawer
-    {ModelTextureReplacerOff, 0x140}, // IsUseModelTextureReplacer
     {PrePassLightOff, 0xb0}, // IsUsePrePassLight
-    {NoiseTextureKeeperOff, 0xc0}, // IsUseProceduralNoiseTextureKeeper
     {SkyModelOff, 0xe8}, // IsUseSkyModel
-    {ShadowBufferAOff, 0x278}, // IsShadowMaskOutputShadowBufferA
-    {ScreenFaderOff, 0x148}, // IsUseScreenFader
-    {SceneColorExtensionOff, 0x158}, // IsUseSceneColorBufferExtension
-    {HdrComposeOff, 0x150}, // IsUseProjectHDRCompose
-    {OcclusionCullingOff, 0x138}, // IsUseOcclusionCullingJudge
-    {MultiViewFrustumOff, 0xa8}, // IsUseMultiViewFrustum
 }};
 constexpr u32 ShadowMaskParam = 0xe0;           // IsUseShadowMask
 constexpr u32 CubeMapOcclusionParam = 0x218;  // IsUseCubeMapOcclusionCheck
