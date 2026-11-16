@@ -68,7 +68,7 @@ enum Id : size_t {
     FoliageDensity,    ///< foliage dynamic placement chance and rate, %
     FoliageOff,        ///< all foliage off: no placement, a draw distance of nothing, caps of 1
     FoliageFarClip,    ///< each foliage model's FarClipDistance, % of the game's
-    FoliageLod,        ///< each foliage model's LodThreshold0-2, % of the game's (higher: coarser sooner)
+    FoliageLod,        ///< each foliage model's LodThreshold0-2, % of the game's (direction not known)
     EffectEmitCap,     ///< EmitCountPerFrameMax (effects started per frame), % of the game's
     EffectParticleCap, ///< OneEmitterMaxParticleNum, % of the game's
     EffectAliveCap,    ///< the MaxAliveEffectsNum of the effect rules, % of the game's
@@ -133,7 +133,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"foliage_density", "EDEN_NX2_DKQ_FOLIAGE_DENSITY", 1, 100, 100},
     {"foliage_off", "EDEN_NX2_DKQ_FOLIAGE_OFF", 1, 1, 0},
     {"foliage_far_clip", "EDEN_NX2_DKQ_FOLIAGE_FAR_CLIP", 1, 100, 100},
-    {"foliage_lod", "EDEN_NX2_DKQ_FOLIAGE_LOD", 100, 1000, 100},
+    {"foliage_lod", "EDEN_NX2_DKQ_FOLIAGE_LOD", 10, 1000, 100},
     {"effect_emit_cap", "EDEN_NX2_DKQ_EFFECT_EMIT_CAP", 5, 100, 100},
     {"effect_particle_cap", "EDEN_NX2_DKQ_EFFECT_PARTICLE_CAP", 5, 100, 100},
     {"effect_alive_cap", "EDEN_NX2_DKQ_EFFECT_ALIVE_CAP", 5, 100, 100},

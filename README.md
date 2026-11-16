@@ -251,7 +251,7 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Foliage view margin off | on | removes the extra margin around the view for foliage; it may pop in when turning |
 | Foliage off | off | turns the foliage off: no dynamic placement, every model's draw distance set to nothing, the draw caps to 1 |
 | Foliage draw distance | 100% | scales how far each foliage model (grass, flowers, plants) is drawn from the distance in the game's data (100-300 units): foliage stays near you and ends sooner; 1% is 1-3 units, about none |
-| Foliage LOD bias | 100% | scales when each foliage model switches to a simpler mesh; higher means coarser meshes sooner |
+| Foliage LOD bias | 100% | scales when each foliage model switches to a simpler mesh, 10-1000%; which direction is coarser is not known yet (for testing) |
 | Foliage placement density | 100% | scales the chance and rate of the foliage placed while playing (foliage in the stage's data is only cut by the cap) |
 | Effects started per frame / Particles per emitter | 156 / 512 | scales the most effects the game starts in a frame and the most particles in one emitter (dust, debris, sparks); in the game's effect settings files as they are read |
 | Effects alive per rule / Terrain material effects | 100% | scales how many effects the emission rules keep alive and how many terrain material effects (dust, smoke, snow) are active at once |

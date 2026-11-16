@@ -272,8 +272,8 @@ void ConfigureBananza::RetranslateUI() {
            "Needs a restart.")};
     texts[Quality::FoliageLod] = {
         tr("Foliage LOD bias"),
-        tr("Scales when each foliage model switches to a simpler mesh. Higher: simpler meshes "
-           "sooner, so foliage looks coarser at a distance and costs less.")};
+        tr("Scales when each foliage model switches to a simpler mesh. Which direction is "
+           "coarser is not known yet: try values above and below 100%. For testing. Needs a restart.")};
     texts[Quality::EffectEmitCap] = {
         tr("Effects started per frame"),
         tr("Scales how many effects (particles, dust, debris) the game may start in one frame "
