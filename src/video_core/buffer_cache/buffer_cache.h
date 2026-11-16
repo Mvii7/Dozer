@@ -33,6 +33,7 @@ BufferCache<P>::BufferCache(Tegra::MaxwellDeviceMemoryManager& device_memory_, R
     // Ensure the first slot is used for the null buffer
     void(slot_buffers.insert(runtime, NullBufferParams{}));
     gpu_modified_ranges.Clear();
+    fence_accurate = Settings::IsGPUFenceBehaviorAccurate();
     // EDEN_NX2_GPU_WRITTEN_FILTER: read once, here (after the switches file is loaded).
     const int written_filter = Nx2GpuWrittenFilter();
     gpu_modified_ranges.SetMode(written_filter);
@@ -103,6 +104,7 @@ void BufferCache<P>::RunGarbageCollector(bool aggressive_gc) {
 
 template <class P>
 void BufferCache<P>::TickFrame() {
+    fence_accurate = Settings::IsGPUFenceBehaviorAccurate();
     // Homebrew console apps don't create or bind any channels, so this will be nullptr.
     if (!channel_state) {
         return;
@@ -445,7 +447,7 @@ void BufferCache<P>::BindGraphicsUniformBuffer(size_t stage, u32 index, GPUVAddr
                 current.buffer_id && current.buffer_id != NULL_BUFFER_ID &&
                 page_table[*device_addr >> CACHING_PAGEBITS] == current.buffer_id &&
                 slot_buffers[current.buffer_id].IsInBounds(*device_addr, size) &&
-                !Settings::IsGPUFenceBehaviorAccurate()) {
+                !fence_accurate) {
                 ++kept;
                 if (skip != 2) {
                     return;
@@ -1901,7 +1903,7 @@ void BufferCache<P>::UpdateIndexBuffer() {
     // any size within its bounds (with accurate GPU fences FindBuffer also synchronizes writes).
     IndexBufferMemo* memo = nullptr;
     u64 map_epoch = 0;
-    if (IndexSkipEnabled() && !Settings::IsGPUFenceBehaviorAccurate()) {
+    if (IndexSkipEnabled() && !fence_accurate) {
         if (vertex_memo_owner != gpu_memory->GetID()) {
             vertex_memo_owner = gpu_memory->GetID();
             ++vertex_memo_epoch;
@@ -2049,7 +2051,7 @@ void BufferCache<P>::UpdateVertexBuffer(u32 index) {
             return;
         }
         // With accurate GPU fences FindBuffer also synchronizes the buffer's writes.
-        if (!Settings::IsGPUFenceBehaviorAccurate()) {
+        if (!fence_accurate) {
             if (!vertex_memo) {
                 vertex_memo = std::make_unique<VertexMemoLine[]>(VERTEX_MEMO_SIZE);
             }
@@ -2197,7 +2199,7 @@ void BufferCache<P>::UpdateStorageBuffers(size_t stage) {
     const size_t owner = gpu_memory->GetID();
     const bool unchanged = keep != 0 && resolved.valid && resolved.layout_epoch == layout_epoch &&
                            resolved.map_epoch == map_epoch && resolved.owner == owner &&
-                           !Settings::IsGPUFenceBehaviorAccurate();
+                           !fence_accurate;
     if (unchanged && keep != 2) {
         return;
     }

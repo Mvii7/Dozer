@@ -15,6 +15,10 @@ and `=0` brings back the 2.0.0 code path.
 - Split GPU thread front: an increasing run of 3D state methods goes to the front in one call
   instead of one call per word (`EDEN_NX2_FRONT_RUNS=0` turns it off).
 
+- Buffer cache: the per-draw uniform, index, vertex and storage paths read the GPU fence setting
+  once a frame instead of on every draw, and a uniform bind whose stage slot already held the
+  range with other bytes compares them once instead of twice.
+
 ## Dozer 0.1.3 (`v0.1.3`)
 
 - Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
