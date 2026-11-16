@@ -180,13 +180,19 @@ public:
     void TranscodeAstcToBcn(Image& image, const StagingBufferRef& map,
                             std::span<const VideoCommon::SwizzleParameters> swizzles);
 
-    /// Temporary decode images, freed once the GPU is past `tick`.
-    struct PendingTranscode {
-        u64 tick;
+    /// RGBA8 decode images, one per shape, reused by every transcode of that shape (the decode
+    /// pass's first barrier waits for the previous encode's reads). Freed after 300 frames unused.
+    struct TranscodeScratch {
+        u32 width;
+        u32 height;
+        u32 levels;
+        u32 layers;
         vk::Image image;
         std::vector<vk::ImageView> views;
+        u64 tick;
+        u32 unused_frames;
     };
-    std::deque<PendingTranscode> pending_transcodes;
+    std::vector<TranscodeScratch> transcode_scratch;
 
     std::optional<BlockLinearUnswizzle3DPass> bl3d_unswizzle_pass;
     const Settings::ResolutionScalingInfo& resolution;

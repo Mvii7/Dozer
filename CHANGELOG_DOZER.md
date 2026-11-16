@@ -19,6 +19,12 @@ and `=0` brings back the 2.0.0 code path.
   once a frame instead of on every draw, and a uniform bind whose stage slot already held the
   range with other bytes compares them once instead of twice.
 
+- ASTC re-compressed on the GPU (BC1/BC3 with GPU decoding): the RGBA8 image each texture is
+  decoded into, and its view per level, are now kept per shape and reused by the next texture of
+  that shape instead of being made for every texture (freed after 300 frames unused). In Mario
+  Kart World a burst of ~1100 new course textures took ~200 ms of uploads on the GPU thread in one
+  frame, at ~0.18 ms each. Not measured yet.
+
 ## Dozer 0.1.3 (`v0.1.3`)
 
 - Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
