@@ -15,8 +15,8 @@
 #include "common/settings.h"
 #ifndef _WIN32
 #include "common/string_util.h"
-#include "common/zstd_compression.h"
 #endif
+#include "common/zstd_compression.h"
 
 #include "core/core.h"
 #include "core/file_sys/common_funcs.h"
@@ -32,8 +32,8 @@
 #include "core/hle/service/filesystem/filesystem.h"
 #include "core/hle/service/ns/language.h"
 #include "core/hle/service/set/settings_server.h"
-#include "core/loader/nx2_dk_foliage.h"
 #include "core/loader/loader.h"
+#include "core/loader/nx2_dk_foliage.h"
 #include "core/loader/nso.h"
 #include "core/memory/cheat_engine.h"
 
