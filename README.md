@@ -241,6 +241,24 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Wet models off | on | Skips the wet model control (no wet look on models). For testing. |
 | Cloud shapes off | on | Skips the cloud shapes. For testing. |
 | Depth of field off | on | Skips the indirect depth of field control. For testing. |
+| AGL sky off | on | Skips the AGL sky. The sky may go missing. (for testing; may crash) |
+| Cube maps off | on | Skips the reflection cube maps altogether. (for testing; may crash) |
+| Emission presets off | on | Skips the emission preset control. (for testing; may crash) |
+| Exposure control off | on | Skips the exposure control (the brightness may stay fixed). (for testing; may crash) |
+| Fog off | on | Skips the fog. (for testing; may crash) |
+| Light maps off | on | Skips the light map director. (for testing; may crash) |
+| Material effects off | on | Skips the material effect director. (for testing; may crash) |
+| Foreground models off | on | Skips the foreground model drawer. (for testing; may crash) |
+| Model texture replacer off | on | Skips the model texture replacer. (for testing; may crash) |
+| Pre-pass light off | on | Skips the pre-pass light. (for testing; may crash) |
+| Procedural noise textures off | on | Skips the procedural noise texture keeper. (for testing; may crash) |
+| Sky model off | on | Skips the sky model. (for testing; may crash) |
+| Shadow mask to buffer A off | on | Stops the shadow mask writing to shadow buffer A. (for testing; may crash) |
+| Screen fader off | on | Skips the screen fader (fades may not show). (for testing; may crash) |
+| Scene colour buffer extension off | on | Skips the scene colour buffer extension. (for testing; may crash) |
+| HDR compose off | on | Skips the HDR compose step. (for testing; may crash) |
+| Occlusion culling judge off | on | Skips the occlusion culling judge (more may be drawn). (for testing; may crash) |
+| Multi-view frustum off | on | Skips the multi-view frustum. (for testing; may crash) |
 | Shadow masks off | on | turns off the game's shadow masks (volume shadows); shadows may go missing (for testing) |
 | Occlusion query depth / radius / polygons | 100% | scales the thresholds of the game's occlusion queries (effect not known; for testing) |
 
