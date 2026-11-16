@@ -299,30 +299,43 @@ public:
         thread.join();
     }
 
-    /// The largest source buffer of an earlier job, so the snapshot lands in memory already
-    /// touched.
-    Common::ScratchBuffer<u8> TakeBuffer() {
+    /// A source buffer of an earlier job, so the snapshot lands in memory already touched: the
+    /// smallest that holds `size` bytes, else the largest.
+    Common::ScratchBuffer<u8> TakeBuffer(std::size_t size) {
         std::scoped_lock lk{mutex};
         if (free_buffers.empty()) {
             return {};
         }
-        const auto largest = std::ranges::max_element(
-            free_buffers, {}, [](const auto& buffer) { return buffer.capacity(); });
-        Common::ScratchBuffer<u8> buffer = std::move(*largest);
-        free_buffers.erase(largest);
+        auto best = free_buffers.begin();
+        for (auto it = free_buffers.begin(); it != free_buffers.end(); ++it) {
+            const bool fits = it->capacity() >= size;
+            const bool best_fits = best->capacity() >= size;
+            if (fits ? (!best_fits || it->capacity() < best->capacity())
+                     : (!best_fits && it->capacity() > best->capacity())) {
+                best = it;
+            }
+        }
+        free_bytes -= best->capacity();
+        Common::ScratchBuffer<u8> buffer = std::move(*best);
+        free_buffers.erase(best);
         return buffer;
     }
 
     void Push(Job&& job) {
         std::unique_lock lk{mutex};
-        // At most a few copies (up to 64 MiB each) waiting.
-        space_cv.wait(lk, [this] { return queue.size() < MaxQueued; });
+        // A burst of copies queues up to MaxQueuedBytes of snapshots before the GPU thread waits.
+        const std::size_t bytes = job.source.size();
+        space_cv.wait(lk, [&] {
+            return queued_bytes == 0 || queued_bytes + bytes <= MaxQueuedBytes;
+        });
+        queued_bytes += bytes;
         queue.push_back(std::move(job));
         work_cv.notify_one();
     }
 
 private:
-    static constexpr std::size_t MaxQueued = 3;
+    static constexpr std::size_t MaxQueuedBytes = 256ULL << 20;
+    static constexpr std::size_t MaxFreeBytes = 256ULL << 20;
 
     void Run() {
         Common::SetCurrentThreadName("GPUBlitCopy");
@@ -338,15 +351,22 @@ private:
                 job = std::move(queue.front());
                 queue.pop_front();
             }
-            space_cv.notify_all();
             Copy(job, layout);
             job.done->store(true, std::memory_order_release);
             job.done->notify_all();
-            std::scoped_lock lk{mutex};
-            free_buffers.push_back(std::move(job.source));
-            if (free_buffers.size() > MaxQueued + 1) {
-                free_buffers.erase(free_buffers.begin());
+            {
+                std::scoped_lock lk{mutex};
+                queued_bytes -= job.source.size();
+                free_bytes += job.source.capacity();
+                free_buffers.push_back(std::move(job.source));
+                while (free_bytes > MaxFreeBytes) {
+                    const auto smallest = std::ranges::min_element(
+                        free_buffers, {}, [](const auto& buffer) { return buffer.capacity(); });
+                    free_bytes -= smallest->capacity();
+                    free_buffers.erase(smallest);
+                }
             }
+            space_cv.notify_all();
         }
     }
 
@@ -394,6 +414,8 @@ private:
     std::condition_variable space_cv;
     std::deque<Job> queue;
     std::vector<Common::ScratchBuffer<u8>> free_buffers;
+    std::size_t queued_bytes{};
+    std::size_t free_bytes{};
     bool stopping{};
     std::thread thread;
 };
@@ -458,7 +480,7 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
             impl->async_copier = std::make_unique<AsyncTiledCopier>();
         }
         AsyncTiledCopier::Job job{
-            .source = impl->async_copier->TakeBuffer(),
+            .source = impl->async_copier->TakeBuffer(src_window.size),
             .size = dst_window.size,
             .read_old = !covers_window,
             .bytes_per_pixel = src_bytes_per_pixel,
