@@ -21,6 +21,7 @@
 #include "video_core/host1x/gpu_device_memory_manager.h"
 #include "video_core/nx2.h"
 #include "video_core/nx2_profile.h"
+#include "video_core/nx2_uniform_census.h"
 #include "video_core/texture_cache/util.h"
 
 namespace VideoCommon {
@@ -1384,12 +1385,14 @@ void BufferCache<P>::BindHostGraphicsUniformBuffers(size_t stage) {
 template <class P>
 void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 binding_index, bool needs_bind) {
     ++channel_state->uniform_cache_shots[0];
+    Nx2UniformCensus::Add(Nx2UniformCensus::UniformBinds, 1);
     // EDEN_NX2_ROOT_TABLES (shader_recompiler/ir_opt/nx2_root.h; `loaded` is set only with it):
     // bank 24, root table 0, is read as bank 17, which such games do not bind; stream the table's
     // words as that buffer (Duck912 0e0ccd768b). A table write makes the next draw a full setup,
     // which gets here again.
     if (index == 17 && maxwell3d->root_tables.loaded &&
         channel_state->uniform_buffers[stage][index].size == 0) [[unlikely]] {
+        Nx2UniformCensus::Add(Nx2UniformCensus::UniformRootTable, 1);
         const auto& words = maxwell3d->root_tables.tables[0];
         const u32 size = (*channel_state->uniform_buffer_sizes)[stage][index];
         const u32 copied = (std::min)(size, static_cast<u32>(sizeof(words)));
@@ -1428,6 +1431,17 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
     const bool use_fast_buffer = needs_alignment_stream
         || (has_host_buffer && size <= channel_state->uniform_buffer_skip_cache_size
             && !memory_tracker.IsRegionGpuModified(device_addr, size));
+    if (use_fast_buffer) {
+        Nx2UniformCensus::Add(Nx2UniformCensus::UniformFast, 1);
+        Nx2UniformCensus::Add(Nx2UniformCensus::UniformBytes, size);
+    } else {
+        using namespace Nx2UniformCensus;
+        Add(!has_host_buffer                                         ? UniformNoBuffer
+            : channel_state->uniform_buffer_skip_cache_size == 0     ? UniformNoSkip
+            : size > channel_state->uniform_buffer_skip_cache_size   ? UniformTooBig
+                                                                     : UniformGpuWritten,
+            1);
+    }
     if (use_fast_buffer) {
         if constexpr (IS_OPENGL) {
             if (runtime.HasFastBufferSubData()) {
@@ -2790,6 +2804,8 @@ void BufferCache<P>::MappedUploadMemory([[maybe_unused]] Buffer& buffer,
 template <class P>
 bool BufferCache<P>::InlineMemory(DAddr dest_address, size_t copy_size,
                                   std::span<const u8> inlined_buffer) {
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineWrites, 1);
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineWriteBytes, copy_size);
     const bool is_dirty = IsRegionRegistered(dest_address, copy_size);
     if (!is_dirty) {
         return false;
@@ -2799,6 +2815,7 @@ bool BufferCache<P>::InlineMemory(DAddr dest_address, size_t copy_size,
     if (!IsRegionGpuModified(aligned_start, aligned_end - aligned_start)) {
         return false;
     }
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineGpuWritten, 1);
 
     InlineMemoryImplementation(dest_address, copy_size, inlined_buffer);
 
@@ -2847,6 +2864,8 @@ bool BufferCache<P>::InlineMemoryBatched(DAddr dest_address, size_t copy_size,
         FlushInlineBatch(batch);
         return InlineMemory(dest_address, copy_size, inlined_buffer);
     }
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineWrites, 1);
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineWriteBytes, copy_size);
     if (!IsRegionRegistered(dest_address, copy_size)) {
         return false;
     }
@@ -2855,6 +2874,7 @@ bool BufferCache<P>::InlineMemoryBatched(DAddr dest_address, size_t copy_size,
     if (!IsRegionGpuModified(aligned_start, aligned_end - aligned_start)) {
         return false;
     }
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineGpuWritten, 1);
     ClearDownload(dest_address, copy_size);
     gpu_modified_ranges.Subtract(dest_address, copy_size);
 
