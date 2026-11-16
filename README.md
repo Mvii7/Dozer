@@ -249,6 +249,7 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Sky model off | on | Skips the sky model. (for testing; may crash) |
 | Foliage models at once | 100% | scales the most grass, weeds and plants drawn and kept alive at once (the game's caps are 25000 and 50000); changes the game's settings files as the RomFS is read |
 | Foliage view margin off | on | removes the extra margin around the view for foliage; it may pop in when turning |
+| Foliage off | off | turns the foliage off: no dynamic placement, every model's draw distance set to nothing, the draw caps to 1 |
 | Foliage draw distance | 100% | scales how far each foliage model (grass, flowers, plants) is drawn from the distance in the game's data (100-300 units): foliage stays near you and ends sooner; 1% is 1-3 units, about none |
 | Foliage LOD bias | 100% | scales when each foliage model switches to a simpler mesh; higher means coarser meshes sooner |
 | Foliage placement density | 100% | scales the chance and rate of the foliage placed while playing (foliage in the stage's data is only cut by the cap) |

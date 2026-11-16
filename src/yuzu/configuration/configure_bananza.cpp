@@ -258,6 +258,12 @@ void ConfigureBananza::RetranslateUI() {
         tr("Foliage placement density"),
         tr("Scales the chance and the rate of the foliage the game places while you play. "
            "Foliage already placed in the stage's data is not changed (use the cap for that).")};
+    texts[Quality::FoliageOff] = {
+        tr("Foliage off"),
+        tr("Turns the game's foliage (grass, flowers, plants) off: no dynamic placement, every "
+           "model's draw distance set to nothing, and the draw caps to 1. Done in the game's "
+           "settings files as they are read, so it needs a restart. Foliage baked into a stage "
+           "may still be loaded but is not drawn.")};
     texts[Quality::FoliageFarClip] = {
         tr("Foliage draw distance"),
         tr("Scales how far each foliage model (grass, flowers, plants, rocks) is drawn, from its "

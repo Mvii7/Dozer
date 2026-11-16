@@ -25,6 +25,7 @@ struct Settings {
     int cap = 0;          ///< % of the models drawn / kept alive at once, 0: the game's
     bool frustum_off = false;
     int density = 0;      ///< % of the dynamic placements, 0: the game's
+    bool off = false;     ///< no foliage at all
     int far_clip = 0;     ///< % of each model's far clip distance
     int lod = 0;          ///< % of each model's LOD thresholds
     int emit = 0;         ///< % of the effects started per frame
@@ -33,7 +34,7 @@ struct Settings {
     int material = 0;     ///< % of the material effects
 
     [[nodiscard]] bool Active() const {
-        return cap != 0 || frustum_off || density != 0 || far_clip != 0 || lod != 0 || emit != 0 || particles != 0 ||
+        return off || cap != 0 || frustum_off || density != 0 || far_clip != 0 || lod != 0 || emit != 0 || particles != 0 ||
                alive != 0 || material != 0;
     }
 };
@@ -46,7 +47,8 @@ inline int ReadEnv(Id id) {
 
 inline Settings FromEnvironment() {
     return {ReadEnv(Id::FoliageCap),     ReadEnv(Id::FoliageFrustumOff) != 0,
-            ReadEnv(Id::FoliageDensity), ReadEnv(Id::FoliageFarClip),
+            ReadEnv(Id::FoliageDensity), ReadEnv(Id::FoliageOff) != 0,
+            ReadEnv(Id::FoliageFarClip),
             ReadEnv(Id::FoliageLod),     ReadEnv(Id::EffectEmitCap),
             ReadEnv(Id::EffectParticleCap), ReadEnv(Id::EffectAliveCap),
             ReadEnv(Id::EffectMaterialCap)};
@@ -198,7 +200,13 @@ inline bool PatchSystemSettings(std::span<u8> archive, const Settings& settings)
                 }
             };
             if (key == "MaxModelsOutputForDrawNum" || key == "MaxModelsOutputForDeadAliveNum") {
-                scale(settings.cap);
+                // Off: one model at most (not 0, which a buffer size might not allow)
+                if (settings.off && (type == Detail::TypeInt || type == Detail::TypeUInt)) {
+                    Detail::Put(in, at, 1);
+                    changed = true;
+                } else {
+                    scale(settings.cap);
+                }
             } else if (key == "DynamicPlacementsPerFrameMax") {
                 scale(settings.density);
             } else if (settings.frustum_off && type == Detail::TypeFloat &&
@@ -216,9 +224,11 @@ inline bool PatchSystemSettings(std::span<u8> archive, const Settings& settings)
 /// (PlacedModelsMinNum, PlacedModelsMaxNum) of a decompressed ClusteredRendering/MaterialSettings
 /// archive in place. Returns whether it changed anything.
 inline bool PatchMaterialSettings(std::span<u8> archive, const Settings& settings) {
-    if (settings.density == 0) {
+    if (settings.density == 0 && !settings.off) {
         return false;
     }
+    // Off: no chance of a dynamic placement and one placed model at most
+    const int density = settings.off ? 1 : settings.density;
     Detail::Reader in{archive};
     bool changed = false;
     Detail::ForEachSarcFile(in, [&](size_t base) {
@@ -226,12 +236,12 @@ inline bool PatchMaterialSettings(std::span<u8> archive, const Settings& setting
             if (key == "DynamicPlacementProbability" && type == Detail::TypeFloat) {
                 const float value = Detail::AsFloat(in.U32(at));
                 Detail::Put(in, at,
-                            Detail::AsBits(value * static_cast<float>(settings.density) / 100.0f));
+                            Detail::AsBits(settings.off ? 0.0f
+                                                        : value * static_cast<float>(density) / 100.0f));
                 changed = true;
             } else if ((key == "PlacedModelsMinNum" || key == "PlacedModelsMaxNum") &&
                        (type == Detail::TypeInt || type == Detail::TypeUInt)) {
-                Detail::Put(in, at, std::max<u32>(in.U32(at) *
-                                                      static_cast<u32>(settings.density) / 100, 1));
+                Detail::Put(in, at, std::max<u32>(in.U32(at) * static_cast<u32>(density) / 100, 1));
                 changed = true;
             }
         });
@@ -242,7 +252,7 @@ inline bool PatchMaterialSettings(std::span<u8> archive, const Settings& setting
 /// Scales each model's FarClipDistance and LodThreshold0-2 of a decompressed
 /// ClusteredRendering/ModelSettings archive in place. Returns whether it changed anything.
 inline bool PatchModelSettings(std::span<u8> archive, const Settings& settings) {
-    if (settings.far_clip == 0 && settings.lod == 0) {
+    if (settings.far_clip == 0 && settings.lod == 0 && !settings.off) {
         return false;
     }
     Detail::Reader in{archive};
@@ -254,6 +264,12 @@ inline bool PatchModelSettings(std::span<u8> archive, const Settings& settings) 
             }
             int percent = 0;
             if (key == "FarClipDistance") {
+                if (settings.off) {
+                    // A distance of nothing: not 0, which might be divided by
+                    Detail::Put(in, at, Detail::AsBits(0.01f));
+                    changed = true;
+                    return;
+                }
                 percent = settings.far_clip;
             } else if (key == "LodThreshold0" || key == "LodThreshold1" ||
                        key == "LodThreshold2") {

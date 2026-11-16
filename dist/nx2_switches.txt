@@ -335,6 +335,8 @@
 #EDEN_NX2_DKQ_FOLIAGE_CAP=100
 #EDEN_NX2_DKQ_FOLIAGE_FRUSTUM_OFF=1
 #EDEN_NX2_DKQ_FOLIAGE_DENSITY=100
+# FOLIAGE_OFF=1: all foliage off (no placement, a draw distance of nothing, caps of 1).
+#EDEN_NX2_DKQ_FOLIAGE_OFF=1
 # FOLIAGE_FAR_CLIP=<1-100>: each foliage model's far clip distance (100-300 units in the game's
 # data) in % of the game's: foliage is drawn only closer. FOLIAGE_LOD=<100-1000>: each model's
 # LOD thresholds in % of the game's: higher, coarser meshes sooner. FOLIAGE_DENSITY also scales

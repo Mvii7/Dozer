@@ -217,10 +217,32 @@ TEST_CASE("Nx2DkFoliage: the number of placed models", "[core]") {
     REQUIRE(Read32(archive, root + 8 + 4) == 10);
 }
 
+TEST_CASE("Nx2DkFoliage: foliage off", "[core]") {
+    Settings settings;
+    settings.off = true;
+    REQUIRE(settings.Active());
+    auto models = Sarc(Byml({{"FarClipDistance", 0xD2, Bits(200.0f)}}));
+    REQUIRE(PatchModelSettings(models, settings));
+    const size_t root = 0x60 + Read32(models, 12 + 0x60) + 4;
+    REQUIRE(Read32(models, root + 4) == Bits(0.01f));
+    auto system = Sarc(Byml({{"MaxModelsOutputForDrawNum", 0xD1, 25000}}));
+    REQUIRE(PatchSystemSettings(system, settings));
+    REQUIRE(Read32(system, 0x60 + Read32(system, 12 + 0x60) + 4 + 4) == 1);
+    auto material = Sarc(Byml({{"DynamicPlacementProbability", 0xD2, Bits(100.0f)},
+                               {"PlacedModelsMaxNum", 0xD1, 30}}));
+    REQUIRE(PatchMaterialSettings(material, settings));
+    const size_t entries = 0x60 + Read32(material, 12 + 0x60) + 4;
+    REQUIRE(Read32(material, entries + 4) == Bits(0.0f));
+    REQUIRE(Read32(material, entries + 8 + 4) == 1);
+}
+
 TEST_CASE("Nx2DkFoliage: data that is not an archive is left alone", "[core]") {
     std::vector<u8> junk(300, 0x5A);
     const auto before = junk;
-    Settings settings{50, true, 50};
+    Settings settings;
+    settings.cap = 50;
+    settings.frustum_off = true;
+    settings.density = 50;
     REQUIRE_FALSE(PatchSystemSettings(junk, settings));
     REQUIRE_FALSE(PatchMaterialSettings(junk, settings));
     REQUIRE(junk == before);
