@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <vector>
 
+#include "common/div_ceil.h"
 #include "common/scratch_buffer.h"
 #include "video_core/engines/sw_blitter/blitter.h"
 #include "video_core/engines/sw_blitter/converter.h"
@@ -126,6 +127,50 @@ void ProcessPitchLinear(std::span<const u8> input, std::span<u8> output, size_t 
     }
 }
 
+// The part of a surface a blit touches: rows [y0, y1) rounded out to whole blocks, so the
+// swizzle offsets inside the window match those of the full surface.
+struct SurfaceWindow {
+    GPUVAddr address;
+    size_t size;
+    u32 height;
+    u32 y0;
+};
+
+SurfaceWindow GetSurfaceWindow(const Fermi2D::Surface& surface, u32 bytes_per_pixel, s32 y0,
+                               s32 y1) {
+    const bool block_linear = surface.linear == Fermi2D::MemoryLayout::BlockLinear;
+    const size_t full_size =
+        block_linear ? CalculateSize(true, bytes_per_pixel, surface.width, surface.height,
+                                     surface.depth, surface.block_height, surface.block_depth)
+                     : static_cast<size_t>(surface.pitch) * surface.height;
+    const SurfaceWindow full{surface.Address(), full_size, surface.height, static_cast<u32>(y0)};
+    if (y0 < 0 || y0 >= y1 || static_cast<u32>(y0) >= surface.height ||
+        (block_linear && surface.depth != 1)) {
+        return full;
+    }
+    u32 rows_per_block = 1;
+    size_t block_row_size = surface.pitch;
+    if (block_linear) {
+        const u32 gobs_in_x = Common::DivCeil(surface.width * bytes_per_pixel, GOB_SIZE_X);
+        rows_per_block = GOB_SIZE_Y << surface.block_height;
+        block_row_size = size_t{gobs_in_x}
+                         << (GOB_SIZE_SHIFT + surface.block_height + surface.block_depth);
+    }
+    const u32 y_end = (std::min)(static_cast<u32>(y1), surface.height);
+    const u32 first = static_cast<u32>(y0) / rows_per_block;
+    const u32 last = Common::DivCeil(y_end, rows_per_block);
+    const size_t offset = first * block_row_size;
+    if (offset >= full_size) {
+        return full;
+    }
+    return SurfaceWindow{
+        .address = surface.Address() + offset,
+        .size = (std::min)(full_size - offset, (last - first) * block_row_size),
+        .height = (std::min)(last * rows_per_block, surface.height) - first * rows_per_block,
+        .y0 = static_cast<u32>(y0) - first * rows_per_block,
+    };
+}
+
 } // namespace
 
 struct SoftwareBlitEngine::BlitEngineImpl {
@@ -146,14 +191,6 @@ SoftwareBlitEngine::~SoftwareBlitEngine() = default;
 
 bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
                               Fermi2D::Config& config) {
-    const auto get_surface_size = [](Fermi2D::Surface& surface, u32 bytes_per_pixel) {
-        if (surface.linear == Fermi2D::MemoryLayout::BlockLinear) {
-            return CalculateSize(true, bytes_per_pixel, surface.width, surface.height,
-                                 surface.depth, surface.block_height, surface.block_depth);
-        }
-        return static_cast<size_t>(surface.pitch * surface.height);
-    };
-
     const u32 src_extent_x = config.src_x1 - config.src_x0;
     const u32 src_extent_y = config.src_y1 - config.src_y0;
 
@@ -161,10 +198,11 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
     const u32 dst_extent_y = config.dst_y1 - config.dst_y0;
     const auto src_bytes_per_pixel = BytesPerBlock(PixelFormatFromRenderTargetFormat(src.format));
     const auto dst_bytes_per_pixel = BytesPerBlock(PixelFormatFromRenderTargetFormat(dst.format));
-    const size_t src_size = get_surface_size(src, src_bytes_per_pixel);
+    const SurfaceWindow src_window =
+        GetSurfaceWindow(src, src_bytes_per_pixel, config.src_y0, config.src_y1);
 
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::SafeRead> tmp_buffer(
-        memory_manager, src.Address(), src_size, &impl->tmp_buffer);
+        memory_manager, src_window.address, src_window.size, &impl->tmp_buffer);
 
     const size_t src_copy_size = src_extent_x * src_extent_y * src_bytes_per_pixel;
     const size_t dst_copy_size = dst_extent_x * dst_extent_y * dst_bytes_per_pixel;
@@ -212,13 +250,14 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
 
     impl->dst_buffer.resize_destructive(dst_copy_size);
     if (src.linear == Fermi2D::MemoryLayout::BlockLinear) {
-        UnswizzleSubrect(impl->src_buffer, tmp_buffer, src_bytes_per_pixel, src.width, src.height,
-                         src.depth, config.src_x0, config.src_y0, src_extent_x, src_extent_y,
+        UnswizzleSubrect(impl->src_buffer, tmp_buffer, src_bytes_per_pixel, src.width,
+                         src_window.height, src.depth, config.src_x0, src_window.y0,
+                         src_extent_x, src_extent_y,
                          src.block_height, src.block_depth, src_extent_x * src_bytes_per_pixel,
                          UseNativeTiling());
     } else {
         ProcessPitchLinear<false>(tmp_buffer, impl->src_buffer, src_extent_x, src_extent_y,
-                                  src.pitch, config.src_x0, config.src_y0, src_bytes_per_pixel);
+                                  src.pitch, config.src_x0, src_window.y0, src_bytes_per_pixel);
     }
 
     // Conversion Phase
@@ -232,18 +271,20 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
         impl->dst_buffer.swap(impl->src_buffer);
     }
 
-    const size_t dst_size = get_surface_size(dst, dst_bytes_per_pixel);
+    const SurfaceWindow dst_window =
+        GetSurfaceWindow(dst, dst_bytes_per_pixel, config.dst_y0, config.dst_y1);
     Tegra::Memory::GpuGuestMemoryScoped<u8, Tegra::Memory::GuestMemoryFlags::SafeReadWrite>
-        tmp_buffer2(memory_manager, dst.Address(), dst_size, &impl->tmp_buffer);
+        tmp_buffer2(memory_manager, dst_window.address, dst_window.size, &impl->tmp_buffer);
 
     if (dst.linear == Fermi2D::MemoryLayout::BlockLinear) {
-        SwizzleSubrect(tmp_buffer2, impl->dst_buffer, dst_bytes_per_pixel, dst.width, dst.height,
-                       dst.depth, config.dst_x0, config.dst_y0, dst_extent_x, dst_extent_y,
+        SwizzleSubrect(tmp_buffer2, impl->dst_buffer, dst_bytes_per_pixel, dst.width,
+                       dst_window.height, dst.depth, config.dst_x0, dst_window.y0, dst_extent_x,
+                       dst_extent_y,
                        dst.block_height, dst.block_depth, dst_extent_x * dst_bytes_per_pixel,
                        UseNativeTiling());
     } else {
         ProcessPitchLinear<true>(impl->dst_buffer, tmp_buffer2, dst_extent_x, dst_extent_y,
-                                 dst.pitch, config.dst_x0, config.dst_y0,
+                                 dst.pitch, config.dst_x0, dst_window.y0,
                                  static_cast<size_t>(dst_bytes_per_pixel));
     }
     return true;
