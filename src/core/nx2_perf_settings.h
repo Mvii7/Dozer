@@ -430,7 +430,7 @@ struct Var {
 
 /// The per-draw shortcuts this fork keeps on by default; the Safe preset turns them off (=0), as
 /// start-safe.bat does.
-inline constexpr std::array<std::string_view, 61> SafeOff{
+inline constexpr std::array<std::string_view, 62> SafeOff{
     "EDEN_NX2_LIGHT_DRAW",       "EDEN_NX2_LIGHT_UNIFORM",     "EDEN_NX2_LIGHT_UNIFORM_VALUES",
     "EDEN_NX2_LIGHT_STORAGE",    "EDEN_NX2_UNIFORM_SYNC_SKIP", "EDEN_NX2_STORAGE_KEEP",
     "EDEN_NX2_UBO_REUSE",        "EDEN_NX2_UBO_DIRECT",        "EDEN_NX2_UBO_STAGE",
@@ -451,11 +451,11 @@ inline constexpr std::array<std::string_view, 61> SafeOff{
     "EDEN_NX2_INDIRECT_BATCH",   "EDEN_NX2_LAYOUT_MEMO",       "EDEN_NX2_SAME_SKIP",
     "EDEN_NX2_HSETP2_REG",       "EDEN_NX2_DIRTY_THUNK_SKIP",  "EDEN_NX2_FAST_PRIORITY_SCAN",
     "EDEN_NX2_PBFLUSH_WINDOW_KIB", "EDEN_NX2_UPSCALE_SCAN",    "EDEN_NX2_UPSCALE_LEARN",
-    "EDEN_NX2_UPSCALE_HEADER",
+    "EDEN_NX2_UPSCALE_HEADER",   "EDEN_NX2_FRONT_RUNS",
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
-inline constexpr std::array<std::string_view, 14> Names{
+inline constexpr std::array<std::string_view, 15> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
@@ -463,6 +463,7 @@ inline constexpr std::array<std::string_view, 14> Names{
     "EDEN_NX2_PRESENT_INTERVAL_WORD", "EDEN_NX2_MODE_PACE",
     "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
+    "EDEN_NX2_RX_ONE_SUBMIT",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -507,6 +508,8 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
         vars.push_back({"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"});
         vars.push_back({"EDEN_NX2_MODE_PACE", "2"});
         vars.push_back({"EDEN_NX2_PACE_SPIN_US", "1500"});
+        // No empty second submission after each real fence (about half of its submissions).
+        vars.push_back({"EDEN_NX2_RX_ONE_SUBMIT", "1"});
     }
     if (game == Game::MarioKartWorld && switches.mkw_dyn) {
         vars.push_back({"EDEN_NX2_MKW_DYN", "1"});

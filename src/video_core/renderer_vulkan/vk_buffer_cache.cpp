@@ -561,22 +561,29 @@ const BufferCacheRuntime::UniformSlice* BufferCacheRuntime::FindUniformSlice(
         return slice.tick == tick && slice.device_addr == device_addr && slice.size == size &&
                std::memcmp(slice.bytes.data(), bytes, size) == 0;
     };
+    // Set when the stage slot's slice is this range's and its bytes differ: the range's own
+    // check would compare the same bytes again.
+    bool slice_differs = false;
     if (size != 0 && stage < UNIFORM_STAGES && index < UNIFORM_STAGE_SLOTS) {
         const StageUniform& last = stage_uniforms[stage][index];
         const UniformSlice& candidate = uniform_slices[last.slot];
         if (last.serial != 0 && candidate.serial == last.serial && candidate.tick == tick &&
-            candidate.size >= size && std::memcmp(candidate.bytes.data(), bytes, size) == 0) {
-            if ((&candidate != &slice || candidate.device_addr != device_addr ||
-                 candidate.size != size) &&
-                !plain_match()) {
-                ++uniform_stage_reuses;
-                VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::UniformStageReuses, 1);
+            candidate.size >= size) {
+            if (std::memcmp(candidate.bytes.data(), bytes, size) == 0) {
+                if ((&candidate != &slice || candidate.device_addr != device_addr ||
+                     candidate.size != size) &&
+                    !plain_match()) {
+                    ++uniform_stage_reuses;
+                    VideoCommon::Nx2Profile::Add(
+                        VideoCommon::Nx2Profile::Counter::UniformStageReuses, 1);
+                }
+                return &candidate;
             }
-            return &candidate;
+            slice_differs = &candidate == &slice;
         }
     }
-    if (slice.tick == tick && slice.device_addr == device_addr && slice.size >= size &&
-        std::memcmp(slice.bytes.data(), bytes, size) == 0) {
+    if (!slice_differs && slice.tick == tick && slice.device_addr == device_addr &&
+        slice.size >= size && std::memcmp(slice.bytes.data(), bytes, size) == 0) {
         if (slice.size != size) {
             ++uniform_stage_reuses;
             VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::UniformStageReuses, 1);
@@ -694,22 +701,28 @@ bool BufferCacheRuntime::BindMappedUniformBufferReuseStaged(size_t stage, u32 in
             found = &slice;
         }
     } else {
+        bool slice_differs = false;
         if (size != 0 && stage < UNIFORM_STAGES && index < UNIFORM_STAGE_SLOTS) {
             const StageUniform& last = stage_uniforms[stage][index];
             const UniformSlice& candidate = uniform_slices[last.slot];
             if (last.serial != 0 && candidate.serial == last.serial && candidate.tick == epoch &&
-                candidate.size >= size && std::memcmp(candidate.bytes.data(), bytes, size) == 0) {
-                if ((&candidate != &slice || candidate.device_addr != device_addr ||
-                     candidate.size != size) &&
-                    !plain_match()) {
-                    ++uniform_stage_reuses;
-                    VideoCommon::Nx2Profile::Add(
-                        VideoCommon::Nx2Profile::Counter::UniformStageReuses, 1);
+                candidate.size >= size) {
+                if (std::memcmp(candidate.bytes.data(), bytes, size) == 0) {
+                    if ((&candidate != &slice || candidate.device_addr != device_addr ||
+                         candidate.size != size) &&
+                        !plain_match()) {
+                        ++uniform_stage_reuses;
+                        VideoCommon::Nx2Profile::Add(
+                            VideoCommon::Nx2Profile::Counter::UniformStageReuses, 1);
+                    }
+                    found = &candidate;
+                } else {
+                    slice_differs = &candidate == &slice;
                 }
-                found = &candidate;
             }
         }
-        if (found == nullptr && slice.tick == epoch && slice.device_addr == device_addr &&
+        if (found == nullptr && !slice_differs && slice.tick == epoch &&
+            slice.device_addr == device_addr &&
             slice.size >= size && std::memcmp(slice.bytes.data(), bytes, size) == 0) {
             if (slice.size != size) {
                 ++uniform_stage_reuses;
