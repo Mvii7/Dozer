@@ -4,16 +4,23 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdlib>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 #include "common/div_ceil.h"
 #include "common/logging.h"
 #include "common/scratch_buffer.h"
+#include "common/thread.h"
 #include "video_core/engines/sw_blitter/blitter.h"
 #include "video_core/engines/sw_blitter/converter.h"
 #include "video_core/guest_memory.h"
 #include "video_core/memory_manager.h"
+#include "video_core/nx2.h"
 #include "video_core/surface.h"
 #include "video_core/textures/decoders.h"
 
@@ -247,6 +254,150 @@ void TraceSlowBlit(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
              config.dst_y1);
 }
 
+// EDEN_NX2_ASYNC_BLIT=0 keeps every copy on the GPU thread.
+bool AsyncBlitsEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_ASYNC_BLIT");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+// Tiled copies a worker makes for the GPU thread. The GPU thread snapshots the source and
+// resolves the destination's host memory; the worker tiles the snapshot into it, and
+// MemoryManager makes accesses of the destination wait until it is done (AddPendingWrite).
+class AsyncTiledCopier {
+public:
+    struct Job {
+        Common::ScratchBuffer<u8> source;
+        std::vector<MemoryManager::HostSegment> segments;
+        std::size_t size{};
+        bool read_old{};
+        u32 bytes_per_pixel{};
+        u32 dst_width{};
+        u32 dst_block_height{};
+        u32 dst_x{};
+        u32 dst_y{};
+        u32 src_width{};
+        u32 src_block_height{};
+        u32 src_x{};
+        u32 src_y{};
+        u32 extent_x{};
+        u32 extent_y{};
+        bool native_tiling{};
+        std::shared_ptr<std::atomic<bool>> done;
+    };
+
+    AsyncTiledCopier() : thread{[this] { Run(); }} {}
+
+    ~AsyncTiledCopier() {
+        {
+            std::scoped_lock lk{mutex};
+            stopping = true;
+        }
+        work_cv.notify_all();
+        thread.join();
+    }
+
+    /// The largest source buffer of an earlier job, so the snapshot lands in memory already
+    /// touched.
+    Common::ScratchBuffer<u8> TakeBuffer() {
+        std::scoped_lock lk{mutex};
+        if (free_buffers.empty()) {
+            return {};
+        }
+        const auto largest = std::ranges::max_element(
+            free_buffers, {}, [](const auto& buffer) { return buffer.capacity(); });
+        Common::ScratchBuffer<u8> buffer = std::move(*largest);
+        free_buffers.erase(largest);
+        return buffer;
+    }
+
+    void Push(Job&& job) {
+        std::unique_lock lk{mutex};
+        // At most a few copies (up to 64 MiB each) waiting.
+        space_cv.wait(lk, [this] { return queue.size() < MaxQueued; });
+        queue.push_back(std::move(job));
+        work_cv.notify_one();
+    }
+
+private:
+    static constexpr std::size_t MaxQueued = 3;
+
+    void Run() {
+        Common::SetCurrentThreadName("GPUBlitCopy");
+        Common::ScratchBuffer<u8> layout;
+        for (;;) {
+            Job job;
+            {
+                std::unique_lock lk{mutex};
+                work_cv.wait(lk, [this] { return stopping || !queue.empty(); });
+                if (queue.empty()) {
+                    return;
+                }
+                job = std::move(queue.front());
+                queue.pop_front();
+            }
+            space_cv.notify_all();
+            Copy(job, layout);
+            job.done->store(true, std::memory_order_release);
+            job.done->notify_all();
+            std::scoped_lock lk{mutex};
+            free_buffers.push_back(std::move(job.source));
+            if (free_buffers.size() > MaxQueued + 1) {
+                free_buffers.erase(free_buffers.begin());
+            }
+        }
+    }
+
+    static void Copy(Job& job, Common::ScratchBuffer<u8>& layout) {
+        const auto start = std::chrono::steady_clock::now();
+        std::span<u8> output;
+        if (job.segments.size() == 1) {
+            output = {job.segments.front().pointer, job.size};
+        } else {
+            layout.resize_destructive(job.size);
+            output = {layout.data(), job.size};
+            if (job.read_old) {
+                std::size_t offset = 0;
+                for (const auto& segment : job.segments) {
+                    std::memcpy(output.data() + offset, segment.pointer, segment.size);
+                    offset += segment.size;
+                }
+            }
+        }
+        CopyTiledRect(output, {job.source.data(), job.source.size()}, job.bytes_per_pixel,
+                      job.dst_width, job.dst_block_height, job.dst_x, job.dst_y, job.src_width,
+                      job.src_block_height, job.src_x, job.src_y, job.extent_x, job.extent_y,
+                      job.native_tiling);
+        if (job.segments.size() != 1) {
+            std::size_t offset = 0;
+            for (const auto& segment : job.segments) {
+                std::memcpy(segment.pointer, output.data() + offset, segment.size);
+                offset += segment.size;
+            }
+        }
+        static const bool trace = std::getenv("EDEN_NX2_RT_TRACE") != nullptr;
+        static u32 traced{};
+        const double elapsed =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                .count();
+        if (trace && elapsed >= 2.0 && traced < 64) {
+            ++traced;
+            LOG_INFO(HW_GPU, "nx2 async blit worker {:.1f} ms: {:#x} bytes, {} segments",
+                     elapsed, job.size, job.segments.size());
+        }
+    }
+
+    std::mutex mutex;
+    std::condition_variable work_cv;
+    std::condition_variable space_cv;
+    std::deque<Job> queue;
+    std::vector<Common::ScratchBuffer<u8>> free_buffers;
+    bool stopping{};
+    std::thread thread;
+};
+
 } // namespace
 
 struct SoftwareBlitEngine::BlitEngineImpl {
@@ -257,6 +408,7 @@ struct SoftwareBlitEngine::BlitEngineImpl {
     Common::ScratchBuffer<f32> intermediate_src;
     Common::ScratchBuffer<f32> intermediate_dst;
     ConverterFactory converter_factory;
+    std::unique_ptr<AsyncTiledCopier> async_copier;
 };
 
 SoftwareBlitEngine::SoftwareBlitEngine(MemoryManager& memory_manager_)
@@ -287,6 +439,59 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
 
     const SurfaceWindow src_window =
         GetSurfaceWindow(src, src_bytes_per_pixel, config.src_y0, config.src_y1);
+    const SurfaceWindow dst_window =
+        GetSurfaceWindow(dst, dst_bytes_per_pixel, config.dst_y0, config.dst_y1);
+    // A blit that writes every byte of the window (no padding in it) needs no read of the old
+    // destination.
+    const bool covers_window =
+        config.dst_x0 == 0 && dst_extent_x == dst.width && dst_window.y0 == 0 &&
+        dst_extent_y == dst_window.height &&
+        dst_window.size == size_t{dst_extent_x} * dst_extent_y * dst_bytes_per_pixel;
+    const bool tiled_copy =
+        CanCopyTiledRect(src, dst, config, src_window, dst_window, src_bytes_per_pixel);
+
+    // Large tiled copies go to a worker, so the GPU thread only snapshots the source.
+    constexpr std::size_t MinAsyncSize = 1 << 20;
+    if (tiled_copy && AsyncBlitsEnabled() && dst_window.size >= MinAsyncSize &&
+        src.Address() != dst.Address()) {
+        if (!impl->async_copier) {
+            impl->async_copier = std::make_unique<AsyncTiledCopier>();
+        }
+        AsyncTiledCopier::Job job{
+            .source = impl->async_copier->TakeBuffer(),
+            .size = dst_window.size,
+            .read_old = !covers_window,
+            .bytes_per_pixel = src_bytes_per_pixel,
+            .dst_width = dst.width,
+            .dst_block_height = dst.block_height,
+            .dst_x = static_cast<u32>(config.dst_x0),
+            .dst_y = dst_window.y0,
+            .src_width = src.width,
+            .src_block_height = src.block_height,
+            .src_x = static_cast<u32>(config.src_x0),
+            .src_y = src_window.y0,
+            .extent_x = src_extent_x,
+            .extent_y = src_extent_y,
+            .native_tiling = UseNativeTiling(),
+            .done = std::make_shared<std::atomic<bool>>(false),
+        };
+        job.source.resize_destructive(src_window.size);
+        memory_manager.ReadBlock(src_window.address, job.source.data(), src_window.size);
+        // As WriteBlock does first: a sparse block nobody wrote yet gets its memory.
+        Tegra::Nx2BackSparseWrite(dst_window.address, dst_window.size);
+        if (!covers_window) {
+            // The worker reads the old destination from guest memory: bring GPU writes there.
+            memory_manager.FlushRegion(dst_window.address, dst_window.size);
+        }
+        if (memory_manager.GetHostSegments(dst_window.address, dst_window.size, job.segments)) {
+            memory_manager.AddPendingWrite(dst_window.address, dst_window.size, job.done);
+            impl->async_copier->Push(std::move(job));
+            // After the push: whatever the caches do here waits for the worker, not for nothing.
+            memory_manager.InvalidateRegion(dst_window.address, dst_window.size);
+            TraceSlowBlit(src, dst, config, start, "async");
+            return true;
+        }
+    }
 
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::SafeRead> tmp_buffer(
         memory_manager, src_window.address, src_window.size, &impl->tmp_buffer);
@@ -299,16 +504,7 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
         return true;
     }
 
-    const SurfaceWindow dst_window =
-        GetSurfaceWindow(dst, dst_bytes_per_pixel, config.dst_y0, config.dst_y1);
-    // A blit that writes every byte of the window (no padding in it) needs no read of the old
-    // destination.
-    const bool covers_window =
-        config.dst_x0 == 0 && dst_extent_x == dst.width && dst_window.y0 == 0 &&
-        dst_extent_y == dst_window.height &&
-        dst_window.size == size_t{dst_extent_x} * dst_extent_y * dst_bytes_per_pixel;
-
-    if (CanCopyTiledRect(src, dst, config, src_window, dst_window, src_bytes_per_pixel)) {
+    if (tiled_copy) {
         const auto copy = [&](auto& dst_memory) {
             CopyTiledRect(dst_memory, tmp_buffer, src_bytes_per_pixel, dst.width,
                           dst.block_height, config.dst_x0, dst_window.y0, src.width,
