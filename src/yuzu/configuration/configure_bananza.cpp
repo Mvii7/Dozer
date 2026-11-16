@@ -250,6 +250,21 @@ void ConfigureBananza::RetranslateUI() {
         tr("Foliage placement density"),
         tr("Scales the chance and the rate of the foliage the game places while you play. "
            "Foliage already placed in the stage's data is not changed (use the cap for that).")};
+    texts[Quality::EffectEmitCap] = {
+        tr("Effects started per frame"),
+        tr("Scales how many effects (particles, dust, debris) the game may start in one frame "
+           "(its own cap is 156). Changed in the game's settings files as they are read.")};
+    texts[Quality::EffectParticleCap] = {
+        tr("Particles per emitter"),
+        tr("Scales the most particles one emitter may have (its own cap is 512).")};
+    texts[Quality::EffectAliveCap] = {
+        tr("Effects alive per rule"),
+        tr("Scales how many effects the game's emission rules keep alive at once (foliage effects "
+           "and debris parts: 64 each).")};
+    texts[Quality::EffectMaterialCap] = {
+        tr("Terrain material effects"),
+        tr("Scales how many terrain material effects (dust, smoke, snow) are active at once, in "
+           "the effect settings and in each material's own limit.")};
     texts[Quality::VoxelCellSize] = {
         tr("Terrain cell size"),
         tr("Scales the terrain's cell size (a bigger cell: fewer cells). Not in the presets: the "

@@ -159,6 +159,37 @@ TEST_CASE("Nx2DkFoliage: the placement chance of the material settings", "[core]
     REQUIRE(Read32(archive, root + 8 + 4) == 7);
 }
 
+TEST_CASE("Nx2DkFoliage: the effect caps", "[core]") {
+    auto archive = Sarc(Byml({{"EmitCountPerFrameMax", 0xD1, 156},
+                              {"ELinkMaxUsersNum", 0xD1, 5120},
+                              {"MaxMatEffActiveUsersNumPerSlot", 0xD1, 10},
+                              {"OneEmitterMaxParticleNum", 0xD1, 512}}));
+    Settings settings;
+    settings.emit = 50;
+    settings.particles = 25;
+    settings.material = 30;
+    REQUIRE(PatchEffectSettings(archive, settings));
+    const size_t root = 0x60 + Read32(archive, 12 + 0x60) + 4;
+    REQUIRE(Read32(archive, root + 4) == 78);
+    REQUIRE(Read32(archive, root + 8 + 4) == 5120); // the pool size is not touched
+    REQUIRE(Read32(archive, root + 16 + 4) == 3);
+    REQUIRE(Read32(archive, root + 24 + 4) == 128);
+    Settings none;
+    REQUIRE_FALSE(PatchEffectSettings(archive, none));
+}
+
+TEST_CASE("Nx2DkFoliage: the material effect caps", "[core]") {
+    auto archive = Sarc(Byml({{"MaxActiveEffectNum", 0xD1, 256}, {"InfluenceRadius", 0xD2, Bits(30.0f)}}));
+    Settings settings;
+    settings.alive = 50;
+    REQUIRE_FALSE(PatchSettingUnits(archive, settings));
+    settings.material = 50;
+    REQUIRE(PatchSettingUnits(archive, settings));
+    const size_t root = 0x60 + Read32(archive, 12 + 0x60) + 4;
+    REQUIRE(Read32(archive, root + 4) == 128);
+    REQUIRE(Read32(archive, root + 8 + 4) == Bits(30.0f));
+}
+
 TEST_CASE("Nx2DkFoliage: data that is not an archive is left alone", "[core]") {
     std::vector<u8> junk(300, 0x5A);
     const auto before = junk;

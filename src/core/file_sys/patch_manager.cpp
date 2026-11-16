@@ -50,7 +50,7 @@ VirtualDir MakeFoliageLayer(const VirtualDir& extracted) {
     if (!settings.Active() || extracted == nullptr) {
         return nullptr;
     }
-    std::vector<VirtualFile> files;
+    std::vector<std::pair<std::string, VirtualFile>> files;
     const auto patch = [&](std::string_view path, auto&& patcher) {
         const auto file = extracted->GetFileRelative(path);
         if (file == nullptr) {
@@ -61,19 +61,33 @@ VirtualDir MakeFoliageLayer(const VirtualDir& extracted) {
             return;
         }
         auto packed = Common::Compression::CompressDataZSTD(data.data(), data.size(), 19);
-        const auto name = path.substr(path.find_last_of('/') + 1);
-        files.push_back(std::make_shared<VectorVfsFile>(std::move(packed), std::string{name}));
+        const auto split = path.find_last_of('/');
+        files.emplace_back(std::string{path.substr(0, split)},
+                           std::make_shared<VectorVfsFile>(
+                               std::move(packed), std::string{path.substr(split + 1)}));
     };
     patch(Loader::Nx2DkFoliage::SystemSettingsPath, Loader::Nx2DkFoliage::PatchSystemSettings);
     patch(Loader::Nx2DkFoliage::MaterialSettingsPath,
           Loader::Nx2DkFoliage::PatchMaterialSettings);
+    patch(Loader::Nx2DkFoliage::EffectSettingsPath, Loader::Nx2DkFoliage::PatchEffectSettings);
+    patch(Loader::Nx2DkFoliage::SettingUnitPath, Loader::Nx2DkFoliage::PatchSettingUnits);
     if (files.empty()) {
         return nullptr;
     }
-    auto dir = std::make_shared<VectorVfsDirectory>(std::move(files), std::vector<VirtualDir>{},
-                                                    "ClusteredRendering");
-    return std::make_shared<VectorVfsDirectory>(std::vector<VirtualFile>{},
-                                                std::vector<VirtualDir>{std::move(dir)});
+    // Each file goes in a directory of its own path (the folders of the paths above)
+    std::vector<VirtualDir> dirs;
+    for (auto& [folder, file] : files) {
+        const auto found = std::find_if(dirs.begin(), dirs.end(), [&](const VirtualDir& dir) {
+            return dir->GetName() == folder;
+        });
+        if (found != dirs.end()) {
+            std::static_pointer_cast<VectorVfsDirectory>(*found)->AddFile(std::move(file));
+        } else {
+            dirs.push_back(std::make_shared<VectorVfsDirectory>(
+                std::vector<VirtualFile>{std::move(file)}, std::vector<VirtualDir>{}, folder));
+        }
+    }
+    return std::make_shared<VectorVfsDirectory>(std::vector<VirtualFile>{}, std::move(dirs));
 }
 
 constexpr std::array<const char*, 14> EXEFS_FILE_NAMES{

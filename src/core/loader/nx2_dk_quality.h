@@ -65,6 +65,10 @@ enum Id : size_t {
     FoliageCap,        ///< foliage models drawn / kept alive at once, % (ClusteredRendering)
     FoliageFrustumOff, ///< foliage frustum expansion set to 0
     FoliageDensity,    ///< foliage dynamic placement chance and rate, %
+    EffectEmitCap,     ///< EmitCountPerFrameMax (effects started per frame), % of the game's
+    EffectParticleCap, ///< OneEmitterMaxParticleNum, % of the game's
+    EffectAliveCap,    ///< the MaxAliveEffectsNum of the effect rules, % of the game's
+    EffectMaterialCap, ///< MaxMatEffActiveUsersNumPerSlot and each MaxActiveEffectNum, %
     Count,
 };
 
@@ -122,6 +126,10 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"foliage_cap", "EDEN_NX2_DKQ_FOLIAGE_CAP", 5, 100, 100},
     {"foliage_frustum_off", "EDEN_NX2_DKQ_FOLIAGE_FRUSTUM_OFF", 1, 1, 0},
     {"foliage_density", "EDEN_NX2_DKQ_FOLIAGE_DENSITY", 5, 100, 100},
+    {"effect_emit_cap", "EDEN_NX2_DKQ_EFFECT_EMIT_CAP", 5, 100, 100},
+    {"effect_particle_cap", "EDEN_NX2_DKQ_EFFECT_PARTICLE_CAP", 5, 100, 100},
+    {"effect_alive_cap", "EDEN_NX2_DKQ_EFFECT_ALIVE_CAP", 5, 100, 100},
+    {"effect_material_cap", "EDEN_NX2_DKQ_EFFECT_MATERIAL_CAP", 5, 100, 100},
 }};
 
 /// One number per knob; 0 leaves the game's own.
@@ -337,7 +345,7 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
     Result result{};
     bool any = false;
     // The foliage rows are game data (nx2_dk_foliage.h), not instructions: not marked here
-    for (size_t i = 0; i < FoliageCap; ++i) {
+    for (size_t i = 0; i < FoliageCap; ++i) { // the rows from FoliageCap on are game data
         if (Sanitize(values[i], Knobs[i]) != 0) {
             result[i] = State::Missed;
             any = true;
