@@ -6,6 +6,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdlib>
+#include <cstring>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -432,6 +433,7 @@ struct SoftwareBlitEngine::BlitEngineImpl {
     Common::ScratchBuffer<f32> intermediate_src;
     Common::ScratchBuffer<f32> intermediate_dst;
     ConverterFactory converter_factory;
+    std::vector<MemoryManager::HostSegment> src_segments;
     std::unique_ptr<AsyncTiledCopier> async_copier;
 };
 
@@ -500,7 +502,17 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
             .done = std::make_shared<std::atomic<bool>>(false),
         };
         job.source.resize_destructive(src_window.size);
-        memory_manager.ReadBlock(src_window.address, job.source.data(), src_window.size);
+        // Flush once, then copy the source in large host-contiguous pieces instead of per page.
+        memory_manager.FlushRegion(src_window.address, src_window.size);
+        if (memory_manager.GetHostSegments(src_window.address, src_window.size, impl->src_segments)) {
+            u8* out = job.source.data();
+            for (const auto& segment : impl->src_segments) {
+                std::memcpy(out, segment.pointer, segment.size);
+                out += segment.size;
+            }
+        } else {
+            memory_manager.ReadBlock(src_window.address, job.source.data(), src_window.size);
+        }
         // As WriteBlock does first: a sparse block nobody wrote yet gets its memory.
         Tegra::Nx2BackSparseWrite(dst_window.address, dst_window.size);
         if (!covers_window) {
