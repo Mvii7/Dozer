@@ -303,6 +303,8 @@
 #EDEN_NX2_DKQ_VOXEL_CELL_SIZE=100
 # VOXEL_BORDER_MESH_OFF=1: no border mesh between neighbouring terrain chunks. For testing.
 #EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF=1
+# SHADOW_MASK_OFF=1: turn off the game's shadow masks (volume shadows). For testing.
+#EDEN_NX2_DKQ_SHADOW_MASK_OFF=1
 
 # --- Mario Kart World dynamic frame rate (game-specific; core/loader/nx2_mkw_dynamic_fps.h) ---
 # MKW_DYN=1: while Mario Kart World's main module loads, patch its frame mode choice in memory

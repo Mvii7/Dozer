@@ -233,6 +233,7 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Reflection filtering off, cube map occlusion check off | on | skips those two steps of the reflection cube maps (for testing) |
 | Terrain cell size | 100% | scales the terrain's cell size (a bigger cell: fewer cells). The saved terrain may be laid out for the game's own, so this may corrupt it (for testing) |
 | Terrain border mesh off | on | builds no border mesh between neighbouring terrain chunks; cracks may show (for testing) |
+| Shadow masks off | on | turns off the game's shadow masks (volume shadows); shadows may go missing (for testing) |
 | Occlusion query depth / radius / polygons | 100% | scales the thresholds of the game's occlusion queries (effect not known; for testing) |
 
 Rows marked "for testing" have an effect nobody has measured yet, and none of them is in the presets.

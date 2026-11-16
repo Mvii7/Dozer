@@ -46,6 +46,7 @@ enum Id : size_t {
     OcclusionPolygon,  ///< OcclusionQueryThresholdPolygon, % of the game's
     VoxelCellSize,     ///< terrain cell size, % of the game's (a bigger cell: fewer cells)
     VoxelBorderMeshOff, ///< terrain IsNoBorderMesh forced on
+    ShadowMaskOff,     ///< IsUseShadowMask forced off
     Count,
 };
 
@@ -84,6 +85,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"occlusion_polygon", "EDEN_NX2_DKQ_OCCLUSION_POLYGON", 10, 400, 100},
     {"voxel_cell_size", "EDEN_NX2_DKQ_VOXEL_CELL_SIZE", 50, 300, 100},
     {"voxel_border_mesh_off", "EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF", 1, 1, 0},
+    {"shadow_mask_off", "EDEN_NX2_DKQ_SHADOW_MASK_OFF", 1, 1, 0},
 }};
 
 /// One number per knob; 0 leaves the game's own.
@@ -264,6 +266,7 @@ constexpr u32 RadialBlurScaleParam = 0x508; // RadialBlurRenderScale
 constexpr u32 RadialBlurSamplesParam = 0x500; // RadialBlurSamplingNum
 constexpr u32 ColorDecalMaxParam = 0x280;     // ColorDecalMaxNum
 constexpr u32 GgxFilterParam = 0x210;         // IsUseGGXFilter
+constexpr u32 ShadowMaskParam = 0xe0;           // IsUseShadowMask
 constexpr u32 CubeMapOcclusionParam = 0x218;  // IsUseCubeMapOcclusionCheck
 constexpr u32 OcclusionDepthParam = 0x520;    // OcclusionQueryThresholdDepth
 constexpr u32 OcclusionRadiusParam = 0x528;   // OcclusionQueryThresholdRadius
@@ -408,6 +411,7 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
     };
     false_getter(GgxFilterOff, GgxFilterParam);
     false_getter(CubeMapOcclusionOff, CubeMapOcclusionParam);
+    false_getter(ShadowMaskOff, ShadowMaskParam);
     float_getter(OcclusionDepth, OcclusionDepthParam,
                  GameOcclusionDepth * percent(set(OcclusionDepth)));
     float_getter(OcclusionRadius, OcclusionRadiusParam,

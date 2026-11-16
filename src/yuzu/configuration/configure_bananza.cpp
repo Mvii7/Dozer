@@ -176,6 +176,10 @@ void ConfigureBananza::RetranslateUI() {
         tr("Occlusion query polygons"),
         tr("Scales the polygon count threshold of the game's occlusion queries (its own is "
            "1000). For testing.")};
+    texts[Quality::ShadowMaskOff] = {
+        tr("Shadow masks off"),
+        tr("Turns off the game's shadow masks (the volume shadows). Shadows or darkening may go "
+           "missing. For testing.")};
     texts[Quality::VoxelCellSize] = {
         tr("Terrain cell size"),
         tr("Scales the terrain's cell size (a bigger cell: fewer cells). Not in the presets: the "

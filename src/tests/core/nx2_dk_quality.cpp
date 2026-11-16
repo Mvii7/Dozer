@@ -30,7 +30,7 @@ constexpr size_t DepthGetter = 0x290, RadiusGetter = 0x2a0, PolygonGetter = 0x2b
 constexpr size_t MeshStore = 0x500;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
 constexpr size_t Voxel = 0x400;
-constexpr size_t CellSite = 0x700, BorderSite = 0x740;
+constexpr size_t CellSite = 0x700, BorderSite = 0x740, ShadowMaskGetter = 0x760;
 
 struct Text {
     std::vector<u32> words;
@@ -59,6 +59,9 @@ struct Text {
             words[at + 1] = 0x39419100; // ldrb w0, [x8, #0x64]
             words[at + 2] = Ret;
         }
+        words[ShadowMaskGetter] = LdrX(8, 0, ShadowMaskParam);
+        words[ShadowMaskGetter + 1] = 0x39419100; // ldrb w0, [x8, #0x64]
+        words[ShadowMaskGetter + 2] = Ret;
         PutGetter(BlurSamplesGetter, RadialBlurSamplesParam, false);
         PutGetter(CubeMapGetter, CubeMapIntervalParam, false);
         PutGetter(DecalGetter, ColorDecalMaxParam, false);
@@ -404,9 +407,13 @@ TEST_CASE("Nx2DkQuality: the terrain cell size and the border mesh", "[core]") {
     Values values{};
     values[VoxelCellSize] = 150;
     values[VoxelBorderMeshOff] = 1;
+    values[ShadowMaskOff] = 1;
     const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
     REQUIRE(result[VoxelCellSize] == State::Applied);
     REQUIRE(result[VoxelBorderMeshOff] == State::Applied);
+    REQUIRE(result[ShadowMaskOff] == State::Applied);
+    REQUIRE(text.words[ShadowMaskGetter] == 0x52800000); // movz w0, #0
+    REQUIRE(text.words[ShadowMaskGetter + 1] == Ret);
     REQUIRE(text.words[BorderSite] == 0x52800028); // mov w8, #1
     // The load became a jump into the cave, whose routine scales the cell and jumps back
     const u32 jump = text.words[CellSite];
