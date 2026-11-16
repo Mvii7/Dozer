@@ -10,6 +10,8 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -230,7 +232,7 @@ bool CanCopyTiledRect(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
 // EDEN_NX2_RT_TRACE: log the first 512 CPU-fallback blits that take 2 ms or more.
 void TraceSlowBlit(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
                    const Fermi2D::Config& config, std::chrono::steady_clock::time_point start,
-                   const char* path) {
+                   std::string_view path) {
     static const bool trace = std::getenv("EDEN_NX2_RT_TRACE") != nullptr;
     if (!trace) {
         return;
@@ -483,6 +485,9 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
         if (!impl->async_copier) {
             impl->async_copier = std::make_unique<AsyncTiledCopier>();
         }
+        using Clock = std::chrono::steady_clock;
+        Clock::time_point stages[7];
+        stages[0] = Clock::now();
         AsyncTiledCopier::Job job{
             .source = impl->async_copier->TakeBuffer(src_window.size),
             .size = dst_window.size,
@@ -502,8 +507,10 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
             .done = std::make_shared<std::atomic<bool>>(false),
         };
         job.source.resize_destructive(src_window.size);
+        stages[1] = Clock::now();
         // Flush once, then copy the source in large host-contiguous pieces instead of per page.
         memory_manager.FlushRegion(src_window.address, src_window.size);
+        stages[2] = Clock::now();
         if (memory_manager.GetHostSegments(src_window.address, src_window.size, impl->src_segments)) {
             u8* out = job.source.data();
             for (const auto& segment : impl->src_segments) {
@@ -513,18 +520,35 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
         } else {
             memory_manager.ReadBlock(src_window.address, job.source.data(), src_window.size);
         }
+        stages[3] = Clock::now();
         // As WriteBlock does first: a sparse block nobody wrote yet gets its memory.
         Tegra::Nx2BackSparseWrite(dst_window.address, dst_window.size);
+        stages[4] = Clock::now();
         if (!covers_window) {
             // The worker reads the old destination from guest memory: bring GPU writes there.
             memory_manager.FlushRegion(dst_window.address, dst_window.size);
         }
         if (memory_manager.GetHostSegments(dst_window.address, dst_window.size, job.segments)) {
             memory_manager.AddPendingWrite(dst_window.address, dst_window.size, job.done);
+            stages[5] = Clock::now();
             impl->async_copier->Push(std::move(job));
+            stages[6] = Clock::now();
             // After the push: whatever the caches do here waits for the worker, not for nothing.
             memory_manager.InvalidateRegion(dst_window.address, dst_window.size);
-            TraceSlowBlit(src, dst, config, start, "async");
+            const auto ms = [&](std::size_t from, Clock::time_point to) {
+                return std::chrono::duration<double, std::milli>(to - stages[from]).count();
+            };
+            static const bool trace = std::getenv("EDEN_NX2_RT_TRACE") != nullptr;
+            const Clock::time_point end = Clock::now();
+            if (trace && end - start >= std::chrono::milliseconds{2}) {
+                TraceSlowBlit(src, dst, config, start,
+                              fmt::format("async: buffer {:.1f} srcflush {:.1f} snapshot {:.1f} "
+                                          "({} segments) sparse {:.1f} dstflush {:.1f} push {:.1f} "
+                                          "inval {:.1f}",
+                                          ms(0, stages[1]), ms(1, stages[2]), ms(2, stages[3]),
+                                          impl->src_segments.size(), ms(3, stages[4]),
+                                          ms(4, stages[5]), ms(5, stages[6]), ms(6, end)));
+            }
             return true;
         }
     }
