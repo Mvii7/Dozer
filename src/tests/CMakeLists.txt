@@ -18,8 +18,11 @@ add_executable(tests
     common/scratch_buffer.cpp
     common/undefined_fix.cpp
     common/unique_function.cpp
+    common/zstd_compression.cpp
     core/core_timing.cpp
+    core/ldn.cpp
     core/internal_network/network.cpp
+    core/internal_network/socket_proxy.cpp
     core/nup_validation.cpp
     core/nup_zstd_read.cpp
     core/nx2_dk_dyn_pace.cpp
