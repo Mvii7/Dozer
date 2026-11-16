@@ -113,10 +113,6 @@
 # ACQUIRE_PEEK: a semaphore acquire whose value memory already holds goes on without
 # draining the back. 0 off (default), 1 on (recommended), 2 drains and logs where 1 would not.
 #EDEN_NX2_ACQUIRE_PEEK=1
-# ACQUIRE_EARLY=1 (with ACQUIRE_PEEK=1; off by default): an acquire that has to drain the
-# back stops waiting once memory meets it as the peek would allow, instead of waiting for
-# everything sent before it. The acquire peek line counts "drains cut short".
-#EDEN_NX2_ACQUIRE_EARLY=1
 # FRONT_RUNS=0: increasing runs of 3D state methods go to the front word by word, as before.
 #EDEN_NX2_FRONT_RUNS=0
 # JIT_SAME: the front's macro JIT drops state writes that would change nothing. 0 off
@@ -298,9 +294,6 @@
 # (8 ms at most, then the sync flush). The reactive stats line shows "traps disarmed at copy
 # back" and "copy back waits".
 #EDEN_NX2_COPYBACK_WAIT=0
-# COPYBACK_GROUP=0: each buffer copy back at a fence is its own copy command, as before.
-# Unset (on): ranges next to each other are one copy, and one buffer's copies one command.
-#EDEN_NX2_COPYBACK_GROUP=0
 
 # --- reactive flushing (video_core/nx2_reactive_flush.h, common/nx2_reactive.h) ---
 # All off by default. Most matter only with use_reactive_flushing=true in the config;

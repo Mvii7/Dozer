@@ -181,9 +181,6 @@ public:
     void Publish();
     /// Waits until the back executed everything sent so far. Returns whether it had to wait.
     bool Drain();
-    /// Drain, stopped early once `done(context)` holds (asked every few spins). Returns whether
-    /// `done` stopped it: the back may not have run everything then.
-    bool DrainUntil(bool (*done)(void*), void* context);
 
     /// Whether the back ran everything published (so while the split is off). Any thread.
     [[nodiscard]] bool BackCaughtUp() const {
