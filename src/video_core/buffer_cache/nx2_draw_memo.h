@@ -194,15 +194,12 @@ public:
         u64 subtracts;
         u64 subtract_misses; ///< Subtract calls the summary left without the tree
         u64 mismatches;      ///< Mode 2: the summary said none, the tree found one
-        u64 deferred;        ///< SetDeferSubtracts: subtracts held back
-        u64 deferred_undone; ///< Of them dropped because an Add covered them
     };
 
     SummarizedRangeSet() = default;
     SummarizedRangeSet(SummarizedRangeSet&& other) noexcept
         : set{std::move(other.set)}, mode{other.mode}, low{other.low}, high{other.high},
-          stats{other.stats}, defer{other.defer}, pending{other.pending},
-          pending_count{other.pending_count} {
+          stats{other.stats} {
         static_assert(!PageBits, "moving the page summary is not supported");
         other.low = ~u64{0};
         other.high = 0;
@@ -214,20 +211,7 @@ public:
         Rebuild();
     }
 
-    /// EDEN_NX2_DEFER_SUBTRACT: Subtract holds a few ranges back instead of cutting them out of
-    /// the tree at once. An Add covering a held range drops it: removing it and adding it back
-    /// leaves the set as adding alone does. Queries answer as if every held range was removed;
-    /// any other use removes the held ranges it overlaps (or all) first. Inline writes cut holes
-    /// into written storage buffers that the next draw marks whole again.
-    void SetDeferSubtracts(bool defer_) {
-        FlushPending();
-        defer = defer_;
-    }
-
     void Add(u64 addr, size_t size) {
-        if (pending_count != 0 && size != 0) {
-            UndoPending(addr, addr + size);
-        }
         if (mode != 0 && size != 0) {
             ++stats.adds;
             low = (std::min)(low, addr);
@@ -246,24 +230,23 @@ public:
                 ++stats.subtract_misses;
                 return;
             }
+            if constexpr (PageBits) {
+                ClearWholePages(addr, size);
+            }
         }
-        if (defer && size != 0) {
-            Defer(addr, addr + size);
-            return;
-        }
-        ApplySubtract(addr, size);
+        set.Subtract(addr, size);
     }
 
     [[nodiscard]] bool Intersects(u64 addr, size_t size) {
         if (mode == 0) {
-            return TreeIntersects(addr, size);
+            return set.Intersects(addr, size);
         }
         ++stats.queries;
         if (Missed(addr, size)) {
             ++stats.query_misses;
             return false;
         }
-        const bool result = TreeIntersects(addr, size);
+        const bool result = set.Intersects(addr, size);
         stats.false_positives += result ? 0 : 1;
         return result;
     }
@@ -273,30 +256,25 @@ public:
         if (mode != 0 && Missed(addr, size)) {
             return;
         }
-        FlushOverlapping(addr, addr + size);
         set.ForEachInRange(addr, size, std::forward<Func>(func));
     }
 
     template <typename Func>
     void ForEach(Func&& func) const {
-        FlushPending();
         set.ForEach(std::forward<Func>(func));
     }
 
     void Clear() {
-        pending_count = 0;
         set.Clear();
         Reset();
     }
 
     [[nodiscard]] bool Empty() const {
-        FlushPending();
         return set.Empty();
     }
 
     /// Makes the summary exact again (the ranges as they are now).
     void Rebuild() {
-        FlushPending();
         Reset();
         if (mode == 0) {
             return;
@@ -317,7 +295,6 @@ public:
     }
 
     [[nodiscard]] size_t Count() const {
-        FlushPending();
         size_t count = 0;
         set.ForEach([&count](u64, u64) { ++count; });
         return count;
@@ -363,114 +340,6 @@ public:
     }
 
 private:
-    static constexpr size_t MAX_PENDING = 8;
-    struct Pending {
-        u64 begin;
-        u64 end;
-    };
-
-    void ApplySubtract(u64 addr, size_t size) const {
-        if constexpr (PageBits) {
-            if (mode != 0) {
-                ClearWholePages(addr, size);
-            }
-        }
-        set.Subtract(addr, size);
-    }
-
-    void RemovePending(size_t index) const {
-        pending[index] = pending[--pending_count];
-    }
-
-    void Defer(u64 begin, u64 end) {
-        ++stats.deferred;
-        // Joined with a held range it overlaps or touches (inline writes run in order).
-        for (size_t i = 0; i < pending_count; ++i) {
-            Pending& held = pending[i];
-            if (begin <= held.end && held.begin <= end) {
-                held.begin = (std::min)(held.begin, begin);
-                held.end = (std::max)(held.end, end);
-                return;
-            }
-        }
-        if (pending_count == MAX_PENDING) {
-            FlushPending();
-        }
-        pending[pending_count++] = Pending{begin, end};
-    }
-
-    /// Before adding [begin, end): drops the held ranges it covers, removes the ones it only
-    /// overlaps.
-    void UndoPending(u64 begin, u64 end) {
-        for (size_t i = 0; i < pending_count;) {
-            const Pending held = pending[i];
-            if (held.end <= begin || end <= held.begin) {
-                ++i;
-                continue;
-            }
-            if (begin <= held.begin && held.end <= end) {
-                ++stats.deferred_undone;
-            } else {
-                ApplySubtract(held.begin, held.end - held.begin);
-            }
-            RemovePending(i);
-        }
-    }
-
-    void FlushOverlapping(u64 begin, u64 end) const {
-        for (size_t i = 0; i < pending_count;) {
-            const Pending held = pending[i];
-            if (held.end <= begin || end <= held.begin) {
-                ++i;
-                continue;
-            }
-            ApplySubtract(held.begin, held.end - held.begin);
-            RemovePending(i);
-        }
-    }
-
-    void FlushPending() const {
-        while (pending_count != 0) {
-            const Pending held = pending[pending_count - 1];
-            --pending_count;
-            ApplySubtract(held.begin, held.end - held.begin);
-        }
-    }
-
-    /// Whether the held ranges cover [begin, end) together.
-    bool PendingCovers(u64 begin, u64 end) const {
-        while (begin < end) {
-            bool advanced = false;
-            for (size_t i = 0; i < pending_count; ++i) {
-                if (pending[i].begin <= begin && begin < pending[i].end) {
-                    begin = pending[i].end;
-                    advanced = true;
-                }
-            }
-            if (!advanced) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /// The tree's answer with the held ranges removed, without removing them.
-    bool TreeIntersects(u64 addr, size_t size) const {
-        const u64 end = addr + size;
-        bool overlaps = false;
-        for (size_t i = 0; i < pending_count; ++i) {
-            overlaps |= pending[i].begin < end && addr < pending[i].end;
-        }
-        if (!overlaps) {
-            return set.Intersects(addr, size);
-        }
-        bool found = false;
-        set.ForEachInRange(addr, size, [&](u64 begin, u64 piece_end) {
-            found = found || !PendingCovers(begin, piece_end);
-        });
-        return found;
-    }
-
     static u64 WordMask(u64 page, u64 count) noexcept {
         return (count == 64 ? ~u64{0} : ((u64{1} << count) - 1)) << (page & 63);
     }
@@ -524,7 +393,7 @@ private:
     }
 
     /// Clears the bits of the pages [addr, addr + size) covers whole.
-    void ClearWholePages(u64 addr, size_t size) const {
+    void ClearWholePages(u64 addr, size_t size) {
         const u64 end = (std::min)(addr + size < addr ? ~u64{0} : addr + size, u64{1} << SPACE_BITS);
         if (!pages || addr >= end) {
             return;
@@ -550,16 +419,12 @@ private:
 
     struct NoPages {};
 
-    /// Mutable: held subtracts are made from const queries (still the same set of ranges).
-    mutable Common::RangeSet<u64> set;
+    Common::RangeSet<u64> set;
     int mode = 0;
     u64 low = ~u64{0};
     u64 high = 0;
     mutable Stats stats{};
     u64 rebuild_false_positives = 0;
-    bool defer = false;
-    mutable std::array<Pending, MAX_PENDING> pending{};
-    mutable size_t pending_count = 0;
     [[no_unique_address]] std::conditional_t<PageBits, std::unique_ptr<u64[]>, NoPages> pages{};
     [[no_unique_address]] std::conditional_t<PageBits, std::array<u64, REGION_WORDS>, NoPages>
         regions{};

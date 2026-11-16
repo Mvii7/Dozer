@@ -37,7 +37,6 @@ BufferCache<P>::BufferCache(Tegra::MaxwellDeviceMemoryManager& device_memory_, R
     // EDEN_NX2_GPU_WRITTEN_FILTER: read once, here (after the switches file is loaded).
     const int written_filter = Nx2GpuWrittenFilter();
     gpu_modified_ranges.SetMode(written_filter);
-    gpu_modified_ranges.SetDeferSubtracts(Nx2DeferSubtract());
     uncommitted_gpu_modified_ranges.SetMode(written_filter);
     cpu_read_ranges.SetMode(written_filter);
     inline_buffer_id = NULL_BUFFER_ID;
@@ -957,11 +956,11 @@ bool BufferCache<P>::IsRegionGpuModified(DAddr addr, size_t size) {
         if ((stats.queries & ((u64{1} << 20) - 1)) == 0 && stats.queries != 0) {
             LOG_INFO(HW_GPU,
                      "GPU-written ranges: {} ranges; {} queries, {} answered by the summary, {} "
-                     "let through to nothing; {} adds, {} subtracts ({} answered by the summary, "
-                     "{} held back, {} of them undone by an add); {} disagreements",
+                     "let through to nothing; {} adds, {} subtracts ({} answered by the summary); "
+                     "{} disagreements",
                      gpu_modified_ranges.Count(), stats.queries, stats.query_misses,
                      stats.false_positives, stats.adds, stats.subtracts, stats.subtract_misses,
-                     stats.deferred, stats.deferred_undone, stats.mismatches);
+                     stats.mismatches);
         }
         if (stats.mismatches != 0) {
             static bool reported = false;
