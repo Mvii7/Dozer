@@ -14,6 +14,7 @@
 #include <fmt/ranges.h>
 
 #include "common/nx2_reactive.h"
+#include "common/nx2_sync_serial.h"
 #include "common/range_sets.inc"
 #include "video_core/buffer_cache/buffer_cache_base.h"
 #include "video_core/buffer_cache/word_manager.h"
@@ -185,6 +186,7 @@ void BufferCache<P>::UnmapGPUMemory(size_t as_id, GPUVAddr gpu_addr, size_t size
 
 template <class P>
 void BufferCache<P>::WriteMemory(DAddr device_addr, u64 size) {
+    NoteUniformWrite(device_addr, size);
     if (IsRegionGpuModified(device_addr, size)) {
         ClearDownload(device_addr, size);
         gpu_modified_ranges.Subtract(device_addr, size);
@@ -210,6 +212,7 @@ void BufferCache<P>::WriteMemoryRanges(std::span<const std::pair<DAddr, std::siz
         }
         if (!IsRegionGpuModified(lowest, static_cast<size_t>(highest - lowest))) {
             for (const auto& [addr, size] : ranges) {
+                NoteUniformWrite(addr, size);
                 memory_tracker.MarkRegionAsCpuModified(addr, size);
             }
             return;
@@ -222,6 +225,7 @@ void BufferCache<P>::WriteMemoryRanges(std::span<const std::pair<DAddr, std::siz
 
 template <class P>
 void BufferCache<P>::CachedWriteMemory(DAddr device_addr, u64 size) {
+    NoteUniformWrite(device_addr, size);
     const bool is_dirty = IsRegionRegistered(device_addr, size);
     if (!is_dirty) {
         return;
@@ -241,6 +245,7 @@ void BufferCache<P>::CachedWriteMemory(DAddr device_addr, u64 size) {
 
 template <class P>
 bool BufferCache<P>::OnCPUWrite(DAddr device_addr, u64 size) {
+    NoteUniformWrite(device_addr, size);
     const bool is_dirty = IsRegionRegistered(device_addr, size);
     if (!is_dirty) {
         return false;
@@ -295,6 +300,7 @@ bool BufferCache<P>::DMACopy(GPUVAddr src_address, GPUVAddr dest_address, u64 am
     if (!cpu_src_address || !cpu_dest_address) {
         return false;
     }
+    NoteUniformWrite(*cpu_dest_address, amount);
     const bool source_dirty = IsRegionRegistered(*cpu_src_address, amount);
     const bool dest_dirty = IsRegionRegistered(*cpu_dest_address, amount);
     if (!source_dirty && !dest_dirty) {
@@ -364,6 +370,7 @@ bool BufferCache<P>::DMAClear(GPUVAddr dst_address, u64 amount, u32 value) {
     if (!cpu_dst_address) {
         return false;
     }
+    NoteUniformWrite(*cpu_dst_address, amount * sizeof(u32));
     const bool dest_dirty = IsRegionRegistered(*cpu_dst_address, amount);
     if (!dest_dirty) {
         return false;
@@ -1469,6 +1476,34 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
             // several stages) and streams a new one otherwise. One descriptor per bind either way.
             // EDEN_NX2_UBO_STAGE: also the slice this stage's slot was bound to last.
             if (runtime.UniformReuseEnabled()) {
+                // EDEN_NX2_UBO_KEEP: taken before guest memory is read, what a later bind of the
+                // slot compares with.
+                const int keep_mode = Nx2UniformKeep();
+                const u64 sync_serial = Common::Nx2SyncSerial::Get();
+                const u64 writes = uniform_write_log.count;
+                if (keep_mode != 0) {
+                    const auto* const kept =
+                        runtime.KeptUniform(stage, index, device_addr, size, sync_serial);
+                    if (kept != nullptr &&
+                        !UniformWrittenSince(runtime.KeptUniformWrites(stage, index), device_addr,
+                                             size)) {
+                        if (keep_mode != 2) {
+                            runtime.BindKeptUniform(stage, index, *kept, size, writes);
+                            ++uniform_keeps;
+                            return;
+                        }
+                        const std::span<u8> bytes = runtime.UniformReuseScratch(size);
+                        device_memory.ReadBlockUnsafe(device_addr, bytes.data(), size);
+                        ++uniform_keep_checks;
+                        if (std::memcmp(kept->bytes.data(), bytes.data(), size) != 0 &&
+                            uniform_keep_mismatches++ < 16) {
+                            LOG_ERROR(HW_GPU,
+                                      "EDEN_NX2_UBO_KEEP: stage {} slot {} range {:#x}+{:#x} "
+                                      "changed without a write notice or sync",
+                                      stage, index, device_addr, size);
+                        }
+                    }
+                }
                 // EDEN_NX2_UBO_DIRECT: when the guest bytes lie in one run of host memory (at most
                 // two device pages, the second right after the first), the runtime compares and
                 // copies them in place instead of from a copy read into the scratch first.
@@ -1491,6 +1526,7 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
                     device_memory.ReadBlockUnsafe(device_addr, bytes.data(), size);
                     reused = runtime.BindMappedUniformBufferReuse(stage, index, device_addr, size);
                 }
+                runtime.NoteUniformKeep(stage, index, device_addr, size, sync_serial, writes);
                 static u64 binds{};
                 static u64 reuses{};
                 static u64 reused_bytes{};
@@ -1502,8 +1538,10 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
                 if ((binds & ((u64{1} << 22) - 1)) == 0) {
                     LOG_INFO(HW_GPU,
                              "Uniform buffer reuse: {} of {} streamed binds reused, {} MiB not "
-                             "copied ({} only through EDEN_NX2_UBO_STAGE)",
-                             reuses, binds, reused_bytes >> 20, runtime.UniformStageReuses());
+                             "copied ({} only through EDEN_NX2_UBO_STAGE); {} kept without "
+                             "reading (EDEN_NX2_UBO_KEEP), {} checked, {} changed",
+                             reuses, binds, reused_bytes >> 20, runtime.UniformStageReuses(),
+                             uniform_keeps, uniform_keep_checks, uniform_keep_mismatches);
                 }
                 return;
             }
@@ -2804,6 +2842,7 @@ void BufferCache<P>::MappedUploadMemory([[maybe_unused]] Buffer& buffer,
 template <class P>
 bool BufferCache<P>::InlineMemory(DAddr dest_address, size_t copy_size,
                                   std::span<const u8> inlined_buffer) {
+    NoteUniformWrite(dest_address, copy_size);
     Nx2UniformCensus::Add(Nx2UniformCensus::InlineWrites, 1);
     Nx2UniformCensus::Add(Nx2UniformCensus::InlineWriteBytes, copy_size);
     const bool is_dirty = IsRegionRegistered(dest_address, copy_size);
@@ -2864,6 +2903,7 @@ bool BufferCache<P>::InlineMemoryBatched(DAddr dest_address, size_t copy_size,
         FlushInlineBatch(batch);
         return InlineMemory(dest_address, copy_size, inlined_buffer);
     }
+    NoteUniformWrite(dest_address, copy_size);
     Nx2UniformCensus::Add(Nx2UniformCensus::InlineWrites, 1);
     Nx2UniformCensus::Add(Nx2UniformCensus::InlineWriteBytes, copy_size);
     if (!IsRegionRegistered(dest_address, copy_size)) {
