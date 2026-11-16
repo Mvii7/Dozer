@@ -2080,10 +2080,20 @@ void TextureCacheRuntime::LogMemoryStatistics() const {
 }
 
 bool TextureCacheRuntime::UseOpaqueAstcFormat() const {
-    // EDEN_NX2_ASTC_BC1=0 keeps every re-compressed ASTC image in BC3.
-    static const bool enabled = [] {
-        const char* value = std::getenv("EDEN_NX2_ASTC_BC1");
-        return value == nullptr || value[0] != '0';
+    // Opaque ASTC as BC1 halves its memory, but finding out which images are opaque reads every
+    // block of each new ASTC image on the GPU thread: in Mario Kart World ~180 ms of a hitch frame
+    // with ~1000 new textures. By default only cards under 12 GiB of budget (an 8 GB card needed
+    // it in Bananza) use it. EDEN_NX2_ASTC_BC1=1 turns it on, =0 off.
+    static const bool enabled = [this] {
+        if (const char* value = std::getenv("EDEN_NX2_ASTC_BC1"); value != nullptr) {
+            return value[0] != '0';
+        }
+        using namespace Common::Literals;
+        const u64 budget = device.GetDeviceMemoryBudget();
+        const bool on = budget == 0 || budget < 12_GiB;
+        LOG_INFO(Render_Vulkan, "Opaque ASTC to BC1: {} ({} MiB budget)", on ? "on" : "off",
+                 budget >> 20);
+        return on;
     }();
     return enabled && !device.IsOptimalAstcSupported() &&
            Settings::values.astc_recompression.GetValue() == Settings::AstcRecompression::Bc3;
