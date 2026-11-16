@@ -304,9 +304,6 @@
 #EDEN_NX2_DKQ_OCCLUSION_DEPTH=100
 #EDEN_NX2_DKQ_OCCLUSION_RADIUS=100
 #EDEN_NX2_DKQ_OCCLUSION_POLYGON=100
-# VOXEL_CELL_SIZE=<100-300>: the terrain's cell size in % of the game's (100). Bigger: fewer cells;
-# the saved terrain may not fit another size. For testing.
-#EDEN_NX2_DKQ_VOXEL_CELL_SIZE=100
 # VOXEL_BORDER_MESH_OFF=1: no border mesh between neighbouring terrain chunks. For testing.
 #EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF=1
 # SHADOW_MASK_OFF=1: turn off the game's shadow masks (volume shadows). For testing.

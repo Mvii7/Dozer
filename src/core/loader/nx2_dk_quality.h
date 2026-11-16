@@ -46,7 +46,6 @@ enum Id : size_t {
     OcclusionDepth,    ///< OcclusionQueryThresholdDepth, % of the game's
     OcclusionRadius,   ///< OcclusionQueryThresholdRadius, % of the game's
     OcclusionPolygon,  ///< OcclusionQueryThresholdPolygon, % of the game's
-    VoxelCellSize,     ///< terrain cell size, % of the game's (a bigger cell: fewer cells)
     VoxelBorderMeshOff, ///< terrain IsNoBorderMesh forced on
     ShadowMaskOff,     ///< IsUseShadowMask forced off
     DecalOff,          ///< IsUseDecal forced off
@@ -111,7 +110,6 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"occlusion_depth", "EDEN_NX2_DKQ_OCCLUSION_DEPTH", 10, 400, 100},
     {"occlusion_radius", "EDEN_NX2_DKQ_OCCLUSION_RADIUS", 10, 400, 100},
     {"occlusion_polygon", "EDEN_NX2_DKQ_OCCLUSION_POLYGON", 10, 400, 100},
-    {"voxel_cell_size", "EDEN_NX2_DKQ_VOXEL_CELL_SIZE", 100, 300, 100},
     {"voxel_border_mesh_off", "EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF", 1, 1, 0},
     {"shadow_mask_off", "EDEN_NX2_DKQ_SHADOW_MASK_OFF", 1, 1, 0},
     {"decal_off", "EDEN_NX2_DKQ_DECAL_OFF", 1, 1, 0},
@@ -274,9 +272,7 @@ constexpr size_t MeshRoutine = 4 * CaveRoutineWords; ///< after the terrain LOD 
 constexpr size_t MeshRoutineWords = 4;
 constexpr size_t FarRoutine = MeshRoutine + MeshRoutineWords; ///< three, after the mesh one
 constexpr size_t FarRoutineWords = 5;
-constexpr size_t CellRoutine = FarRoutine + 3 * FarRoutineWords;
-constexpr size_t CellRoutineWords = 8;
-constexpr size_t CaveWords = CellRoutine + CellRoutineWords;
+constexpr size_t CaveWords = FarRoutine + 3 * FarRoutineWords;
 
 /// The upper half of a float, rounded: the constants are put in with one `movz wN, #x, lsl #16`.
 constexpr u32 FloatHigh(float value) {
@@ -647,36 +643,6 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
         if (found == 1) {
             put(at, Movz(word(at) & 31U, 0));
             result[id] = State::Applied;
-        }
-    }
-
-    // The terrain's cell size: the loader takes it as 1.2 or, for one field type, 2.0, and the
-    // three ways meet at one place with the x cell in [x29, #-0x14] and the y and z cell in s0:
-    //   ldr x0, [x20]; adrp x2, ..; add x2, x2, ..; add x1, sp, #0x98; stp s0, s0, [x29, #-0x10]
-    // The load becomes a jump to a routine that scales both, then goes on:
-    //   ldr x0, [x20]; movz w16, #scale; fmov s16, w16; ldur s17, [x29, #-0x14];
-    //   fmul s17, s17, s16; stur s17, [x29, #-0x14]; fmul s0, s0, s16; b back
-    // The grid is the field's size over the cell size, so a bigger cell is fewer cells; the saved
-    // terrain data may be laid out for the game's own, so this may break the terrain.
-    if (const int cell = set(VoxelCellSize); cell != 0) {
-        constexpr u32 LdrX0X20 = 0xF9400280U, AddX2 = 0x91176842U, AddX1Sp98 = 0x910263E1U;
-        constexpr u32 StpS0S0 = 0x2D3E03A0U;
-        constexpr u32 LdurS17 = 0xBC5EC3B1U, SturS17 = 0xBC1EC3B1U;
-        std::array<size_t, 1> at{};
-        if (CaveFree(CellRoutine, CellRoutineWords) &&
-            find({{0, LdrX0X20}, {2, AddX2}, {3, AddX1Sp98}, {4, StpS0S0}}, at)) {
-            const size_t routine = cave + CellRoutine;
-            put(routine, LdrX0X20);
-            put(routine + 1, MovzHigh(16, FloatHigh(percent(cell))));
-            put(routine + 2, FmovFromW(16, 16));
-            put(routine + 3, LdurS17);
-            put(routine + 4, 0x1E300A31U); // fmul s17, s17, s16
-            put(routine + 5, SturS17);
-            put(routine + 6, 0x1E300800U); // fmul s0, s0, s16
-            put(routine + 7, 0x14000000U | (static_cast<u32>((at[0] + 1) - (routine + 7)) &
-                                            0x3FFFFFFU));
-            put(at[0], 0x14000000U | (static_cast<u32>(routine - at[0]) & 0x3FFFFFFU));
-            result[VoxelCellSize] = State::Applied;
         }
     }
 

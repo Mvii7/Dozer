@@ -231,7 +231,6 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Camera far distance | 100% | scales the distance beyond which the game draws nothing: a big cut roughly doubled the frame rate in a busy area, but scenery stops being drawn fairly close (from the Selevet fork's far clip scale) |
 | Colour decal limit | 660 | the most colour decals the game keeps |
 | Reflection filtering off, cube map occlusion check off | on | skips those two steps of the reflection cube maps (for testing) |
-| Terrain cell size | 100% | scales the terrain's cell size (a bigger cell: fewer cells). The saved terrain may be laid out for the game's own, so this may corrupt it (for testing) |
 | Terrain border mesh off | on | builds no border mesh between neighbouring terrain chunks; cracks may show (for testing) |
 | Decals off | on | Skips creating the game's decal director (decals are not drawn). May break something that expects it. For testing. |
 | Depth bloom off | on | Skips the depth bloom. For testing. |

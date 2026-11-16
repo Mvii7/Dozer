@@ -30,7 +30,7 @@ constexpr size_t DepthGetter = 0x290, RadiusGetter = 0x2a0, PolygonGetter = 0x2b
 constexpr size_t MeshStore = 0x500;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
 constexpr size_t Voxel = 0x400;
-constexpr size_t CellSite = 0x700, BorderSite = 0x740, ShadowMaskGetter = 0x760,
+constexpr size_t BorderSite = 0x740, ShadowMaskGetter = 0x760,
     FlagSite = 0x800;
 
 struct Text {
@@ -78,8 +78,6 @@ struct Text {
         std::copy(std::begin(third), std::end(third), &words[FarC]);
         words[MeshStore] = 0xB90097E8;     // str w8, [sp, #0x94]
         words[MeshStore + 1] = 0xF9403260; // ldr x0, [x19, #0x60]
-        const u32 cell[]{0xF9400280, 0xD000A7E2, 0x91176842, 0x910263E1, 0x2D3E03A0};
-        std::copy(std::begin(cell), std::end(cell), &words[CellSite]);
         const u32 border[]{0x3941F3E8, 0xF94017E6, 0x7100011F, 0x1A9F17E8};
         std::copy(std::begin(border), std::end(border), &words[BorderSite]);
         words[BloomFirst] = LdrX(8, 8, BloomScaleParam);
@@ -422,29 +420,17 @@ TEST_CASE("Nx2DkQuality: the presets", "[core]") {
     REQUIRE(PresetOf(Only(ResBest, 60)) == Preset::Custom);
 }
 
-TEST_CASE("Nx2DkQuality: the terrain cell size and the border mesh", "[core]") {
+TEST_CASE("Nx2DkQuality: the border mesh and the shadow masks", "[core]") {
     Text text;
     Values values{};
-    values[VoxelCellSize] = 150;
     values[VoxelBorderMeshOff] = 1;
     values[ShadowMaskOff] = 1;
     const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
-    REQUIRE(result[VoxelCellSize] == State::Applied);
     REQUIRE(result[VoxelBorderMeshOff] == State::Applied);
     REQUIRE(result[ShadowMaskOff] == State::Applied);
     REQUIRE(text.words[ShadowMaskGetter] == 0x52800000); // movz w0, #0
     REQUIRE(text.words[ShadowMaskGetter + 1] == Ret);
     REQUIRE(text.words[BorderSite] == 0x52800028); // mov w8, #1
-    // The load became a jump into the cave, whose routine scales the cell and jumps back
-    const u32 jump = text.words[CellSite];
-    REQUIRE((jump >> 26) == 0x5);
-    const size_t routine = CellSite + (jump & 0x3FFFFFF);
-    REQUIRE(text.words[routine] == 0xF9400280);
-    REQUIRE(text.words[routine + 3] == 0xBC5EC3B1);
-    REQUIRE(text.words[routine + 5] == 0xBC1EC3B1);
-    const u32 back = text.words[routine + 7];
-    const auto offset = static_cast<s32>(back << 6) >> 6; // sign-extended 26 bits
-    REQUIRE(static_cast<s64>(routine + 7) + offset == static_cast<s64>(CellSite + 1));
 }
 
 TEST_CASE("Nx2DkQuality: the features switched off in place", "[core]") {
