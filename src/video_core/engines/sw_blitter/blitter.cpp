@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <vector>
 
 #include "common/div_ceil.h"
+#include "common/logging.h"
 #include "common/scratch_buffer.h"
 #include "video_core/engines/sw_blitter/blitter.h"
 #include "video_core/engines/sw_blitter/converter.h"
@@ -171,6 +173,54 @@ SurfaceWindow GetSurfaceWindow(const Fermi2D::Surface& surface, u32 bytes_per_pi
     };
 }
 
+// True when a blit copies a whole surface into one of the same format, size and layout, so the
+// guest bytes can be copied as they are.
+bool IsRawSurfaceCopy(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
+                      const Fermi2D::Config& config) {
+    if (src.format != dst.format || src.linear != dst.linear || src.width != dst.width ||
+        src.height != dst.height || config.src_x0 != 0 || config.src_y0 != 0 ||
+        config.dst_x0 != 0 || config.dst_y0 != 0 ||
+        config.src_x1 != static_cast<s32>(src.width) ||
+        config.src_y1 != static_cast<s32>(src.height) ||
+        config.dst_x1 != static_cast<s32>(dst.width) ||
+        config.dst_y1 != static_cast<s32>(dst.height)) {
+        return false;
+    }
+    if (src.linear == Fermi2D::MemoryLayout::BlockLinear) {
+        return src.depth == 1 && dst.depth == 1 && src.block_height == dst.block_height &&
+               src.block_depth == dst.block_depth;
+    }
+    return src.pitch == dst.pitch;
+}
+
+// EDEN_NX2_RT_TRACE: log the first CPU-fallback blits that take 2 ms or more.
+void TraceSlowBlit(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
+                   const Fermi2D::Config& config, std::chrono::steady_clock::time_point start,
+                   const char* path) {
+    static const bool trace = std::getenv("EDEN_NX2_RT_TRACE") != nullptr;
+    if (!trace) {
+        return;
+    }
+    const auto elapsed = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start);
+    static u32 traced{};
+    if (elapsed.count() < 2.0 || traced >= 64) {
+        return;
+    }
+    ++traced;
+    const auto describe = [](const Fermi2D::Surface& surface) {
+        return fmt::format("{:#x} {}x{} fmt {:#x} {} bh {} pitch {}", surface.Address(),
+                           surface.width, surface.height, static_cast<u32>(surface.format),
+                           surface.linear == Fermi2D::MemoryLayout::BlockLinear ? "block"
+                                                                               : "pitch",
+                           surface.block_height.Value(), surface.pitch);
+    };
+    LOG_INFO(HW_GPU, "nx2 sw blit {:.1f} ms ({}): {} rect {},{}-{},{} -> {} rect {},{}-{},{}",
+             elapsed.count(), path, describe(src), config.src_x0, config.src_y0, config.src_x1,
+             config.src_y1, describe(dst), config.dst_x0, config.dst_y0, config.dst_x1,
+             config.dst_y1);
+}
+
 } // namespace
 
 struct SoftwareBlitEngine::BlitEngineImpl {
@@ -191,6 +241,7 @@ SoftwareBlitEngine::~SoftwareBlitEngine() = default;
 
 bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
                               Fermi2D::Config& config) {
+    const auto start = std::chrono::steady_clock::now();
     const u32 src_extent_x = config.src_x1 - config.src_x0;
     const u32 src_extent_y = config.src_y1 - config.src_y0;
 
@@ -203,6 +254,14 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
 
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::SafeRead> tmp_buffer(
         memory_manager, src_window.address, src_window.size, &impl->tmp_buffer);
+
+    if (IsRawSurfaceCopy(src, dst, config)) {
+        if (src.Address() != dst.Address()) {
+            memory_manager.WriteBlock(dst.Address(), tmp_buffer.data(), src_window.size);
+        }
+        TraceSlowBlit(src, dst, config, start, "raw");
+        return true;
+    }
 
     const size_t src_copy_size = src_extent_x * src_extent_y * src_bytes_per_pixel;
     const size_t dst_copy_size = dst_extent_x * dst_extent_y * dst_bytes_per_pixel;
@@ -273,20 +332,33 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
 
     const SurfaceWindow dst_window =
         GetSurfaceWindow(dst, dst_bytes_per_pixel, config.dst_y0, config.dst_y1);
-    Tegra::Memory::GpuGuestMemoryScoped<u8, Tegra::Memory::GuestMemoryFlags::SafeReadWrite>
-        tmp_buffer2(memory_manager, dst_window.address, dst_window.size, &impl->tmp_buffer);
-
-    if (dst.linear == Fermi2D::MemoryLayout::BlockLinear) {
-        SwizzleSubrect(tmp_buffer2, impl->dst_buffer, dst_bytes_per_pixel, dst.width,
-                       dst_window.height, dst.depth, config.dst_x0, dst_window.y0, dst_extent_x,
-                       dst_extent_y,
-                       dst.block_height, dst.block_depth, dst_extent_x * dst_bytes_per_pixel,
-                       UseNativeTiling());
+    const auto write_destination = [&](auto& tmp_buffer2) {
+        if (dst.linear == Fermi2D::MemoryLayout::BlockLinear) {
+            SwizzleSubrect(tmp_buffer2, impl->dst_buffer, dst_bytes_per_pixel, dst.width,
+                           dst_window.height, dst.depth, config.dst_x0, dst_window.y0,
+                           dst_extent_x, dst_extent_y, dst.block_height, dst.block_depth,
+                           dst_extent_x * dst_bytes_per_pixel, UseNativeTiling());
+        } else {
+            ProcessPitchLinear<true>(impl->dst_buffer, tmp_buffer2, dst_extent_x, dst_extent_y,
+                                     dst.pitch, config.dst_x0, dst_window.y0,
+                                     static_cast<size_t>(dst_bytes_per_pixel));
+        }
+    };
+    // A blit that writes every byte of the window (no padding in it) needs no read of the old
+    // destination.
+    const bool covers_window = config.dst_x0 == 0 && dst_extent_x == dst.width &&
+                               dst_window.y0 == 0 && dst_extent_y == dst_window.height &&
+                               dst_window.size == dst_copy_size;
+    if (covers_window) {
+        Tegra::Memory::GpuGuestMemoryScoped<u8, Tegra::Memory::GuestMemoryFlags::SafeWrite>
+            tmp_buffer2(memory_manager, dst_window.address, dst_window.size, &impl->tmp_buffer);
+        write_destination(tmp_buffer2);
     } else {
-        ProcessPitchLinear<true>(impl->dst_buffer, tmp_buffer2, dst_extent_x, dst_extent_y,
-                                 dst.pitch, config.dst_x0, dst_window.y0,
-                                 static_cast<size_t>(dst_bytes_per_pixel));
+        Tegra::Memory::GpuGuestMemoryScoped<u8, Tegra::Memory::GuestMemoryFlags::SafeReadWrite>
+            tmp_buffer2(memory_manager, dst_window.address, dst_window.size, &impl->tmp_buffer);
+        write_destination(tmp_buffer2);
     }
+    TraceSlowBlit(src, dst, config, start, covers_window ? "whole" : "part");
     return true;
 }
 
