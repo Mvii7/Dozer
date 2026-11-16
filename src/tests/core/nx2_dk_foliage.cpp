@@ -190,6 +190,33 @@ TEST_CASE("Nx2DkFoliage: the material effect caps", "[core]") {
     REQUIRE(Read32(archive, root + 8 + 4) == Bits(30.0f));
 }
 
+TEST_CASE("Nx2DkFoliage: the models' far clip and LOD thresholds", "[core]") {
+    auto archive = Sarc(Byml({{"FarClipDistance", 0xD2, Bits(200.0f)},
+                              {"LodThreshold0", 0xD2, Bits(0.1f)},
+                              {"NearClipDistance", 0xD2, Bits(9.0f)}}));
+    Settings settings;
+    REQUIRE_FALSE(PatchModelSettings(archive, settings));
+    settings.far_clip = 50;
+    REQUIRE(PatchModelSettings(archive, settings));
+    const size_t root = 0x60 + Read32(archive, 12 + 0x60) + 4;
+    REQUIRE(Read32(archive, root + 4) == Bits(100.0f));
+    REQUIRE(Read32(archive, root + 8 + 4) == Bits(0.1f)); // the LOD row is not set
+    settings.lod = 200;
+    REQUIRE(PatchModelSettings(archive, settings));
+    REQUIRE(Read32(archive, root + 8 + 4) == Bits(0.1f * 2.0f));
+    REQUIRE(Read32(archive, root + 16 + 4) == Bits(9.0f)); // the near clip is left alone
+}
+
+TEST_CASE("Nx2DkFoliage: the number of placed models", "[core]") {
+    auto archive = Sarc(Byml({{"PlacedModelsMaxNum", 0xD1, 30}, {"PlacedModelsMinNum", 0xD1, 20}}));
+    Settings settings;
+    settings.density = 50;
+    REQUIRE(PatchMaterialSettings(archive, settings));
+    const size_t root = 0x60 + Read32(archive, 12 + 0x60) + 4;
+    REQUIRE(Read32(archive, root + 4) == 15);
+    REQUIRE(Read32(archive, root + 8 + 4) == 10);
+}
+
 TEST_CASE("Nx2DkFoliage: data that is not an archive is left alone", "[core]") {
     std::vector<u8> junk(300, 0x5A);
     const auto before = junk;

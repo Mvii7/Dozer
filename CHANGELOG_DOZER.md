@@ -28,7 +28,7 @@ and `=0` brings back the 2.0.0 code path.
   the game's executable; which ones help, and which break something, is still being tried.
   Three rows change the game's foliage settings files (ClusteredRendering) as the RomFS is read,
   as an in-memory mod layer (`core/loader/nx2_dk_foliage.h`): models at once, view margin, placement
-  density, plus four effect caps (effects per frame, particles per emitter, effects alive, terrain
+  density, draw distance and LOD bias per model, plus four effect caps (effects per frame, particles per emitter, effects alive, terrain
   material effects) from the effect settings files.
 
 ## Dozer 0.1.3 (`v0.1.3`)

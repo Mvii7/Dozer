@@ -69,6 +69,7 @@ VirtualDir MakeFoliageLayer(const VirtualDir& extracted) {
     patch(Loader::Nx2DkFoliage::SystemSettingsPath, Loader::Nx2DkFoliage::PatchSystemSettings);
     patch(Loader::Nx2DkFoliage::MaterialSettingsPath,
           Loader::Nx2DkFoliage::PatchMaterialSettings);
+    patch(Loader::Nx2DkFoliage::ModelSettingsPath, Loader::Nx2DkFoliage::PatchModelSettings);
     patch(Loader::Nx2DkFoliage::EffectSettingsPath, Loader::Nx2DkFoliage::PatchEffectSettings);
     patch(Loader::Nx2DkFoliage::SettingUnitPath, Loader::Nx2DkFoliage::PatchSettingUnits);
     if (files.empty()) {

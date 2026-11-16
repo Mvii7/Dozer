@@ -250,6 +250,15 @@ void ConfigureBananza::RetranslateUI() {
         tr("Foliage placement density"),
         tr("Scales the chance and the rate of the foliage the game places while you play. "
            "Foliage already placed in the stage's data is not changed (use the cap for that).")};
+    texts[Quality::FoliageFarClip] = {
+        tr("Foliage draw distance"),
+        tr("Scales how far each foliage model (grass, flowers, plants, rocks) is drawn, from its "
+           "own distance in the game's data (100 to 300 units). Lower: foliage ends closer to "
+           "you but stays near you. Needs a restart.")};
+    texts[Quality::FoliageLod] = {
+        tr("Foliage LOD bias"),
+        tr("Scales when each foliage model switches to a simpler mesh. Higher: simpler meshes "
+           "sooner, so foliage looks coarser at a distance and costs less.")};
     texts[Quality::EffectEmitCap] = {
         tr("Effects started per frame"),
         tr("Scales how many effects (particles, dust, debris) the game may start in one frame "

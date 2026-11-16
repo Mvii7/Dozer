@@ -25,13 +25,15 @@ struct Settings {
     int cap = 0;          ///< % of the models drawn / kept alive at once, 0: the game's
     bool frustum_off = false;
     int density = 0;      ///< % of the dynamic placements, 0: the game's
+    int far_clip = 0;     ///< % of each model's far clip distance
+    int lod = 0;          ///< % of each model's LOD thresholds
     int emit = 0;         ///< % of the effects started per frame
     int particles = 0;    ///< % of the particles in one emitter
     int alive = 0;        ///< % of the effects alive per effect rule
     int material = 0;     ///< % of the material effects
 
     [[nodiscard]] bool Active() const {
-        return cap != 0 || frustum_off || density != 0 || emit != 0 || particles != 0 ||
+        return cap != 0 || frustum_off || density != 0 || far_clip != 0 || lod != 0 || emit != 0 || particles != 0 ||
                alive != 0 || material != 0;
     }
 };
@@ -44,12 +46,14 @@ inline int ReadEnv(Id id) {
 
 inline Settings FromEnvironment() {
     return {ReadEnv(Id::FoliageCap),     ReadEnv(Id::FoliageFrustumOff) != 0,
-            ReadEnv(Id::FoliageDensity), ReadEnv(Id::EffectEmitCap),
+            ReadEnv(Id::FoliageDensity), ReadEnv(Id::FoliageFarClip),
+            ReadEnv(Id::FoliageLod),     ReadEnv(Id::EffectEmitCap),
             ReadEnv(Id::EffectParticleCap), ReadEnv(Id::EffectAliveCap),
             ReadEnv(Id::EffectMaterialCap)};
 }
 
 constexpr std::string_view SystemSettingsPath = "ClusteredRendering/SystemSettings.alsarc.zs";
+constexpr std::string_view ModelSettingsPath = "ClusteredRendering/ModelSettings.alsarc.zs";
 constexpr std::string_view MaterialSettingsPath = "ClusteredRendering/MaterialSettings.alsarc.zs";
 constexpr std::string_view EffectSettingsPath = "SystemData/EffectSettings.alsarc.zs";
 constexpr std::string_view SettingUnitPath = "MaterialEffect/SettingUnit.alsarc.zs";
@@ -208,7 +212,8 @@ inline bool PatchSystemSettings(std::span<u8> archive, const Settings& settings)
     return changed;
 }
 
-/// Scales every DynamicPlacementProbability of a decompressed ClusteredRendering/MaterialSettings
+/// Scales every DynamicPlacementProbability and the number of dynamically placed models
+/// (PlacedModelsMinNum, PlacedModelsMaxNum) of a decompressed ClusteredRendering/MaterialSettings
 /// archive in place. Returns whether it changed anything.
 inline bool PatchMaterialSettings(std::span<u8> archive, const Settings& settings) {
     if (settings.density == 0) {
@@ -222,6 +227,42 @@ inline bool PatchMaterialSettings(std::span<u8> archive, const Settings& setting
                 const float value = Detail::AsFloat(in.U32(at));
                 Detail::Put(in, at,
                             Detail::AsBits(value * static_cast<float>(settings.density) / 100.0f));
+                changed = true;
+            } else if ((key == "PlacedModelsMinNum" || key == "PlacedModelsMaxNum") &&
+                       (type == Detail::TypeInt || type == Detail::TypeUInt)) {
+                Detail::Put(in, at, std::max<u32>(in.U32(at) *
+                                                      static_cast<u32>(settings.density) / 100, 1));
+                changed = true;
+            }
+        });
+    });
+    return changed;
+}
+
+/// Scales each model's FarClipDistance and LodThreshold0-2 of a decompressed
+/// ClusteredRendering/ModelSettings archive in place. Returns whether it changed anything.
+inline bool PatchModelSettings(std::span<u8> archive, const Settings& settings) {
+    if (settings.far_clip == 0 && settings.lod == 0) {
+        return false;
+    }
+    Detail::Reader in{archive};
+    bool changed = false;
+    Detail::ForEachSarcFile(in, [&](size_t base) {
+        Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
+            if (type != Detail::TypeFloat) {
+                return;
+            }
+            int percent = 0;
+            if (key == "FarClipDistance") {
+                percent = settings.far_clip;
+            } else if (key == "LodThreshold0" || key == "LodThreshold1" ||
+                       key == "LodThreshold2") {
+                percent = settings.lod;
+            }
+            if (percent != 0) {
+                Detail::Put(in, at,
+                            Detail::AsBits(Detail::AsFloat(in.U32(at)) *
+                                           static_cast<float>(percent) / 100.0f));
                 changed = true;
             }
         });

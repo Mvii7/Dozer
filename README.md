@@ -250,6 +250,8 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Sky model off | on | Skips the sky model. (for testing; may crash) |
 | Foliage models at once | 100% | scales the most grass, weeds and plants drawn and kept alive at once (the game's caps are 25000 and 50000); changes the game's settings files as the RomFS is read |
 | Foliage view margin off | on | removes the extra margin around the view for foliage; it may pop in when turning |
+| Foliage draw distance | 100% | scales how far each foliage model (grass, flowers, plants) is drawn from the distance in the game's data (100-300 units): foliage stays near you and ends sooner |
+| Foliage LOD bias | 100% | scales when each foliage model switches to a simpler mesh; higher means coarser meshes sooner |
 | Foliage placement density | 100% | scales the chance and rate of the foliage placed while playing (foliage in the stage's data is only cut by the cap) |
 | Effects started per frame / Particles per emitter | 156 / 512 | scales the most effects the game starts in a frame and the most particles in one emitter (dust, debris, sparks); in the game's effect settings files as they are read |
 | Effects alive per rule / Terrain material effects | 100% | scales how many effects the emission rules keep alive and how many terrain material effects (dust, smoke, snow) are active at once |
