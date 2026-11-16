@@ -225,8 +225,8 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Bloom buffer scale | 25% | the bloom buffers' size |
 | Cube map update interval | 8 frames | how often reflection cube maps are captured (the one row where higher is faster) |
 | Radial blur render scale / samples | 50% / 20 | the radial blur's buffer size and samples |
-| Terrain LOD distance | 100% | the two distances at which the destructible terrain switches to coarser meshes, relative to the game's data |
-| Terrain LOD value | 100% | the two values of the terrain's LOD steps (what higher or lower does is not known; for testing) |
+| Terrain LOD 1 / LOD 2 distance | 100% | the distance at which the destructible terrain switches to its first (200) and its farthest (420) coarser mesh, each its own row; lower: coarser sooner |
+| Terrain LOD 1 / LOD 2 value | 100% | the value each of the two terrain LOD steps carries (180 and 1000); higher may mean coarser (not known; for testing) |
 | Terrain mesh simplification | Normal | the type of mesh simplification the game's terrain fields use (Normal, High, SuperHigh, NoSimplify, Low); which one simplifies the most is not known, so try them; it is applied to every field |
 | Camera far distance | 100% | scales the distance beyond which the game draws nothing: a big cut roughly doubled the frame rate in a busy area, but scenery stops being drawn fairly close (from the Selevet fork's far clip scale) |
 | Colour decal limit | 660 | the most colour decals the game keeps |

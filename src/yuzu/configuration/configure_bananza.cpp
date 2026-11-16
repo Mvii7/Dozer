@@ -147,14 +147,22 @@ void ConfigureBananza::RetranslateUI() {
                                        tr("The radial blur's buffer size relative to the frame.")};
     texts[Quality::RadialBlurSamples] = {tr("Radial blur samples"),
                                          tr("Samples the radial blur takes per pixel.")};
-    texts[Quality::VoxelLodDist] = {
-        tr("Terrain LOD distance"),
-        tr("Scales the two distances at which the destructible terrain switches to its "
-           "coarser meshes. Lower: coarser terrain closer to the camera, fewer triangles.")};
-    texts[Quality::VoxelLodValue] = {
-        tr("Terrain LOD value"),
-        tr("Scales the two values the terrain's LOD steps carry beside their distance (how "
-           "coarse a step is). What higher or lower does is not known yet: for testing.")};
+    texts[Quality::VoxelLod1Dist] = {
+        tr("Terrain LOD 1 distance (near)"),
+        tr("Scales the distance at which the destructible terrain switches to its first, "
+           "coarser mesh (the game's own is 200). Lower: coarser terrain closer to the camera.")};
+    texts[Quality::VoxelLod1Value] = {
+        tr("Terrain LOD 1 value (near)"),
+        tr("Scales the value the first LOD step carries beside its distance (the game's own is "
+           "180). Higher may mean a coarser step; not known yet: for testing.")};
+    texts[Quality::VoxelLod2Dist] = {
+        tr("Terrain LOD 2 distance (far)"),
+        tr("Scales the distance at which the terrain switches to its farthest, coarsest mesh "
+           "(the game's own is 420). Lower: far terrain simplifies sooner, near terrain stays.")};
+    texts[Quality::VoxelLod2Value] = {
+        tr("Terrain LOD 2 value (far)"),
+        tr("Scales the value the far LOD step carries (the game's own is 1000). Higher may mean "
+           "a coarser step; not known yet: for testing.")};
     texts[Quality::CameraFar] = {
         tr("Camera far distance"),
         tr("Scales the distance beyond which the game draws nothing. A big cut (about 10%) "

@@ -251,11 +251,11 @@ TEST_CASE("Nx2DkQuality: the mesh simplification type", "[core]") {
 TEST_CASE("Nx2DkQuality: the terrain LOD and the mesh simplification together", "[core]") {
     Text text;
     Values values{};
-    values[VoxelLodDist] = 50;
+    values[VoxelLod1Dist] = 50;
     values[MeshSimplify] = 5;
     values[CameraFar] = 50;
     const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
-    REQUIRE(result[VoxelLodDist] == State::Applied);
+    REQUIRE(result[VoxelLod1Dist] == State::Applied);
     REQUIRE(result[MeshSimplify] == State::Applied);
     REQUIRE(result[CameraFar] == State::Applied);
 }
@@ -316,11 +316,15 @@ TEST_CASE("Nx2DkQuality: the terrain LOD distance and value", "[core]") {
     Text text;
     std::vector<u32> expected = text.words;
     Values values{};
-    values[VoxelLodDist] = 50;
-    values[VoxelLodValue] = 200;
+    values[VoxelLod1Dist] = 50;
+    values[VoxelLod1Value] = 200;
+    values[VoxelLod2Dist] = 50;
+    values[VoxelLod2Value] = 200;
     const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
-    REQUIRE(result[VoxelLodDist] == State::Applied);
-    REQUIRE(result[VoxelLodValue] == State::Applied);
+    REQUIRE(result[VoxelLod1Dist] == State::Applied);
+    REQUIRE(result[VoxelLod1Value] == State::Applied);
+    REQUIRE(result[VoxelLod2Dist] == State::Applied);
+    REQUIRE(result[VoxelLod2Value] == State::Applied);
     const auto bl = [](size_t from, size_t to) {
         return 0x94000000U | (static_cast<u32>(to - from) & 0x3FFFFFFU);
     };
@@ -340,20 +344,31 @@ TEST_CASE("Nx2DkQuality: the terrain LOD distance and value", "[core]") {
     REQUIRE(text.words == expected);
 }
 
-TEST_CASE("Nx2DkQuality: the terrain LOD distance alone leaves the values", "[core]") {
+TEST_CASE("Nx2DkQuality: the far terrain LOD distance alone", "[core]") {
     Text text;
-    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(VoxelLodDist, 50));
-    REQUIRE(result[VoxelLodDist] == State::Applied);
-    REQUIRE(result[VoxelLodValue] == State::Unset);
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(VoxelLod2Dist, 50));
+    REQUIRE(result[VoxelLod2Dist] == State::Applied);
+    REQUIRE(result[VoxelLod1Dist] == State::Unset);
+    REQUIRE(text.words[Voxel + 1] == 0xBD400008);  // the Lod1Dist load is not replaced
+    REQUIRE(text.words[Voxel + 7] != 0xBD40000A);  // the Lod2Dist one is
+}
+
+TEST_CASE("Nx2DkQuality: the near terrain LOD distance alone leaves the rest", "[core]") {
+    Text text;
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(VoxelLod1Dist, 50));
+    REQUIRE(result[VoxelLod1Dist] == State::Applied);
+    REQUIRE(result[VoxelLod1Value] == State::Unset);
+    REQUIRE(result[VoxelLod2Dist] == State::Unset);
     REQUIRE(text.words[Voxel + 4] == 0xBD400009); // the Lod1Value load is not replaced
+    REQUIRE(text.words[Voxel + 7] == 0xBD40000A); // nor the Lod2Dist one
 }
 
 TEST_CASE("Nx2DkQuality: the terrain LOD needs its free space", "[core]") {
     Text text;
     text.words[Cave + 7] = Filler;
     const std::vector<u32> before = text.words;
-    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(VoxelLodDist, 50));
-    REQUIRE(result[VoxelLodDist] == State::Missed);
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(VoxelLod1Dist, 50));
+    REQUIRE(result[VoxelLod1Dist] == State::Missed);
     REQUIRE(text.words == before);
 }
 
@@ -373,19 +388,19 @@ TEST_CASE("Nx2DkQuality: values and variables", "[core]") {
     REQUIRE(Parse("24", Knobs[ResBest]) == -1);
     REQUIRE(Parse("101", Knobs[ResBest]) == -1);
     REQUIRE(Parse("60%", Knobs[ResBest]) == -1);
-    REQUIRE(Parse("400", Knobs[VoxelLodDist]) == 400);
-    REQUIRE(Sanitize(9, Knobs[VoxelLodDist]) == 0);
+    REQUIRE(Parse("400", Knobs[VoxelLod1Dist]) == 400);
+    REQUIRE(Sanitize(9, Knobs[VoxelLod1Dist]) == 0);
 
     Values values{};
     values[ResBest] = 60;
-    values[VoxelLodDist] = 400;
+    values[VoxelLod1Dist] = 400;
     values[CubeMapInterval] = 999; // out of range: left out
     REQUIRE(Wanted(values, false).empty());
     const auto vars = Wanted(values, true);
     REQUIRE(vars.size() == 2);
     REQUIRE(vars[0].name == "EDEN_NX2_DKQ_RES_BEST");
     REQUIRE(vars[0].value == "60");
-    REQUIRE(vars[1].name == "EDEN_NX2_DKQ_VOXEL_LOD_DIST");
+    REQUIRE(vars[1].name == "EDEN_NX2_DKQ_VOXEL_LOD1_DIST");
     REQUIRE(vars[1].value == "400");
 }
 

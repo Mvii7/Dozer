@@ -276,11 +276,15 @@
 # RADIAL_BLUR_SCALE=<10-100> in % (50), RADIAL_BLUR_SAMPLES=<1-32> (20).
 #EDEN_NX2_DKQ_RADIAL_BLUR_SCALE=50
 #EDEN_NX2_DKQ_RADIAL_BLUR_SAMPLES=20
-# VOXEL_LOD_DIST=<10-400>: the terrain's two LOD distances in % of the game's (100). Lower:
+# VOXEL_LOD1_DIST / VOXEL_LOD2_DIST=<10-400>: the terrain's near and far LOD distance in % of the
+# game's (100; its own: 200 and 420). Lower:
 # coarser terrain closer to the camera.
-#EDEN_NX2_DKQ_VOXEL_LOD_DIST=100
-# VOXEL_LOD_VALUE=<10-400>: the terrain's two LOD values in % of the game's (100). Effect not known.
-#EDEN_NX2_DKQ_VOXEL_LOD_VALUE=100
+#EDEN_NX2_DKQ_VOXEL_LOD1_DIST=100
+#EDEN_NX2_DKQ_VOXEL_LOD2_DIST=100
+# VOXEL_LOD1_VALUE / VOXEL_LOD2_VALUE=<10-1000>: the near and far LOD value in % of the game's
+# (100; its own: 180 and 1000). Effect not known.
+#EDEN_NX2_DKQ_VOXEL_LOD1_VALUE=100
+#EDEN_NX2_DKQ_VOXEL_LOD2_VALUE=100
 # MESH_SIMPLIFY=<1-5>: the terrain's mesh simplification type for every field: 1 Normal (the
 # game's usual), 2 High, 3 SuperHigh, 4 NoSimplify, 5 Low (which simplifies the most is not
 # known: higher could mean more simplification or less).

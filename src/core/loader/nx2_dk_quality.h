@@ -34,8 +34,10 @@ enum Id : size_t {
     CubeMapInterval,   ///< CubeMapShotInterval, frames
     RadialBlurScale,   ///< RadialBlurRenderScale, %
     RadialBlurSamples, ///< RadialBlurSamplingNum
-    VoxelLodDist,      ///< terrain Lod1Dist and Lod2Dist, % of the game's
-    VoxelLodValue,     ///< terrain Lod1Value and Lod2Value, % of the game's
+    VoxelLod1Dist,     ///< terrain Lod1Dist (the nearer LOD step), % of the game's
+    VoxelLod1Value,    ///< terrain Lod1Value, % of the game's
+    VoxelLod2Dist,     ///< terrain Lod2Dist (the farther LOD step), % of the game's
+    VoxelLod2Value,    ///< terrain Lod2Value, % of the game's
     CameraFar,         ///< the camera's far distance, % (EDEN_NX2_FAR_SCALE of the Selevet fork)
     ColorDecalMax,     ///< ColorDecalMaxNum
     MeshSimplify,      ///< terrain MeshSimplifyType: 1 Normal, 2 High, 3 SuperHigh, 4 NoSimplify, 5 Low
@@ -97,8 +99,10 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"cubemap_interval", "EDEN_NX2_DKQ_CUBEMAP_INTERVAL", 1, 240, 8},
     {"radial_blur_scale", "EDEN_NX2_DKQ_RADIAL_BLUR_SCALE", 10, 100, 50},
     {"radial_blur_samples", "EDEN_NX2_DKQ_RADIAL_BLUR_SAMPLES", 1, 32, 20},
-    {"voxel_lod_dist", "EDEN_NX2_DKQ_VOXEL_LOD_DIST", 10, 400, 100},
-    {"voxel_lod_value", "EDEN_NX2_DKQ_VOXEL_LOD_VALUE", 10, 400, 100},
+    {"voxel_lod1_dist", "EDEN_NX2_DKQ_VOXEL_LOD1_DIST", 10, 400, 100},
+    {"voxel_lod1_value", "EDEN_NX2_DKQ_VOXEL_LOD1_VALUE", 10, 1000, 100},
+    {"voxel_lod2_dist", "EDEN_NX2_DKQ_VOXEL_LOD2_DIST", 10, 400, 100},
+    {"voxel_lod2_value", "EDEN_NX2_DKQ_VOXEL_LOD2_VALUE", 10, 1000, 100},
     {"camera_far", "EDEN_NX2_DKQ_CAMERA_FAR", 10, 100, 100},
     {"color_decal_max", "EDEN_NX2_DKQ_COLOR_DECAL_MAX", 1, 660, 660},
     {"mesh_simplify", "EDEN_NX2_DKQ_MESH_SIMPLIFY", 1, 5, 1},
@@ -512,7 +516,8 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
         }
     }
 
-    // The terrain (voxel field) takes its two LOD steps from VoxelMeshLodParam, one place:
+    // The terrain (voxel field) takes its two LOD steps from VoxelMeshLodParam, one place (LOD 1
+    // is the nearer step, LOD 2 the farther one):
     //   bl Lod1Dist;  ldr s8, [x0];  mov x0, x24
     //   bl Lod1Value; ldr s9, [x0];  mov x0, x24
     //   bl Lod2Dist;  ldr s10, [x0]; mov x0, x24
@@ -520,7 +525,9 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
     // Each load asked for becomes a call to a routine in the free space past the text segment
     // that loads and scales (x16, s16 and x30 are free right after a call):
     //   ldr sN, [x0]; movz w16, #scale, lsl #16; fmov s16, w16; fmul sN, sN, s16; ret
-    if (const int dist = set(VoxelLodDist), value = set(VoxelLodValue); dist != 0 || value != 0) {
+    const std::array<int, 4> lod{set(VoxelLod1Dist), set(VoxelLod1Value), set(VoxelLod2Dist),
+                                 set(VoxelLod2Value)};
+    if (lod[0] != 0 || lod[1] != 0 || lod[2] != 0 || lod[3] != 0) {
         constexpr u32 MovX0X24 = 0xAA1803E0U;
         std::array<size_t, 1> at{};
         const bool cave_free = CaveFree(0, MeshRoutine);
@@ -538,7 +545,7 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 int scale;
             };
             const std::array<Load, 4> loads{
-                {{1, 8, dist}, {4, 9, value}, {7, 10, dist}, {10, 0, value}}};
+                {{1, 8, lod[0]}, {4, 9, lod[1]}, {7, 10, lod[2]}, {10, 0, lod[3]}}};
             for (size_t i = 0; i < loads.size(); ++i) {
                 const Load& load = loads[i];
                 if (load.scale == 0) {
@@ -553,11 +560,11 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 put(routine + 4, Ret);
                 put(from, 0x94000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU)); // bl
             }
-            if (dist != 0) {
-                result[VoxelLodDist] = State::Applied;
-            }
-            if (value != 0) {
-                result[VoxelLodValue] = State::Applied;
+            const std::array<Id, 4> ids{VoxelLod1Dist, VoxelLod1Value, VoxelLod2Dist, VoxelLod2Value};
+            for (size_t i = 0; i < ids.size(); ++i) {
+                if (lod[i] != 0) {
+                    result[ids[i]] = State::Applied;
+                }
             }
         }
     }
