@@ -6,7 +6,20 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Unreleased (Dozer)
+## Dozer 0.1.4 (`v0.1.4`)
+
+- Mario Kart World: software 2D blits (a copy of CPU-written data that the GPU path does not take)
+  read and write only the block rows they touch, copy whole GOBs between tiled surfaces of one
+  format that differ only in block height, copy same-layout surfaces as they are and skip reading
+  a destination they overwrite. Tiled copies of 1 MiB and up go to a worker thread, which queues up
+  to 256 MiB of source snapshots; the memory manager makes reads, writes, flushes and unmaps of an
+  overlapping GPU range wait for them (`EDEN_NX2_ASYNC_BLIT=0` keeps every copy on the GPU thread).
+  Streamed course textures took 10-100 ms each on the GPU thread.
+
+- Network: a joined room can act as the LAN for local wireless games: LDN joins wait for the
+  host's reply, room datagrams go through `ProxySocket::Recv`, ZSTD room packets are decompressed
+  with a size check, and bsd sockets are closed once and survive a concurrent close. Ported from
+  Eglantine-Community/Eglantine#313; not tested here.
 
 - Donkey Kong Bananza: `EDEN_NX2_RX_ONE_SUBMIT=1` is set for it by the Tuning settings and the
   launchers (start-safe.bat clears it). A real fence no longer submits a second, empty command
