@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdlib>
 
 #include "common/alignment.h"
@@ -281,12 +282,14 @@ void MemoryManager::BindRasterizer(VideoCore::RasterizerInterface* rasterizer_) 
 }
 
 GPUVAddr MemoryManager::Map(GPUVAddr gpu_addr, DAddr dev_addr, std::size_t size, PTEKind kind, bool is_big_pages) {
+    WaitPendingWrites(gpu_addr, size);
     if (is_big_pages)
         return BigPageTableOp(gpu_addr, dev_addr, size, kind, EntryType::Mapped);
     return PageTableOp(gpu_addr, dev_addr, size, kind, EntryType::Mapped);
 }
 
 GPUVAddr MemoryManager::MapSparse(GPUVAddr gpu_addr, std::size_t size, bool is_big_pages) {
+    WaitPendingWrites(gpu_addr, size);
     if (is_big_pages)
         return BigPageTableOp(gpu_addr, 0, size, PTEKind::INVALID, EntryType::Reserved);
     return PageTableOp(gpu_addr, 0, size, PTEKind::INVALID, EntryType::Reserved);
@@ -296,6 +299,7 @@ void MemoryManager::Unmap(GPUVAddr gpu_addr, std::size_t size) {
     if (size == 0) {
         return;
     }
+    WaitPendingWrites(gpu_addr, size);
     GetSubmappedRangeImpl<false>(gpu_addr, size, page_stash);
 
     for (const auto& [map_addr, map_size] : page_stash) {
@@ -366,6 +370,7 @@ const u8* MemoryManager::SmallReadPointer(GPUVAddr gpu_addr) const {
 
 template <typename T>
 T MemoryManager::Read(GPUVAddr addr) const {
+    WaitPendingWrites(addr, sizeof(T));
     if constexpr (sizeof(T) == sizeof(u32)) {
         const auto shim = native_syncpoint_shim.load(std::memory_order_acquire);
         if (shim && addr >= shim && addr - shim < NumShimSyncpoints * sizeof(u32) &&
@@ -392,6 +397,7 @@ T MemoryManager::Read(GPUVAddr addr) const {
 
 template <typename T>
 void MemoryManager::Write(GPUVAddr addr, T data) {
+    WaitPendingWrites(addr, sizeof(T));
     // Semaphore and report words: no cache is told.
     MarkUntracked(addr, sizeof(T));
     if (auto page_pointer{GetPointer(addr)}; page_pointer) {
@@ -419,6 +425,7 @@ template void MemoryManager::Write<u32>(GPUVAddr addr, u32 data);
 template void MemoryManager::Write<u64>(GPUVAddr addr, u64 data);
 
 u8* MemoryManager::GetPointer(GPUVAddr gpu_addr) {
+    WaitPendingWrites(gpu_addr, 1);
     const auto address{GpuToCpuAddress(gpu_addr)};
     if (!address) {
         return {};
@@ -428,6 +435,7 @@ u8* MemoryManager::GetPointer(GPUVAddr gpu_addr) {
 }
 
 const u8* MemoryManager::GetPointer(GPUVAddr gpu_addr) const {
+    WaitPendingWrites(gpu_addr, 1);
     const auto address{GpuToCpuAddress(gpu_addr)};
     if (!address) {
         return {};
@@ -507,6 +515,7 @@ inline void MemoryManager::MemoryOperation(GPUVAddr gpu_src_addr, std::size_t si
 }
 
 void MemoryManager::ReadBlockImpl(GPUVAddr gpu_src_addr, void* dest_buffer, std::size_t size, [[maybe_unused]] VideoCommon::CacheType which, bool unsafe) const {
+    WaitPendingWrites(gpu_src_addr, size);
     auto set_to_zero = [&]([[maybe_unused]] std::size_t page_index, [[maybe_unused]] std::size_t offset, std::size_t copy_amount) {
         std::memset(dest_buffer, 0, copy_amount);
         dest_buffer = static_cast<u8*>(dest_buffer) + copy_amount;
@@ -550,6 +559,7 @@ void MemoryManager::ReadBlock(GPUVAddr gpu_src_addr, void* dest_buffer, std::siz
 }
 
 void MemoryManager::ReadBlockUnsafe(GPUVAddr gpu_src_addr, void* dest_buffer, const std::size_t size) const {
+    WaitPendingWrites(gpu_src_addr, size);
     // Small reads within one 4 KiB page (texture and sampler descriptors, several per draw): one
     // translation and a copy, as Read<T> does, instead of the page walk (~3% of the GPU thread
     // in title 1). Anything else, unmapped or sparse pages included, takes the full path.
@@ -591,6 +601,7 @@ void MemoryManager::CheckSmallRead(GPUVAddr gpu_addr, const void* read, std::siz
 }
 
 void MemoryManager::WriteBlockImpl(GPUVAddr gpu_dest_addr, const void* src_buffer, std::size_t size, [[maybe_unused]] VideoCommon::CacheType which, bool unsafe) {
+    WaitPendingWrites(gpu_dest_addr, size);
     // Give Switch 2 sparse pages the write lands on their memory first (otherwise it is dropped).
     Tegra::Nx2BackSparseWrite(gpu_dest_addr, size);
     auto just_advance = [&]([[maybe_unused]] std::size_t page_index, [[maybe_unused]] std::size_t offset, std::size_t copy_amount) {
@@ -670,6 +681,7 @@ void MemoryManager::MarkUntracked(GPUVAddr gpu_addr, std::size_t size) const {
 
 void MemoryManager::WriteBlockUnsafe(GPUVAddr gpu_dest_addr, const void* src_buffer, std::size_t size,
                                      bool caches_told) {
+    WaitPendingWrites(gpu_dest_addr, size);
     if (!caches_told) {
         MarkUntracked(gpu_dest_addr, size);
     }
@@ -680,6 +692,7 @@ void MemoryManager::WriteBlockUnsafe(GPUVAddr gpu_dest_addr, const void* src_buf
 }
 
 void MemoryManager::WriteBlockCached(GPUVAddr gpu_dest_addr, const void* src_buffer, std::size_t size) {
+    WaitPendingWrites(gpu_dest_addr, size);
     if (!WriteSmall(gpu_dest_addr, src_buffer, size)) {
         WriteBlockImpl(gpu_dest_addr, src_buffer, size, VideoCommon::CacheType::None, true);
     }
@@ -689,6 +702,7 @@ void MemoryManager::WriteBlockCached(GPUVAddr gpu_dest_addr, const void* src_buf
 
 void MemoryManager::FlushRegion(GPUVAddr gpu_addr, size_t size,
                                 VideoCommon::CacheType which) const {
+    WaitPendingWrites(gpu_addr, size);
     CheckNotForwarding("MemoryManager::FlushRegion");
     auto do_nothing = [&]([[maybe_unused]] std::size_t page_index,
                           [[maybe_unused]] std::size_t offset,
@@ -1099,6 +1113,7 @@ bool MemoryManager::FlushCaching() {
 }
 
 const u8* MemoryManager::GetSpan(const GPUVAddr src_addr, const std::size_t size) const {
+    WaitPendingWrites(src_addr, size);
     if (!IsContinuousRange(src_addr, size)) {
         return nullptr;
     }
@@ -1110,6 +1125,7 @@ const u8* MemoryManager::GetSpan(const GPUVAddr src_addr, const std::size_t size
 }
 
 u8* MemoryManager::GetSpan(const GPUVAddr src_addr, const std::size_t size) {
+    WaitPendingWrites(src_addr, size);
     if (!IsContinuousRange(src_addr, size)) {
         return nullptr;
     }
@@ -1120,4 +1136,72 @@ u8* MemoryManager::GetSpan(const GPUVAddr src_addr, const std::size_t size) {
     return nullptr;
 }
 
+bool MemoryManager::GetHostSegments(GPUVAddr gpu_addr, std::size_t size,
+                                    std::vector<HostSegment>& segments) {
+    segments.clear();
+    const GPUVAddr end = gpu_addr + size;
+    for (GPUVAddr address = gpu_addr; address < end;) {
+        const GPUVAddr page_end = (std::min)((address | 0xfff) + 1, end);
+        const std::optional<DAddr> device = GpuToCpuAddress(address);
+        u8* const pointer = device ? memory.GetPointer<u8>(*device) : nullptr;
+        if (pointer == nullptr) {
+            segments.clear();
+            return false;
+        }
+        const std::size_t length = page_end - address;
+        if (!segments.empty() && segments.back().pointer + segments.back().size == pointer) {
+            segments.back().size += length;
+        } else {
+            segments.push_back({pointer, length});
+        }
+        address = page_end;
+    }
+    return true;
+}
+
+void MemoryManager::AddPendingWrite(GPUVAddr gpu_addr, std::size_t size,
+                                    std::shared_ptr<std::atomic<bool>> done) {
+    std::scoped_lock lk{pending_write_mutex};
+    std::erase_if(pending_writes, [](const PendingWrite& write) {
+        return write.done->load(std::memory_order_acquire);
+    });
+    pending_writes.push_back({gpu_addr, gpu_addr + size, std::move(done)});
+    pending_write_count.store(static_cast<u32>(pending_writes.size()), std::memory_order_release);
+}
+
+void MemoryManager::WaitPendingWritesSlow(GPUVAddr gpu_addr, std::size_t size) const {
+    boost::container::small_vector<std::shared_ptr<std::atomic<bool>>, 4> waits;
+    {
+        std::scoped_lock lk{pending_write_mutex};
+        std::erase_if(pending_writes, [](const PendingWrite& write) {
+            return write.done->load(std::memory_order_acquire);
+        });
+        pending_write_count.store(static_cast<u32>(pending_writes.size()),
+                                  std::memory_order_release);
+        const GPUVAddr end = gpu_addr + (std::max)(size, std::size_t{1});
+        for (const PendingWrite& write : pending_writes) {
+            if (write.begin < end && gpu_addr < write.end) {
+                waits.push_back(write.done);
+            }
+        }
+    }
+    if (waits.empty()) {
+        return;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    for (const auto& done : waits) {
+        done->wait(false, std::memory_order_acquire);
+    }
+    // EDEN_NX2_RT_TRACE: how long accesses waited for the blitter's copies.
+    static const bool trace = std::getenv("EDEN_NX2_RT_TRACE") != nullptr;
+    static std::atomic<u32> traced{};
+    const double waited =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+            .count();
+    if (trace && waited >= 1.0 && traced.fetch_add(1) < 512) {
+        LOG_INFO(HW_GPU, "nx2 async blit wait {:.1f} ms for {:#x}+{:#x}", waited, gpu_addr, size);
+    }
+}
+
 } // namespace Tegra
+
