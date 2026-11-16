@@ -93,8 +93,17 @@ void Fermi2D::Blit() {
     constexpr s64 null_derivative = 1ULL << 32;
     Surface src = regs.src;
     const auto bytes_per_pixel = BytesPerBlock(PixelFormatFromRenderTargetFormat(src.format));
-    const bool delegate_to_gpu = src.width > 512 && src.height > 512 && bytes_per_pixel <= 8 &&
-                                 src.format != regs.dst.format;
+    // EDEN_NX2_2D_GPU=1: also do unscaled same-format copies of CPU-written surfaces on the GPU
+    // (Mario Kart World streams textures this way; on the CPU a 2048x2048 copy took ~100 ms).
+    static const bool same_format_on_gpu = [] {
+        const char* value = std::getenv("EDEN_NX2_2D_GPU");
+        return value != nullptr && value[0] == '1';
+    }();
+    const bool delegate_to_gpu =
+        (src.width > 512 && src.height > 512 && bytes_per_pixel <= 8 &&
+         src.format != regs.dst.format) ||
+        (same_format_on_gpu && src.format == regs.dst.format &&
+         args.du_dx == null_derivative && args.dv_dy == null_derivative);
 
     auto srcX = args.src_x0;
     auto srcY = args.src_y0;
