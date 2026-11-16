@@ -1198,7 +1198,7 @@ void MemoryManager::WaitPendingWritesSlow(GPUVAddr gpu_addr, std::size_t size) c
     const double waited =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
             .count();
-    if (trace && waited >= 1.0 && traced.fetch_add(1) < 64) {
+    if (trace && waited >= 1.0 && traced.fetch_add(1) < 512) {
         LOG_INFO(HW_GPU, "nx2 async blit wait {:.1f} ms for {:#x}+{:#x}", waited, gpu_addr, size);
     }
 }

@@ -226,7 +226,7 @@ bool CanCopyTiledRect(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
            src_window.y0 % GOB_SIZE_Y == 0 && dst_window.y0 % GOB_SIZE_Y == 0;
 }
 
-// EDEN_NX2_RT_TRACE: log the first CPU-fallback blits that take 2 ms or more.
+// EDEN_NX2_RT_TRACE: log the first 512 CPU-fallback blits that take 2 ms or more.
 void TraceSlowBlit(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
                    const Fermi2D::Config& config, std::chrono::steady_clock::time_point start,
                    const char* path) {
@@ -237,7 +237,7 @@ void TraceSlowBlit(const Fermi2D::Surface& src, const Fermi2D::Surface& dst,
     const auto elapsed = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - start);
     static u32 traced{};
-    if (elapsed.count() < 2.0 || traced >= 64) {
+    if (elapsed.count() < 2.0 || traced >= 512) {
         return;
     }
     ++traced;
@@ -272,7 +272,7 @@ public:
         Common::ScratchBuffer<u8> source;
         std::vector<MemoryManager::HostSegment> segments;
         std::size_t size{};
-        bool read_old{};
+        u32 first_page_offset{};
         u32 bytes_per_pixel{};
         u32 dst_width{};
         u32 dst_block_height{};
@@ -339,7 +339,7 @@ private:
 
     void Run() {
         Common::SetCurrentThreadName("GPUBlitCopy");
-        Common::ScratchBuffer<u8> layout;
+        std::vector<u8*> pages;
         for (;;) {
             Job job;
             {
@@ -351,7 +351,7 @@ private:
                 job = std::move(queue.front());
                 queue.pop_front();
             }
-            Copy(job, layout);
+            Copy(job, pages);
             job.done->store(true, std::memory_order_release);
             job.done->notify_all();
             {
@@ -370,39 +370,41 @@ private:
         }
     }
 
-    static void Copy(Job& job, Common::ScratchBuffer<u8>& layout) {
+    static void Copy(Job& job, std::vector<u8*>& pages) {
         const auto start = std::chrono::steady_clock::now();
-        std::span<u8> output;
+        const std::span<const u8> source{job.source.data(), job.source.size()};
         if (job.segments.size() == 1) {
-            output = {job.segments.front().pointer, job.size};
+            CopyTiledRect({job.segments.front().pointer, job.size}, source, job.bytes_per_pixel,
+                          job.dst_width, job.dst_block_height, job.dst_x, job.dst_y,
+                          job.src_width, job.src_block_height, job.src_x, job.src_y,
+                          job.extent_x, job.extent_y, job.native_tiling);
         } else {
-            layout.resize_destructive(job.size);
-            output = {layout.data(), job.size};
-            if (job.read_old) {
-                std::size_t offset = 0;
-                for (const auto& segment : job.segments) {
-                    std::memcpy(output.data() + offset, segment.pointer, segment.size);
-                    offset += segment.size;
-                }
-            }
-        }
-        CopyTiledRect(output, {job.source.data(), job.source.size()}, job.bytes_per_pixel,
-                      job.dst_width, job.dst_block_height, job.dst_x, job.dst_y, job.src_width,
-                      job.src_block_height, job.src_x, job.src_y, job.extent_x, job.extent_y,
-                      job.native_tiling);
-        if (job.segments.size() != 1) {
+            // Each GOB goes straight to its page: the destination outside the rectangle is
+            // neither read nor written.
+            pages.clear();
             std::size_t offset = 0;
             for (const auto& segment : job.segments) {
-                std::memcpy(segment.pointer, output.data() + offset, segment.size);
+                for (std::size_t done = 0; done < segment.size;) {
+                    const std::size_t address = job.first_page_offset + offset + done;
+                    if (pages.size() == (address >> 12)) {
+                        pages.push_back(segment.pointer + done);
+                    }
+                    done += (std::min)(segment.size - done, 0x1000 - (address & 0xfff));
+                }
                 offset += segment.size;
             }
+            CopyTiledRectToPages(pages, job.first_page_offset, job.size, source,
+                                 job.bytes_per_pixel, job.dst_width, job.dst_block_height,
+                                 job.dst_x, job.dst_y, job.src_width, job.src_block_height,
+                                 job.src_x, job.src_y, job.extent_x, job.extent_y,
+                                 job.native_tiling);
         }
         static const bool trace = std::getenv("EDEN_NX2_RT_TRACE") != nullptr;
         static u32 traced{};
         const double elapsed =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
                 .count();
-        if (trace && elapsed >= 2.0 && traced < 64) {
+        if (trace && elapsed >= 2.0 && traced < 512) {
             ++traced;
             LOG_INFO(HW_GPU, "nx2 async blit worker {:.1f} ms: {:#x} bytes, {} segments",
                      elapsed, job.size, job.segments.size());
@@ -475,14 +477,14 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
     // Large tiled copies go to a worker, so the GPU thread only snapshots the source.
     constexpr std::size_t MinAsyncSize = 1 << 20;
     if (tiled_copy && AsyncBlitsEnabled() && dst_window.size >= MinAsyncSize &&
-        src.Address() != dst.Address()) {
+        src.Address() != dst.Address() && (dst_window.address % GOB_SIZE) == 0) {
         if (!impl->async_copier) {
             impl->async_copier = std::make_unique<AsyncTiledCopier>();
         }
         AsyncTiledCopier::Job job{
             .source = impl->async_copier->TakeBuffer(src_window.size),
             .size = dst_window.size,
-            .read_old = !covers_window,
+            .first_page_offset = static_cast<u32>(dst_window.address & 0xfff),
             .bytes_per_pixel = src_bytes_per_pixel,
             .dst_width = dst.width,
             .dst_block_height = dst.block_height,

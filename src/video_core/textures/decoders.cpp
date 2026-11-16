@@ -255,10 +255,14 @@ void UnswizzleSubrect(std::span<u8> output, std::span<const u8> input, u32 bytes
     }
 }
 
-void CopyTiledRect(std::span<u8> output, std::span<const u8> input, u32 bytes_per_pixel,
-                   u32 dst_width, u32 dst_block_height, u32 dst_x, u32 dst_y, u32 src_width,
-                   u32 src_block_height, u32 src_x, u32 src_y, u32 extent_x, u32 extent_y,
-                   bool native_tiling) {
+namespace {
+// CopyTiledRect with the destination GOB at `offset` found by `output_gob(offset)`.
+template <typename OutputGob>
+void CopyTiledRectImpl(OutputGob&& output_gob, std::size_t output_size,
+                       std::span<const u8> input, u32 bytes_per_pixel, u32 dst_width,
+                       u32 dst_block_height, u32 dst_x, u32 dst_y, u32 src_width,
+                       u32 src_block_height, u32 src_x, u32 src_y, u32 extent_x, u32 extent_y,
+                       bool native_tiling) {
     const auto gob_offset = [](u32 width_bytes, u32 block_height, u32 gob_x, u32 gob_y) {
         const size_t gobs_in_x = Common::DivCeilLog2(width_bytes, GOB_SIZE_X_SHIFT);
         const size_t block_size = gobs_in_x << (GOB_SIZE_SHIFT + block_height);
@@ -281,12 +285,13 @@ void CopyTiledRect(std::span<u8> output, std::span<const u8> input, u32 bytes_pe
                                           dst_gob_x + gx, dst_gob_y + gy);
             const size_t in = gob_offset(src_width * bytes_per_pixel, src_block_height,
                                          src_gob_x + gx, src_gob_y + gy);
-            if (out + GOB_SIZE > output.size() || in + GOB_SIZE > input.size()) [[unlikely]] {
+            if (out + GOB_SIZE > output_size || in + GOB_SIZE > input.size()) [[unlikely]] {
                 continue;
             }
+            u8* const output = output_gob(out);
             const u32 bytes = (std::min)(GOB_SIZE_X, extent_bytes - gx * GOB_SIZE_X);
             if (rows == GOB_SIZE_Y && bytes == GOB_SIZE_X) {
-                std::memcpy(&output[out], &input[in], GOB_SIZE);
+                std::memcpy(output, &input[in], GOB_SIZE);
                 continue;
             }
             // A GOB on the rectangle's right or bottom edge: copy only the pixels inside it.
@@ -295,11 +300,40 @@ void CopyTiledRect(std::span<u8> output, std::span<const u8> input, u32 bytes_pe
                 for (u32 x = 0; x < bytes; x += bytes_per_pixel) {
                     const u32 offset =
                         NativeGobOffset(pdep<SWIZZLE_X_BITS>(x) | swizzled_y, native_tiling);
-                    std::memcpy(&output[out + offset], &input[in + offset], bytes_per_pixel);
+                    std::memcpy(output + offset, &input[in + offset], bytes_per_pixel);
                 }
             }
         }
     }
+}
+} // Anonymous namespace
+
+void CopyTiledRect(std::span<u8> output, std::span<const u8> input, u32 bytes_per_pixel,
+                   u32 dst_width, u32 dst_block_height, u32 dst_x, u32 dst_y, u32 src_width,
+                   u32 src_block_height, u32 src_x, u32 src_y, u32 extent_x, u32 extent_y,
+                   bool native_tiling) {
+    CopyTiledRectImpl([&](std::size_t offset) { return output.data() + offset; },
+                      output.size(), input, bytes_per_pixel, dst_width, dst_block_height, dst_x,
+                      dst_y, src_width, src_block_height, src_x, src_y, extent_x, extent_y,
+                      native_tiling);
+}
+
+void CopyTiledRectToPages(std::span<u8* const> pages, u32 first_page_offset,
+                          std::size_t output_size, std::span<const u8> input, u32 bytes_per_pixel,
+                          u32 dst_width, u32 dst_block_height, u32 dst_x, u32 dst_y,
+                          u32 src_width, u32 src_block_height, u32 src_x, u32 src_y,
+                          u32 extent_x, u32 extent_y, bool native_tiling) {
+    constexpr std::size_t PageBits = 12;
+    constexpr std::size_t PageMask = (std::size_t{1} << PageBits) - 1;
+    const auto output_gob = [&](std::size_t offset) {
+        const std::size_t address = first_page_offset + offset;
+        const std::size_t page = address >> PageBits;
+        const std::size_t in_page = address & PageMask;
+        return pages[page] + (page == 0 ? in_page - first_page_offset : in_page);
+    };
+    CopyTiledRectImpl(output_gob, output_size, input, bytes_per_pixel, dst_width,
+                      dst_block_height, dst_x, dst_y, src_width, src_block_height, src_x, src_y,
+                      extent_x, extent_y, native_tiling);
 }
 
 std::size_t CalculateSize(bool tiled, u32 bytes_per_pixel, u32 width, u32 height, u32 depth,
