@@ -47,6 +47,14 @@ enum Id : size_t {
     VoxelCellSize,     ///< terrain cell size, % of the game's (a bigger cell: fewer cells)
     VoxelBorderMeshOff, ///< terrain IsNoBorderMesh forced on
     ShadowMaskOff,     ///< IsUseShadowMask forced off
+    DecalOff,          ///< IsUseDecal forced off
+    DepthBloomOff,     ///< IsUseDepthBloom forced off
+    BloomExtensionOff, ///< IsUseBloomExtention forced off
+    RadialBlurOff,     ///< IsUseRadialBlurDrawer forced off
+    ThunderOff,        ///< IsUseThunderRenderer forced off
+    WetModelOff,       ///< IsUseWetModelCtrl forced off
+    CloudShapeOff,     ///< IsUseCloudShape forced off
+    DofIndirectOff,    ///< IsUseDofIndirectCtrl forced off
     Count,
 };
 
@@ -86,6 +94,14 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"voxel_cell_size", "EDEN_NX2_DKQ_VOXEL_CELL_SIZE", 50, 300, 100},
     {"voxel_border_mesh_off", "EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF", 1, 1, 0},
     {"shadow_mask_off", "EDEN_NX2_DKQ_SHADOW_MASK_OFF", 1, 1, 0},
+    {"decal_off", "EDEN_NX2_DKQ_DECAL_OFF", 1, 1, 0},
+    {"depth_bloom_off", "EDEN_NX2_DKQ_DEPTH_BLOOM_OFF", 1, 1, 0},
+    {"bloom_extension_off", "EDEN_NX2_DKQ_BLOOM_EXTENSION_OFF", 1, 1, 0},
+    {"radial_blur_off", "EDEN_NX2_DKQ_RADIAL_BLUR_OFF", 1, 1, 0},
+    {"thunder_off", "EDEN_NX2_DKQ_THUNDER_OFF", 1, 1, 0},
+    {"wet_model_off", "EDEN_NX2_DKQ_WET_MODEL_OFF", 1, 1, 0},
+    {"cloud_shape_off", "EDEN_NX2_DKQ_CLOUD_SHAPE_OFF", 1, 1, 0},
+    {"dof_off", "EDEN_NX2_DKQ_DOF_OFF", 1, 1, 0},
 }};
 
 /// One number per knob; 0 leaves the game's own.
@@ -266,6 +282,17 @@ constexpr u32 RadialBlurScaleParam = 0x508; // RadialBlurRenderScale
 constexpr u32 RadialBlurSamplesParam = 0x500; // RadialBlurSamplingNum
 constexpr u32 ColorDecalMaxParam = 0x280;     // ColorDecalMaxNum
 constexpr u32 GgxFilterParam = 0x210;         // IsUseGGXFilter
+// The switches read in place, where the game builds its directors: the param's offset
+constexpr std::array<std::pair<Id, u32>, 8> FeatureFlags{{
+    {DecalOff, 0x80}, // IsUseDecal
+    {DepthBloomOff, 0x118}, // IsUseDepthBloom
+    {BloomExtensionOff, 0x110}, // IsUseBloomExtention
+    {RadialBlurOff, 0xa0}, // IsUseRadialBlurDrawer
+    {ThunderOff, 0xf8}, // IsUseThunderRenderer
+    {WetModelOff, 0x178}, // IsUseWetModelCtrl
+    {CloudShapeOff, 0x188}, // IsUseCloudShape
+    {DofIndirectOff, 0x128}, // IsUseDofIndirectCtrl
+}};
 constexpr u32 ShadowMaskParam = 0xe0;           // IsUseShadowMask
 constexpr u32 CubeMapOcclusionParam = 0x218;  // IsUseCubeMapOcclusionCheck
 constexpr u32 OcclusionDepthParam = 0x520;    // OcclusionQueryThresholdDepth
@@ -551,6 +578,28 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                     0x14000000U | (static_cast<u32>(routine - sites[i]) & 0x3FFFFFFU));
             }
             result[CameraFar] = State::Applied;
+        }
+    }
+
+    // The switches read in place: `ldr xM, [xK, #offset]; ldrb wN, [xM, #0x64]`, each with
+    // exactly one such pair. The load of the value becomes `movz wN, #0`.
+    for (const auto& [id, offset] : FeatureFlags) {
+        if (set(id) == 0) {
+            continue;
+        }
+        size_t found = 0, at = 0;
+        for (size_t i = 0; i + 1 < count; ++i) {
+            const u32 first = word(i), second = word(i + 1);
+            if ((first & 0xFFC00000U) == 0xF9400000U && ((first >> 10) & 0xFFFU) * 8 == offset &&
+                (second & 0xFFFFFC00U) == (0x39400000U | (ValueOffset << 10)) &&
+                ((second >> 5) & 31U) == (first & 31U)) {
+                at = i + 1;
+                ++found;
+            }
+        }
+        if (found == 1) {
+            put(at, Movz(word(at) & 31U, 0));
+            result[id] = State::Applied;
         }
     }
 

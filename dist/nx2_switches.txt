@@ -305,6 +305,17 @@
 #EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF=1
 # SHADOW_MASK_OFF=1: turn off the game's shadow masks (volume shadows). For testing.
 #EDEN_NX2_DKQ_SHADOW_MASK_OFF=1
+# Each switches off one feature the game builds at start: DECAL_OFF, DEPTH_BLOOM_OFF,
+# BLOOM_EXTENSION_OFF, RADIAL_BLUR_OFF, THUNDER_OFF, WET_MODEL_OFF, CLOUD_SHAPE_OFF, DOF_OFF=1.
+# Something that expects the feature may break. For testing.
+#EDEN_NX2_DKQ_DECAL_OFF=1
+#EDEN_NX2_DKQ_DEPTH_BLOOM_OFF=1
+#EDEN_NX2_DKQ_BLOOM_EXTENSION_OFF=1
+#EDEN_NX2_DKQ_RADIAL_BLUR_OFF=1
+#EDEN_NX2_DKQ_THUNDER_OFF=1
+#EDEN_NX2_DKQ_WET_MODEL_OFF=1
+#EDEN_NX2_DKQ_CLOUD_SHAPE_OFF=1
+#EDEN_NX2_DKQ_DOF_OFF=1
 
 # --- Mario Kart World dynamic frame rate (game-specific; core/loader/nx2_mkw_dynamic_fps.h) ---
 # MKW_DYN=1: while Mario Kart World's main module loads, patch its frame mode choice in memory

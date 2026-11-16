@@ -180,6 +180,30 @@ void ConfigureBananza::RetranslateUI() {
         tr("Shadow masks off"),
         tr("Turns off the game's shadow masks (the volume shadows). Shadows or darkening may go "
            "missing. For testing.")};
+    texts[Quality::DecalOff] = {
+        tr("Decals off"),
+        tr("Skips creating the game's decal director (decals are not drawn). May break something that expects it. For testing.")};
+    texts[Quality::DepthBloomOff] = {
+        tr("Depth bloom off"),
+        tr("Skips the depth bloom. For testing.")};
+    texts[Quality::BloomExtensionOff] = {
+        tr("Bloom extension off"),
+        tr("Skips the bloom extension. For testing.")};
+    texts[Quality::RadialBlurOff] = {
+        tr("Radial blur off"),
+        tr("Skips the radial blur drawer. For testing.")};
+    texts[Quality::ThunderOff] = {
+        tr("Thunder off"),
+        tr("Skips the thunder renderer. For testing.")};
+    texts[Quality::WetModelOff] = {
+        tr("Wet models off"),
+        tr("Skips the wet model control (no wet look on models). For testing.")};
+    texts[Quality::CloudShapeOff] = {
+        tr("Cloud shapes off"),
+        tr("Skips the cloud shapes. For testing.")};
+    texts[Quality::DofIndirectOff] = {
+        tr("Depth of field off"),
+        tr("Skips the indirect depth of field control. For testing.")};
     texts[Quality::VoxelCellSize] = {
         tr("Terrain cell size"),
         tr("Scales the terrain's cell size (a bigger cell: fewer cells). Not in the presets: the "

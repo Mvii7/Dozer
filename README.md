@@ -233,6 +233,14 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Reflection filtering off, cube map occlusion check off | on | skips those two steps of the reflection cube maps (for testing) |
 | Terrain cell size | 100% | scales the terrain's cell size (a bigger cell: fewer cells). The saved terrain may be laid out for the game's own, so this may corrupt it (for testing) |
 | Terrain border mesh off | on | builds no border mesh between neighbouring terrain chunks; cracks may show (for testing) |
+| Decals off | on | Skips creating the game's decal director (decals are not drawn). May break something that expects it. For testing. |
+| Depth bloom off | on | Skips the depth bloom. For testing. |
+| Bloom extension off | on | Skips the bloom extension. For testing. |
+| Radial blur off | on | Skips the radial blur drawer. For testing. |
+| Thunder off | on | Skips the thunder renderer. For testing. |
+| Wet models off | on | Skips the wet model control (no wet look on models). For testing. |
+| Cloud shapes off | on | Skips the cloud shapes. For testing. |
+| Depth of field off | on | Skips the indirect depth of field control. For testing. |
 | Shadow masks off | on | turns off the game's shadow masks (volume shadows); shadows may go missing (for testing) |
 | Occlusion query depth / radius / polygons | 100% | scales the thresholds of the game's occlusion queries (effect not known; for testing) |
 

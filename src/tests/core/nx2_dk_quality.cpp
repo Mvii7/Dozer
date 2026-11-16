@@ -30,7 +30,8 @@ constexpr size_t DepthGetter = 0x290, RadiusGetter = 0x2a0, PolygonGetter = 0x2b
 constexpr size_t MeshStore = 0x500;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
 constexpr size_t Voxel = 0x400;
-constexpr size_t CellSite = 0x700, BorderSite = 0x740, ShadowMaskGetter = 0x760;
+constexpr size_t CellSite = 0x700, BorderSite = 0x740, ShadowMaskGetter = 0x760,
+    FlagSite = 0x800;
 
 struct Text {
     std::vector<u32> words;
@@ -62,6 +63,10 @@ struct Text {
         words[ShadowMaskGetter] = LdrX(8, 0, ShadowMaskParam);
         words[ShadowMaskGetter + 1] = 0x39419100; // ldrb w0, [x8, #0x64]
         words[ShadowMaskGetter + 2] = Ret;
+        for (size_t i = 0; i < FeatureFlags.size(); ++i) {
+            words[FlagSite + i * 4] = 0xF9400000U | ((FeatureFlags[i].second / 8) << 10) | (9 << 5) | 10;
+            words[FlagSite + i * 4 + 1] = 0x39419000U | (10 << 5) | 11; // ldrb w11, [x10, #0x64]
+        }
         PutGetter(BlurSamplesGetter, RadialBlurSamplesParam, false);
         PutGetter(CubeMapGetter, CubeMapIntervalParam, false);
         PutGetter(DecalGetter, ColorDecalMaxParam, false);
@@ -425,4 +430,19 @@ TEST_CASE("Nx2DkQuality: the terrain cell size and the border mesh", "[core]") {
     const u32 back = text.words[routine + 7];
     const auto offset = static_cast<s32>(back << 6) >> 6; // sign-extended 26 bits
     REQUIRE(static_cast<s64>(routine + 7) + offset == static_cast<s64>(CellSite + 1));
+}
+
+TEST_CASE("Nx2DkQuality: the features switched off in place", "[core]") {
+    Text text;
+    std::vector<u32> expected = text.words;
+    Values values{};
+    for (const auto& flag : FeatureFlags) {
+        values[flag.first] = 1;
+    }
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
+    for (size_t i = 0; i < FeatureFlags.size(); ++i) {
+        REQUIRE(result[FeatureFlags[i].first] == State::Applied);
+        expected[FlagSite + i * 4 + 1] = 0x5280000B; // movz w11, #0
+    }
+    REQUIRE(text.words == expected);
 }
