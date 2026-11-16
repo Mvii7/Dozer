@@ -506,6 +506,7 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
             .native_tiling = UseNativeTiling(),
             .done = std::make_shared<std::atomic<bool>>(false),
         };
+        const bool reused_buffer = job.source.capacity() >= src_window.size;
         job.source.resize_destructive(src_window.size);
         stages[1] = Clock::now();
         // Flush once, then copy the source in large host-contiguous pieces instead of per page.
@@ -543,10 +544,11 @@ bool SoftwareBlitEngine::Blit(Fermi2D::Surface& src, Fermi2D::Surface& dst,
             if (trace && end - start >= std::chrono::milliseconds{2}) {
                 TraceSlowBlit(src, dst, config, start,
                               fmt::format("async: buffer {:.1f} srcflush {:.1f} snapshot {:.1f} "
-                                          "({} segments) sparse {:.1f} dstflush {:.1f} push {:.1f} "
+                                          "({} segments, {} buffer) sparse {:.1f} dstflush {:.1f} push {:.1f} "
                                           "inval {:.1f}",
                                           ms(0, stages[1]), ms(1, stages[2]), ms(2, stages[3]),
-                                          impl->src_segments.size(), ms(3, stages[4]),
+                                          impl->src_segments.size(),
+                                          reused_buffer ? "reused" : "new", ms(3, stages[4]),
                                           ms(4, stages[5]), ms(5, stages[6]), ms(6, end)));
             }
             return true;
