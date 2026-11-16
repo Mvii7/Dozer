@@ -89,7 +89,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
 /// One number per knob; 0 leaves the game's own.
 using Values = std::array<int, Count>;
 
-/// The presets of the Bananza tab. Default leaves every setting to the game; Custom is whatever
+/// The presets of the Quality tab. Default leaves every setting to the game; Custom is whatever
 /// else the rows hold.
 enum class Preset : u8 {
     Default,

@@ -344,6 +344,10 @@ extern "C" SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 #endif
 
     state->system.SetContentProvider(std::make_unique<FileSys::ContentProviderUnion>());
+    // Holds the updates and DLC an NX archive brings, as the Qt frontend does.
+    static FileSys::ManualContentProvider manual_provider;
+    state->system.RegisterContentProvider(FileSys::ContentProviderUnionSlot::FrontendManual,
+                                          &manual_provider);
     state->system.SetFilesystem(std::make_shared<FileSys::RealVfsFilesystem>());
     state->system.GetFileSystemController().CreateFactories(*state->system.GetFilesystem());
     state->system.GetUserChannel().clear();
@@ -372,7 +376,7 @@ extern "C" SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
         const u16 error_id = u16(load_result) - loader_id;
         LOG_CRITICAL(Frontend,
             "While attempting to load the ROM requested, an error occurred. See "
-            "README_DOZER.md or report it at https://github.com/Mvii7/Dozer/issues."
+            "README.md or report it at https://github.com/Mvii7/Dozer/issues."
             "\n\nError Code: {:04X}-{:04X}\nError Description: {}",
             loader_id, error_id, Loader::ResultStatus(error_id));
         return SDL_APP_FAILURE;

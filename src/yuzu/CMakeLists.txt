@@ -124,6 +124,8 @@ add_executable(yuzu
     configuration/configure_nx2perf.cpp
     configuration/configure_nx2perf.h
     configuration/configure_nx2perf.ui
+    configuration/configure_nx2perf_per_game.cpp
+    configuration/configure_nx2perf_per_game.h
     configuration/configure_network.cpp
     configuration/configure_network.h
     configuration/configure_network.ui
@@ -482,4 +484,10 @@ endif()
 # Remember that the linker is incredibly stupid.
 target_link_libraries(yuzu PRIVATE OpenSSL::SSL OpenSSL::Crypto SDL3::SDL3)
 
+# NX archive conversion and editing (nx_tools.cpp) runs nxformat in the process, linked statically.
+if (TARGET nxformat::static_nozstd)
+    target_sources(yuzu PRIVATE nx_tools.h nx_tools.cpp)
+    target_link_libraries(yuzu PRIVATE nxformat::static_nozstd)
+    target_compile_definitions(yuzu PRIVATE YUZU_NX_TOOLS)
+endif()
 create_target_directory_groups(yuzu)

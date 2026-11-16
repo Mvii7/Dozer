@@ -8,6 +8,7 @@
 
 #include <array>
 #include <atomic>
+#include <map>
 #include <vector>
 #include <QByteArray>
 #include <QMetaType>
@@ -112,6 +113,7 @@ struct Values {
                                                            true};
 
     Setting<bool> first_start{linkage, true, "firstStart", Category::Ui};
+    Setting<bool> suggest_nx_for_nup{linkage, true, "suggestNxForNup", Category::Ui};
     Setting<bool> pause_when_in_background{linkage,
                                            false,
                                            "pauseWhenInBackground",
@@ -237,6 +239,8 @@ struct Values {
     Core::Nx2PerfSettings::Switches nx2perf{};
     // The [Bananza] group (core/loader/nx2_dk_quality.h), global only.
     Loader::Nx2DkQuality::Values nx2dkq{};
+    // The tuning boxes a game sets over those, by program id (the [AnkaGames] array).
+    std::map<u64, Core::Nx2PerfSettings::Overrides> nx2perf_games;
 
     bool configuration_applied;
     bool reset_to_defaults;

@@ -42,6 +42,8 @@
 #include "yuzu/configuration/configure_graphics_extensions.h"
 #include "yuzu/configuration/configure_input_per_game.h"
 #include "yuzu/configuration/configure_network.h"
+#include "yuzu/configuration/configure_bananza.h"
+#include "yuzu/configuration/configure_nx2perf_per_game.h"
 #include "yuzu/configuration/configure_per_game.h"
 #include "yuzu/configuration/configure_per_game_addons.h"
 #include "yuzu/configuration/configure_system.h"
@@ -72,10 +74,18 @@ ConfigurePerGame::ConfigurePerGame(QWidget* parent, u64 title_id_, const std::st
     system_tab = std::make_unique<ConfigureSystem>(system_, tab_group, *builder, this);
     network_tab = std::make_unique<ConfigureNetwork>(system_, this);
     applets_tab = std::make_unique<ConfigureApplets>(system_, tab_group, *builder, this);
+    nx2perf_tab = std::make_unique<ConfigureNx2PerfPerGame>(title_id, this);
+    if (Core::Nx2PerfSettings::GameOf(title_id) == Core::Nx2PerfSettings::Game::Bananza) {
+        quality_tab = std::make_unique<ConfigureBananza>(this);
+    }
 
     ui->setupUi(this);
 
     ui->tabWidget->addTab(addons_tab.get(), tr("Add-Ons"));
+    ui->tabWidget->addTab(nx2perf_tab.get(), tr("Tuning"));
+    if (quality_tab) {
+        ui->tabWidget->addTab(quality_tab.get(), tr("Quality"));
+    }
     ui->tabWidget->addTab(system_tab.get(), tr("System"));
     ui->tabWidget->addTab(cpu_tab.get(), tr("CPU"));
     ui->tabWidget->addTab(graphics_tab.get(), tr("Graphics"));
@@ -113,6 +123,10 @@ void ConfigurePerGame::ApplyConfiguration() {
     input_tab->ApplyConfiguration();
     network_tab->ApplyConfiguration();
     applets_tab->ApplyConfiguration();
+    nx2perf_tab->ApplyConfiguration();
+    if (quality_tab) {
+        quality_tab->ApplyConfiguration();
+    }
 
     if (Settings::IsDockedMode() && Settings::values.players.GetValue()[0].controller_type ==
                                         Settings::ControllerType::Handheld) {

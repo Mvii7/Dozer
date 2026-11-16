@@ -32,10 +32,6 @@ ConfigureNx2Perf::ConfigureNx2Perf(QWidget* parent)
         {ui->front_macro_lean, &S::front_macro_lean, {"EDEN_NX2_FRONT_MACRO_LEAN"}},
         {ui->fg_timed, &S::fg_timed, {"EDEN_NX2_FG_TIMED"}},
         {ui->osd, &S::osd, {"EDEN_NX2_OSD"}},
-        {ui->dk_dyn, &S::dk_dyn, {"EDEN_NX2_DK_DYN"}},
-        {ui->dk_pacing,
-         &S::dk_pacing,
-         {"EDEN_NX2_PRESENT_INTERVAL_WORD", "EDEN_NX2_MODE_PACE", "EDEN_NX2_PACE_SPIN_US"}},
     };
 
     SetConfiguration();
@@ -119,19 +115,19 @@ void ConfigureNx2Perf::ShowPreset() {
         ui->preset->setCurrentIndex(Perf::IndexOf(preset));
     }
     switch (preset) {
-    case Perf::Preset::Recommended:
-        ui->preset_text->setText(tr("The recommended settings. Foliage is rendered at a performance "
+    case Perf::Preset::Balanced:
+        ui->preset_text->setText(tr("The balanced settings. Foliage is rendered at a performance "
                                     "cost. Reactive Flushing off (Graphics, Advanced). Like "
-                                    "start-recommended.bat."));
+                                    "start-balanced.bat."));
         break;
-    case Perf::Preset::Fast:
+    case Perf::Preset::Performance:
         ui->preset_text->setText(tr("The fastest settings, with read traps and Reactive Flushing "
                                     "off. Foliage is not rendered for a performance gain. Like "
-                                    "start-fast.bat."));
+                                    "start-performance.bat."));
         break;
     case Perf::Preset::Reactive:
         ui->preset_text->setText(
-            tr("The recommended settings with Reactive Flushing instead of read traps (barrier "
+            tr("The balanced settings with Reactive Flushing instead of read traps (barrier "
                "feedback loops on, RX_RT_FIT=3). Like start-reactive-experimental.bat."));
         break;
     case Perf::Preset::Safe:

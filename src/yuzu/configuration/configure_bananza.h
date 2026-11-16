@@ -14,7 +14,7 @@ class QComboBox;
 class QLabel;
 class QSlider;
 
-// The Bananza tab (Tuning): Donkey Kong Bananza's quality settings
+// The Quality tab of Donkey Kong Bananza's Properties: its quality settings
 // (core/loader/nx2_dk_quality.h), one row each: a box to override the game's value and a slider
 // for the value. A row whose variable was set outside the program is greyed out: theirs is used.
 class ConfigureBananza : public QWidget {

@@ -211,6 +211,12 @@ struct UserConfig {
     /// accesses will hit the memory callbacks.
     bool recompile_on_fastmem_failure = true;
 
+    /// With recompile_on_fastmem_failure: a faulting fastmem read (not an exclusive one) is
+    /// taken as transient, as when the embedder read-protects a page only until its next read.
+    /// It goes through the callbacks once and keeps fastmem; a location that keeps faulting is
+    /// recompiled anyway.
+    bool fastmem_read_faults_transient = false;
+
     /// Determines if we should use the above fastmem_pointer for exclusive reads and
     /// writes. On x64, dynarmic currently relies on x64 cmpxchg semantics which may not
     /// provide fully accurate emulation.

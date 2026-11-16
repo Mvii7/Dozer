@@ -14,7 +14,6 @@
 #include "ui_configure.h"
 #include "yuzu/configuration/configure_applets.h"
 #include "yuzu/configuration/configure_audio.h"
-#include "yuzu/configuration/configure_bananza.h"
 #include "yuzu/configuration/configure_cpu.h"
 #include "yuzu/configuration/configure_debug_tab.h"
 #include "yuzu/configuration/configure_dialog.h"
@@ -62,7 +61,6 @@ ConfigureDialog::ConfigureDialog(QWidget* parent, HotkeyRegistry& registry_,
       input_tab{std::make_unique<ConfigureInput>(system_, this)},
       network_tab{std::make_unique<ConfigureNetwork>(system_, this)},
       nx2perf_tab{std::make_unique<ConfigureNx2Perf>(this)},
-      bananza_tab{std::make_unique<ConfigureBananza>(this)},
       profile_tab{std::make_unique<ConfigureProfileManager>(system_, this)},
       system_tab{std::make_unique<ConfigureSystem>(system_, nullptr, *builder, this)},
       web_tab{std::make_unique<ConfigureWeb>(this)} {
@@ -84,7 +82,6 @@ ConfigureDialog::ConfigureDialog(QWidget* parent, HotkeyRegistry& registry_,
     ui->tabWidget->addTab(profile_tab.get(), tr("Profiles"));
     ui->tabWidget->addTab(network_tab.get(), tr("Network"));
     ui->tabWidget->addTab(nx2perf_tab.get(), tr("Tuning"));
-    ui->tabWidget->addTab(bananza_tab.get(), tr("Bananza"));
     ui->tabWidget->addTab(system_tab.get(), tr("System"));
     ui->tabWidget->addTab(ui_tab.get(), tr("Game List"));
     ui->tabWidget->addTab(web_tab.get(), tr("Web"));
@@ -107,7 +104,7 @@ ConfigureDialog::ConfigureDialog(QWidget* parent, HotkeyRegistry& registry_,
     connect(ui_tab.get(), &ConfigureUi::LanguageChanged, this, &ConfigureDialog::OnLanguageChanged);
     connect(general_tab.get(), &ConfigureGeneral::ExternalContentDirsChanged, this,
             &ConfigureDialog::ExternalContentDirsChanged);
-    // Tuning presets: Recommended and Fast turn Reactive Flushing off, Experimental turns it on
+    // Tuning presets: Balanced and Performance turn Reactive Flushing off, Experimental turns it on
     // (with barrier feedback loops).
     nx2perf_tab->SetReactiveFlushing([this](bool on, bool barrier_on) {
         return graphics_advanced_tab->SetReactiveFlushing(on, barrier_on);
@@ -123,6 +120,7 @@ ConfigureDialog::ConfigureDialog(QWidget* parent, HotkeyRegistry& registry_,
     }
 
     adjustSize();
+    resize(size() * 1.2);
     ui->selectorList->setCurrentRow(0);
 
     // Selects the leftmost button on the bottom bar (Cancel as of writing)
@@ -151,7 +149,6 @@ void ConfigureDialog::ApplyConfiguration() {
     network_tab->ApplyConfiguration();
     applets_tab->ApplyConfiguration();
     nx2perf_tab->ApplyConfiguration();
-    bananza_tab->ApplyConfiguration();
     system.ApplySettings();
     Settings::LogSettings();
 }
@@ -196,7 +193,7 @@ void ConfigureDialog::PopulateSelectionList() {
           {graphics_tab.get(), graphics_advanced_tab.get(), graphics_extensions_tab.get()}},
          {tr("Audio"), {audio_tab.get()}},
          {tr("Controls"), input_tab->GetSubTabs()},
-         {tr("Tuning"), {nx2perf_tab.get(), bananza_tab.get()}}},
+         {tr("Tuning"), {nx2perf_tab.get()}}},
     };
 
     [[maybe_unused]] const QSignalBlocker blocker(ui->selectorList);

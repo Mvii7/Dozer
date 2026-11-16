@@ -57,6 +57,17 @@ namespace Common::Nx2Reactive {
     return enabled;
 }
 
+/// EDEN_NX2_TRAP_FASTMEM=0: a read trap fault takes the guest instruction off fastmem for good,
+/// as any other fastmem fault does. Unset: it keeps fastmem (dynarmic's
+/// fastmem_read_faults_transient), unless that location keeps faulting.
+[[nodiscard]] inline bool TrapFaultsKeepFastmem() noexcept {
+    static const bool enabled = [] {
+        const char* value = GetEnv("EDEN_NX2_TRAP_FASTMEM");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
 enum class Counter : u32 {
     CpuReads,               ///< GPU::OnCPURead calls
     SyncFlushes,            ///< Of them, the ones that flushed and waited for it (not preemptive)
@@ -103,6 +114,12 @@ enum class Counter : u32 {
     Draws,                  ///< Guest draws (RasterizerVulkan::Draw / DrawIndirect calls)
     FitInPassBarriers,      ///< EDEN_NX2_RX_RT_FIT=3: feedback barriers inside the render pass
     FitInPassLightBarriers, ///< Of them, recorded by light draws
+    FastmemReadFallbacks,   ///< Fastmem fallbacks of reads (the rest were writes or exclusives)
+    FastmemFaultsKept,      ///< Read faults that kept fastmem (EDEN_NX2_TRAP_FASTMEM)
+    TrapsDisarmedAtCopyBack, ///< Read-trapped pages a copy back disarmed (EDEN_NX2_TRAP_POP_DISARM)
+    CopyBackWaits,          ///< Read traps that waited for copies back (EDEN_NX2_COPYBACK_WAIT)
+    CopyBackWaitUs,         ///< Their wait, microseconds
+    CopyBackWaitMisses,     ///< Of them, the ones that still sync flushed (timeout, newer write)
     Count,
 };
 
@@ -265,7 +282,8 @@ struct Window {
                        "submits {}; copy back pops {} us (lock wait {} us); light refusals: "
                        "feedback {}, target cpu modified {} sparse {} alias {}, image cpu modified "
                        "{} alias {}; masked targets color {} depth {}; draws {}; rt fit in pass "
-                       "barriers {} (light {})",
+                       "barriers {} (light {}); fastmem read fallbacks {}, read faults kept {}; traps "
+                       "disarmed at copy back {}; copy back waits {} ({} us, {} missed)",
                        w.Get(C::Fences), w.Get(C::FencesSkipped), w.Get(C::FencesReal),
                        w.Get(C::FencesBufferCommit), w.Get(C::FencesTextureCommit),
                        w.Get(C::FencesBufferDeferred), w.Get(C::FenceExtraFlushes),
@@ -276,7 +294,10 @@ struct Window {
                        w.Get(C::RepeatViewCpuModified), w.Get(C::RepeatViewAlias),
                        w.Get(C::MaskedColorTargets), w.Get(C::MaskedDepthTargets),
                        w.Get(C::Draws), w.Get(C::FitInPassBarriers),
-                       w.Get(C::FitInPassLightBarriers));
+                       w.Get(C::FitInPassLightBarriers), w.Get(C::FastmemReadFallbacks),
+                       w.Get(C::FastmemFaultsKept), w.Get(C::TrapsDisarmedAtCopyBack),
+                       w.Get(C::CopyBackWaits), w.Get(C::CopyBackWaitUs),
+                       w.Get(C::CopyBackWaitMisses));
 }
 
 [[nodiscard]] inline std::string FormatWindow(const Window& w) {
