@@ -8,6 +8,17 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Donkey Kong Bananza: `EDEN_NX2_RX_ONE_SUBMIT=1` is set for it by the Tuning settings and the
+  launchers (start-safe.bat clears it). A real fence no longer submits a second, empty command
+  buffer after its own: about half the game's submissions, no visible change in play.
+
+- Split GPU thread front: an increasing run of 3D state methods goes to the front in one call
+  instead of one call per word (`EDEN_NX2_FRONT_RUNS=0` turns it off).
+
+- Buffer cache: the per-draw uniform, index, vertex and storage paths read the GPU fence setting
+  once a frame instead of on every draw, and a uniform bind whose stage slot already held the
+  range with other bytes compares them once instead of twice.
+
 - Donkey Kong Bananza's Properties window has a **Quality** tab (only that game has it): a Default / Balanced / Performance / Custom preset box and
   experimental quality sliders (render resolution range,
   bloom and radial blur buffers, cube map update interval, terrain LOD distance, terrain mesh simplification, camera far distance, colour decal
