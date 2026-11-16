@@ -98,6 +98,12 @@ inline int Nx2GpuWrittenFilter() {
     static std::atomic<s8> mode{-1};
     return ReadNx2Mode(mode, "EDEN_NX2_GPU_WRITTEN_FILTER");
 }
+/// EDEN_NX2_DEFER_SUBTRACT: the GPU-written ranges hold removals back until a use needs them
+/// (SummarizedRangeSet::SetDeferSubtracts). =0 as before.
+inline bool Nx2DeferSubtract() {
+    static std::atomic<s8> mode{-1};
+    return ReadNx2Mode(mode, "EDEN_NX2_DEFER_SUBTRACT") != 0;
+}
 /// EDEN_NX2_UNIFORM_SYNC_SKIP: EDEN_NX2_LIGHT_SYNC_SKIP for the uniform way's light draws too
 /// (GraphicsPipeline::ConfigureUniforms; same anchor chain, frame and epoch guard). =0 as before;
 /// =2 synchronizes the streams it would skip and logs any that uploaded.

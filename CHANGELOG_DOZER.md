@@ -19,6 +19,12 @@ and `=0` brings back the 2.0.0 code path.
   writes read the GPU fence setting once a frame instead of on every call, and a uniform bind whose stage slot already held the
   range with other bytes compares them once instead of twice.
 
+- Buffer cache: an inline write into GPU-written memory no longer cuts its range out of the
+  GPU-written ranges at once. The cut is held back and dropped when the next draw marks the
+  storage buffer around it as written again, which saves the tree work of removing and re-adding
+  the range on every draw (~4 s of 58 s of the memory stage's samples in a Bananza profile). Any
+  other use of the ranges makes the held cuts first. `EDEN_NX2_DEFER_SUBTRACT=0` turns it off.
+
 - Opaque ASTC to BC1 (`EDEN_NX2_ASTC_BC1`) is now on by default only when the driver's memory
   budget is under 12 GiB. Finding the opaque images reads every block of each new ASTC image on the
   GPU thread: in Mario Kart World, ~180 ms of a frame that brought ~1100 new course textures. With
