@@ -62,6 +62,9 @@ enum Id : size_t {
     ModelForegroundOff, ///< IsUseModelForegroundDrawer forced off
     PrePassLightOff, ///< IsUsePrePassLight forced off
     SkyModelOff, ///< IsUseSkyModel forced off
+    FoliageCap,        ///< foliage models drawn / kept alive at once, % (ClusteredRendering)
+    FoliageFrustumOff, ///< foliage frustum expansion set to 0
+    FoliageDensity,    ///< foliage dynamic placement chance and rate, %
     Count,
 };
 
@@ -116,6 +119,9 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"model_foreground_off", "EDEN_NX2_DKQ_MODEL_FOREGROUND_OFF", 1, 1, 0},
     {"prepass_light_off", "EDEN_NX2_DKQ_PREPASS_LIGHT_OFF", 1, 1, 0},
     {"sky_model_off", "EDEN_NX2_DKQ_SKY_MODEL_OFF", 1, 1, 0},
+    {"foliage_cap", "EDEN_NX2_DKQ_FOLIAGE_CAP", 5, 100, 100},
+    {"foliage_frustum_off", "EDEN_NX2_DKQ_FOLIAGE_FRUSTUM_OFF", 1, 1, 0},
+    {"foliage_density", "EDEN_NX2_DKQ_FOLIAGE_DENSITY", 5, 100, 100},
 }};
 
 /// One number per knob; 0 leaves the game's own.
@@ -330,7 +336,8 @@ constexpr int GameOcclusionPolygon = 1000;
 inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const Values& values) {
     Result result{};
     bool any = false;
-    for (size_t i = 0; i < Count; ++i) {
+    // The foliage rows are game data (nx2_dk_foliage.h), not instructions: not marked here
+    for (size_t i = 0; i < FoliageCap; ++i) {
         if (Sanitize(values[i], Knobs[i]) != 0) {
             result[i] = State::Missed;
             any = true;

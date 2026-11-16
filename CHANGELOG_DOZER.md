@@ -15,6 +15,9 @@ and `=0` brings back the 2.0.0 code path.
   ticked row replaces one value the game reads from its graphics parameters while it loads
   (`EDEN_NX2_DKQ_*`, `core/loader/nx2_dk_quality.h`); all unticked by default. Found by reading
   the game's executable; which ones help, and which break something, is still being tried.
+  Three rows change the game's foliage settings files (ClusteredRendering) as the RomFS is read,
+  as an in-memory mod layer (`core/loader/nx2_dk_foliage.h`): models at once, view margin, placement
+  density.
 
 ## Dozer 0.1.3 (`v0.1.3`)
 

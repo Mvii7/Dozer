@@ -237,6 +237,19 @@ void ConfigureBananza::RetranslateUI() {
     texts[Quality::SkyModelOff] = {
         tr("Sky model off"),
         tr("Skips the sky model. Something that expects it may break. For testing.")};
+    texts[Quality::FoliageCap] = {
+        tr("Foliage models at once"),
+        tr("Scales how many foliage models (grass, weeds, plants) the game draws and keeps alive "
+           "at once (its own caps are 25000 and 50000). Done in the game's settings files as "
+           "they are read, so it needs a restart.")};
+    texts[Quality::FoliageFrustumOff] = {
+        tr("Foliage view margin off"),
+        tr("Sets the extra margin the game adds around the view for foliage (50%) to 0: less "
+           "foliage outside the picture, but it may pop in at the edges when turning.")};
+    texts[Quality::FoliageDensity] = {
+        tr("Foliage placement density"),
+        tr("Scales the chance and the rate of the foliage the game places while you play. "
+           "Foliage already placed in the stage's data is not changed (use the cap for that).")};
     texts[Quality::VoxelCellSize] = {
         tr("Terrain cell size"),
         tr("Scales the terrain's cell size (a bigger cell: fewer cells). Not in the presets: the "

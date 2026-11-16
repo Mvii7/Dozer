@@ -15,6 +15,7 @@
 #include "common/settings.h"
 #ifndef _WIN32
 #include "common/string_util.h"
+#include "common/zstd_compression.h"
 #endif
 
 #include "core/core.h"
@@ -31,6 +32,7 @@
 #include "core/hle/service/filesystem/filesystem.h"
 #include "core/hle/service/ns/language.h"
 #include "core/hle/service/set/settings_server.h"
+#include "core/loader/nx2_dk_foliage.h"
 #include "core/loader/loader.h"
 #include "core/loader/nso.h"
 #include "core/memory/cheat_engine.h"
@@ -39,6 +41,40 @@ namespace FileSys {
 namespace {
 
 constexpr u32 SINGLE_BYTE_MODULUS = 0x100;
+
+// A layer with Donkey Kong Bananza's foliage settings as the Quality tab changes them, made from
+// the game's own files (core/loader/nx2_dk_foliage.h). Null when no row is set or the game does
+// not have the files.
+VirtualDir MakeFoliageLayer(const VirtualDir& extracted) {
+    const auto settings = Loader::Nx2DkFoliage::FromEnvironment();
+    if (!settings.Active() || extracted == nullptr) {
+        return nullptr;
+    }
+    std::vector<VirtualFile> files;
+    const auto patch = [&](std::string_view path, auto&& patcher) {
+        const auto file = extracted->GetFileRelative(path);
+        if (file == nullptr) {
+            return;
+        }
+        auto data = Common::Compression::DecompressDataZSTD(file->ReadAllBytes());
+        if (data.empty() || !patcher(std::span<u8>{data}, settings)) {
+            return;
+        }
+        auto packed = Common::Compression::CompressDataZSTD(data.data(), data.size(), 19);
+        const auto name = path.substr(path.find_last_of('/') + 1);
+        files.push_back(std::make_shared<VectorVfsFile>(std::move(packed), std::string{name}));
+    };
+    patch(Loader::Nx2DkFoliage::SystemSettingsPath, Loader::Nx2DkFoliage::PatchSystemSettings);
+    patch(Loader::Nx2DkFoliage::MaterialSettingsPath,
+          Loader::Nx2DkFoliage::PatchMaterialSettings);
+    if (files.empty()) {
+        return nullptr;
+    }
+    auto dir = std::make_shared<VectorVfsDirectory>(std::move(files), std::vector<VirtualDir>{},
+                                                    "ClusteredRendering");
+    return std::make_shared<VectorVfsDirectory>(std::vector<VirtualFile>{},
+                                                std::vector<VirtualDir>{std::move(dir)});
+}
 
 constexpr std::array<const char*, 14> EXEFS_FILE_NAMES{
     "main",    "main.npdm", "rtld",    "sdk",     "subsdk0", "subsdk1", "subsdk2",
@@ -541,15 +577,21 @@ std::vector<Core::Memory::CheatEntry> PatchManager::CreateCheatList(const BuildI
 void PatchManager::ApplyLayeredFS(VirtualFile& romfs, ContentRecordType type) const {
     const auto load_dir = GetModificationLoadRoot();
     const auto sdmc_load_dir = GetModificationLoadRoot(true);
+    const bool foliage =
+        type == ContentRecordType::Program && Loader::Nx2DkFoliage::FromEnvironment().Active();
     if ((type != ContentRecordType::Program && type != ContentRecordType::Data &&
          type != ContentRecordType::HtmlDocument) ||
-        (load_dir == nullptr && sdmc_load_dir == nullptr)) {
+        (load_dir == nullptr && sdmc_load_dir == nullptr && !foliage)) {
         return;
     }
 
     const auto disabled = GetDisabledAddons();
-    std::vector<VirtualDir> patch_dirs = load_dir->GetSubdirectories();
-    if (std::find(disabled.cbegin(), disabled.cend(), "SDMC") == disabled.cend()) {
+    std::vector<VirtualDir> patch_dirs;
+    if (load_dir != nullptr) {
+        patch_dirs = load_dir->GetSubdirectories();
+    }
+    if (sdmc_load_dir != nullptr &&
+        std::find(disabled.cbegin(), disabled.cend(), "SDMC") == disabled.cend()) {
         patch_dirs.push_back(sdmc_load_dir);
     }
     std::sort(patch_dirs.begin(), patch_dirs.end(),
@@ -583,12 +625,23 @@ void PatchManager::ApplyLayeredFS(VirtualFile& romfs, ContentRecordType type) co
     }
 
     // When there are no layers to apply, return early as there is no need to rebuild the RomFS
-    if (layers.empty() && layers_ext.empty()) {
+    if (layers.empty() && layers_ext.empty() && !foliage) {
         return;
     }
 
     auto extracted = ExtractRomFS(romfs);
     if (extracted == nullptr) {
+        return;
+    }
+
+    // Below the mods' files, above the game's own
+    if (foliage) {
+        if (auto layer = MakeFoliageLayer(extracted)) {
+            layers.emplace_back(std::move(layer));
+            mods.emplace_back("Dozer foliage settings (Quality tab)");
+        }
+    }
+    if (layers.empty() && layers_ext.empty()) {
         return;
     }
 

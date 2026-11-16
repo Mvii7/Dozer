@@ -248,6 +248,9 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Foreground models off | on | Skips the foreground model drawer. (for testing; may crash) |
 | Pre-pass light off | on | Skips the pre-pass light. (for testing; may crash) |
 | Sky model off | on | Skips the sky model. (for testing; may crash) |
+| Foliage models at once | 100% | scales the most grass, weeds and plants drawn and kept alive at once (the game's caps are 25000 and 50000); changes the game's settings files as the RomFS is read |
+| Foliage view margin off | on | removes the extra margin around the view for foliage; it may pop in when turning |
+| Foliage placement density | 100% | scales the chance and rate of the foliage placed while playing (foliage in the stage's data is only cut by the cap) |
 | Shadow masks off | on | turns off the game's shadow masks (volume shadows); shadows may go missing (for testing) |
 | Occlusion query depth / radius / polygons | 100% | scales the thresholds of the game's occlusion queries (effect not known; for testing) |
 
