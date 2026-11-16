@@ -195,6 +195,10 @@
 #EDEN_NX2_BLIT_NATIVE_TILING=0
 # ASYNC_SKIP=1: skip draws whose pipeline is still compiling (things pop in; off).
 #EDEN_NX2_ASYNC_SKIP=1
+# ASTC_BC1=1|0: re-compressed ASTC images with no alpha go to BC1 (half the memory of BC3), found by
+# reading every block of each new image on the GPU thread (hitches when many textures stream in).
+# Unset: on only when the driver's memory budget is under 12 GiB.
+#EDEN_NX2_ASTC_BC1=0
 
 # --- presents and frame pacing (core/hle/service/nx2_gsv.h, video_core/nx2_mode_pace*.h) ---
 # PRESENT_INTERVAL=<1-4>: hold each present at least n vblanks after the previous one.
