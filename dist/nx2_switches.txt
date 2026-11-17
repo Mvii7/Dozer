@@ -323,8 +323,9 @@
 # every fence, images downloaded at every bind) is dropped when not read again for that
 # many frames. 0 / unset: kept for good.
 #EDEN_NX2_READ_LATCH_AGE=60
-# RX_ONE_SUBMIT=1: no second, empty submission after a fence's own one.
-#EDEN_NX2_RX_ONE_SUBMIT=1
+# RX_ONE_SUBMIT=0: a second, empty submission after a fence's own one, as before (default: left
+# out, in every game).
+#EDEN_NX2_RX_ONE_SUBMIT=0
 # RX_COALESCE=<n>: a buffer copy back that alone would turn a fence real waits for a fence
 # made anyway, at most n - 1 fences (only without delayed fences). 0 / 1: off.
 #EDEN_NX2_RX_COALESCE=4
