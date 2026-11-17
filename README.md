@@ -260,7 +260,7 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Voxel surface effects off / Depth collision effects off | off | turn those effect systems off in the effect settings; not tested yet |
 | Effects alive per rule / Terrain material effects | 100% | scales how many effects the emission rules keep alive and how many terrain material effects (dust, smoke, snow) are active at once |
 | Shadow masks off | on | turns off the game's shadow masks (volume shadows); shadows may go missing (for testing) |
-| Occlusion query depth / radius / polygons | 100% | scales the thresholds of the game's occlusion queries (effect not known; for testing) |
+| Occlusion query depth / radius / polygons | 100% | scales the thresholds of the game's occlusion queries: an object is tested for being hidden (behind terrain, say) only if its radius is under the radius (50) and it has more polygons than the polygons (1000); a higher radius (up to 1000%) and fewer polygons (down to 1%) test more objects. Depth's effect is not known |
 
 Rows marked "for testing" have an effect nobody has measured yet, and none of them is in the presets.
 

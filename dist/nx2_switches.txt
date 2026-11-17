@@ -309,8 +309,10 @@
 # occlusion check. For testing.
 #EDEN_NX2_DKQ_GGX_FILTER_OFF=1
 #EDEN_NX2_DKQ_CUBEMAP_OCCLUSION_OFF=1
-# OCCLUSION_DEPTH / OCCLUSION_RADIUS / OCCLUSION_POLYGON=<10-400>: the occlusion query thresholds
-# (the game's 50, 50, 1000) in % of the game's. Effect not known.
+# OCCLUSION_DEPTH=<10-400> / OCCLUSION_RADIUS=<10-1000> / OCCLUSION_POLYGON=<1-400>: the occlusion
+# query thresholds (the game's 50, 50, 1000) in % of the game's. An object is tested for being hidden
+# only if its radius is under RADIUS and it has more polygons than POLYGON: a higher radius and
+# fewer polygons test more objects. DEPTH's effect is not known.
 #EDEN_NX2_DKQ_OCCLUSION_DEPTH=100
 #EDEN_NX2_DKQ_OCCLUSION_RADIUS=100
 #EDEN_NX2_DKQ_OCCLUSION_POLYGON=100

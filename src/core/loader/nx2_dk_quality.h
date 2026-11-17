@@ -44,8 +44,8 @@ enum Id : size_t {
     GgxFilterOff,      ///< IsUseGGXFilter forced off (reflection cube map filtering)
     CubeMapOcclusionOff, ///< IsUseCubeMapOcclusionCheck forced off
     OcclusionDepth,    ///< OcclusionQueryThresholdDepth, % of the game's
-    OcclusionRadius,   ///< OcclusionQueryThresholdRadius, % of the game's
-    OcclusionPolygon,  ///< OcclusionQueryThresholdPolygon, % of the game's
+    OcclusionRadius,   ///< OcclusionQueryThresholdRadius, %: objects under it get a query
+    OcclusionPolygon,  ///< OcclusionQueryThresholdPolygon, %: objects over it get a query
     VoxelBorderMeshOff, ///< terrain IsNoBorderMesh forced on
     ShadowMaskOff,     ///< IsUseShadowMask forced off
     DecalOff,          ///< IsUseDecal forced off
@@ -118,8 +118,8 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"ggx_filter_off", "EDEN_NX2_DKQ_GGX_FILTER_OFF", 1, 1, 0},
     {"cubemap_occlusion_off", "EDEN_NX2_DKQ_CUBEMAP_OCCLUSION_OFF", 1, 1, 0},
     {"occlusion_depth", "EDEN_NX2_DKQ_OCCLUSION_DEPTH", 10, 400, 100},
-    {"occlusion_radius", "EDEN_NX2_DKQ_OCCLUSION_RADIUS", 10, 400, 100},
-    {"occlusion_polygon", "EDEN_NX2_DKQ_OCCLUSION_POLYGON", 10, 400, 100},
+    {"occlusion_radius", "EDEN_NX2_DKQ_OCCLUSION_RADIUS", 10, 1000, 100},
+    {"occlusion_polygon", "EDEN_NX2_DKQ_OCCLUSION_POLYGON", 1, 400, 100},
     {"voxel_border_mesh_off", "EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF", 1, 1, 0},
     {"shadow_mask_off", "EDEN_NX2_DKQ_SHADOW_MASK_OFF", 1, 1, 0},
     {"decal_off", "EDEN_NX2_DKQ_DECAL_OFF", 1, 1, 0},

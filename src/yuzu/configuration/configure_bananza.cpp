@@ -190,12 +190,16 @@ void ConfigureBananza::RetranslateUI() {
            "higher or lower does is not known yet: for testing.")};
     texts[Quality::OcclusionRadius] = {
         tr("Occlusion query radius"),
-        tr("Scales the radius threshold of the game's occlusion queries (its own is 50). For "
-           "testing.")};
+        tr("The game tests whether an object is hidden (behind terrain, say) only if its radius "
+           "is under this (its own is 50) and it has more polygons than the row below. Higher: "
+           "bigger objects are tested too, so more hidden ones are skipped, but more queries "
+           "cost more and hidden objects may pop in a frame late.")};
     texts[Quality::OcclusionPolygon] = {
         tr("Occlusion query polygons"),
-        tr("Scales the polygon count threshold of the game's occlusion queries (its own is "
-           "1000). For testing.")};
+        tr("Objects with more polygons than this (the game's: 1000) are tested for being hidden "
+           "before they are drawn. Lower: simpler objects are tested too, so more hidden ones "
+           "are skipped; the tests themselves cost something, so very low may cost more than "
+           "it saves.")};
     texts[Quality::ShadowMaskOff] = {
         tr("Shadow masks off"),
         tr("Turns off the game's shadow masks (the volume shadows). Shadows or darkening may go "
