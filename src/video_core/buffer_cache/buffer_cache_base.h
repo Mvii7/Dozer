@@ -493,6 +493,13 @@ public:
     /// Return true when a CPU region is modified from the GPU
     [[nodiscard]] bool IsRegionGpuModified(DAddr addr, size_t size);
 
+    /// Whether all of [addr, addr + size) holds GPU writes.
+    [[nodiscard]] bool IsRegionFullyGpuModified(DAddr addr, size_t size) const;
+
+    /// Whether every buffer the bound compute program writes already holds GPU writes in full
+    /// (after UpdateComputeBuffers, before BindHostComputeBuffers marks them written).
+    [[nodiscard]] bool ComputeWritesHoldGpuData() const;
+
     /// The guest CPU reads [addr, addr + size) (pages its reads are tracked on): without
     /// AsyncBufferDownloads, GPU writes there are still copied back at fences from now on.
     /// Returns whether part of it was not noted before.

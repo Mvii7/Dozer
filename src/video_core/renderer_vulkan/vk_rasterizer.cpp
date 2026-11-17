@@ -1933,8 +1933,13 @@ void RasterizerVulkan::DispatchCompute() {
     }
     CheckBufferLockOffB("RasterizerVulkan::DispatchCompute");
     std::scoped_lock lock{texture_cache.mutex, buffer_cache.mutex};
-    if (!pipeline->Configure(*kepler_compute, *gpu_memory, scheduler, buffer_cache,
-                             texture_cache)) {
+    const auto configured =
+        pipeline->Configure(*kepler_compute, *gpu_memory, scheduler, buffer_cache, texture_cache,
+                            kepler_compute->IsNativeMode() ? &pipeline_cache : nullptr);
+    if (configured == ComputePipeline::ConfigureResult::Skipped) {
+        return;
+    }
+    if (configured == ComputePipeline::ConfigureResult::Failed) {
         if (kepler_compute->IsNativeMode()) throw Shader::RuntimeError("Native compute resources unavailable");
         return;
     }
@@ -2709,6 +2714,7 @@ void RasterizerVulkan::TickFrame() {
     }
     NoteLightWork();
     draw_counter = 0;
+    pipeline_cache.TickFrame();
     guest_descriptor_queue.TickFrame();
     compute_pass_descriptor_queue.TickFrame();
     descriptor_buffer_ring.TickFrame();

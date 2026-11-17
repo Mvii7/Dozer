@@ -557,6 +557,15 @@ typename P::ImageView& TextureCache<P>::GetImageView(ImageViewId id) noexcept {
 }
 
 template <class P>
+bool TextureCache<P>::HoldsGpuData(ImageViewId id) const noexcept {
+    const ImageId image_id = slot_image_views[id].image_id;
+    if (!image_id || image_id == NULL_IMAGE_ID) {
+        return true;
+    }
+    return True(slot_images[image_id].flags & ImageFlagBits::GpuModified);
+}
+
+template <class P>
 bool TextureCache<P>::PublishComputeCollisionImage(u32 index) {
     const auto view_id = VisitImageView(index, true);
     if (view_id == NULL_IMAGE_VIEW_ID || !slot_image_views[view_id].image_id) {

@@ -238,6 +238,9 @@ public:
     /// Mark an image as modified from the GPU
     void MarkModification(ImageId id) noexcept;
 
+    /// Whether the view's image already holds GPU writes (a null view has nothing to hold).
+    [[nodiscard]] bool HoldsGpuData(ImageViewId id) const noexcept;
+
     /// Fill image_view_ids with the graphics/compute images in indices
     void FillImageViews(std::span<ImageViewInOut> views, bool compute, bool blacklist = true);
 

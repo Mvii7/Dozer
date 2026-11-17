@@ -471,6 +471,32 @@ std::chrono::microseconds GetTranslationWaitBudget() {
     return std::chrono::microseconds{static_cast<s64>(milliseconds * 1000.0)};
 }
 
+// EDEN_NX2_ASYNC_SKIP: what a native (Switch 2) draw does when its pipeline is still compiling.
+// Unset: waits for it within a per-frame budget, then is skipped. =0 waits in full (before 0.1.7);
+// =1 is skipped at once (Selevet 8b076b167f).
+PipelineCache::NativeDrawWait GetNativeDrawWait() {
+    const char* const value = std::getenv("EDEN_NX2_ASYNC_SKIP");
+    if (value != nullptr && value[0] == '0') {
+        return PipelineCache::NativeDrawWait::Full;
+    }
+    if (value != nullptr && value[0] == '1') {
+        return PipelineCache::NativeDrawWait::Skip;
+    }
+    return PipelineCache::NativeDrawWait::Bounded;
+}
+
+// EDEN_NX2_ASYNC_DRAW_WAIT_MS=<milliseconds>: how long native draws may wait in all, per frame,
+// for pipelines still compiling (translation waits included). Default 8.
+std::chrono::microseconds GetNativeDrawWaitBudget() {
+    constexpr double DefaultMilliseconds = 8.0;
+    const char* const value = std::getenv("EDEN_NX2_ASYNC_DRAW_WAIT_MS");
+    const double milliseconds = value != nullptr ? std::strtod(value, nullptr) : DefaultMilliseconds;
+    if (!(milliseconds > 0.0)) {
+        return std::chrono::microseconds{0};
+    }
+    return std::chrono::microseconds{static_cast<s64>(milliseconds * 1000.0)};
+}
+
 // Translation threads also run the driver compile of what they translate. They get half of the
 // pipeline workers' count, so they cannot hold up the driver compiles queued on those (compute
 // pipelines wait for theirs).
@@ -535,6 +561,9 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
                             !device.HasBrokenParallelShaderCompiling()},
       use_shader_reuse{IsShaderReuseAllowed()},
       translation_wait_budget{GetTranslationWaitBudget()},
+      native_draw_wait{use_asynchronous_shaders ? GetNativeDrawWait() : NativeDrawWait::Full},
+      native_draw_wait_budget{GetNativeDrawWaitBudget()},
+      native_draw_wait_left{native_draw_wait_budget},
       num_translation_threads{use_async_translation ? GetTotalTranslationWorkers() : 0},
       workers(device.HasBrokenParallelShaderCompiling() ? 1ULL : GetTotalPipelineWorkers(),
               "VkPipelineBuilder", {}, Common::ThreadPlacement::Background),
@@ -547,6 +576,20 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
                  "Native graphics pipelines are translated on {} worker threads, wait budget "
                  "{:.1f} ms",
                  num_translation_threads, translation_wait_budget.count() / 1000.0);
+    }
+    switch (native_draw_wait) {
+    case NativeDrawWait::Full:
+        LOG_INFO(Render_Vulkan, "Native draws wait for pipelines still compiling");
+        break;
+    case NativeDrawWait::Bounded:
+        LOG_INFO(Render_Vulkan,
+                 "Native draws wait up to {:.1f} ms per frame for pipelines still compiling, "
+                 "then are skipped",
+                 native_draw_wait_budget.count() / 1000.0);
+        break;
+    case NativeDrawWait::Skip:
+        LOG_INFO(Render_Vulkan, "Native draws with a pipeline still compiling are skipped");
+        break;
     }
     LOG_INFO(Render_Vulkan, "Graphics pipelines {} the shaders of earlier pipelines that fit them",
              use_shader_reuse ? "reuse" : "do not reuse (EDEN_NX2_SHADER_REUSE=0)");
@@ -1059,24 +1102,67 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
     return BuiltPipeline(current_pipeline);
 }
 
-GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) const noexcept {
-    if (pipeline->IsBuilt()) {
+void PipelineCache::TickFrame() noexcept {
+    native_draw_wait_left = native_draw_wait_budget;
+}
+
+GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) {
+    if (pipeline->IsBuilt() || !use_asynchronous_shaders) {
         return pipeline;
     }
-    // EDEN_NX2_ASYNC_SKIP=1 (Selevet 8b076b167f; off by default, as what is skipped pops in
-    // later): native (Switch 2) draws wait for their pipeline, and in Donkey Kong Bananza those
-    // waits reached ~3 s in 10 s of new scenery (255 ms at once), the game running slow and then
-    // catching up. With it, with asynchronous shaders on, the draws CanSkipDraw allows are skipped
-    // while the pipeline builds, as for other titles (PrepareDraw finds no pipeline).
-    static const bool async_skip = [] {
-        const char* value = std::getenv("EDEN_NX2_ASYNC_SKIP");
-        return value != nullptr && value[0] == '1';
-    }();
-    if (!use_asynchronous_shaders ||
-        (maxwell3d->GetNativeMacroEngine().native_turing && !async_skip)) {
-        return pipeline;
+    if (!maxwell3d->GetNativeMacroEngine().native_turing) {
+        return CanSkipDraw() ? nullptr : pipeline;
     }
-    return CanSkipDraw() ? nullptr : pipeline;
+    // Waiting in full for native pipelines reached ~3 s in 10 s of new scenery in Donkey Kong
+    // Bananza (255 ms at once), the game running slow and then catching up. A skipped draw pops in
+    // once its pipeline is built (PrepareDraw finds no pipeline).
+    switch (native_draw_wait) {
+    case NativeDrawWait::Full:
+        return pipeline;
+    case NativeDrawWait::Skip:
+        return CanSkipDraw() ? nullptr : pipeline;
+    case NativeDrawWait::Bounded: {
+        if (!CanSkipNativeDraw()) {
+            return pipeline;
+        }
+        if (native_draw_wait_left.count() <= 0) {
+            return nullptr;
+        }
+        const auto begin = std::chrono::steady_clock::now();
+        const bool built = pipeline->WaitBuilt(native_draw_wait_left);
+        ChargeNativeDrawWait(std::chrono::steady_clock::now() - begin);
+        return built ? pipeline : nullptr;
+    }
+    }
+    return pipeline;
+}
+
+bool PipelineCache::WaitForUnbuiltDispatch(ComputePipeline& pipeline) {
+    switch (native_draw_wait) {
+    case NativeDrawWait::Full:
+        return true;
+    case NativeDrawWait::Skip:
+        return false;
+    case NativeDrawWait::Bounded:
+        break;
+    }
+    if (native_draw_wait_left.count() <= 0) {
+        return false;
+    }
+    const auto begin = std::chrono::steady_clock::now();
+    const bool built = pipeline.WaitBuilt(native_draw_wait_left);
+    ChargeNativeDrawWait(std::chrono::steady_clock::now() - begin);
+    return built;
+}
+
+void PipelineCache::ChargeNativeDrawWait(std::chrono::steady_clock::duration waited) noexcept {
+    native_draw_wait_left -= std::chrono::duration_cast<std::chrono::microseconds>(waited);
+}
+
+bool PipelineCache::CanSkipNativeDraw() const noexcept {
+    // Depth-tested draws are scene geometry, redrawn every frame. Draws without one can build a
+    // texture used later (or only once), which a skip would leave stale.
+    return maxwell3d->regs.zeta_enable != 0 && maxwell3d->regs.depth_test_enable != 0;
 }
 
 bool PipelineCache::CanSkipDraw() const noexcept {
@@ -1499,8 +1585,9 @@ void PipelineCache::SerializeGraphicsPipeline(const GraphicsPipelineCacheKey& ke
 // compile is not done yet, and a later draw adopts the pipeline.
 //
 // Only native (Switch 2) programs take this path: their code was lowered when the shader cache
-// met them, so translation never reads guest memory for instructions. Compute pipelines stay
-// synchronous: a skipped dispatch would lose its outputs.
+// met them, so translation never reads guest memory for instructions. Compute pipelines are
+// translated on the GPU thread: only their driver compile is asynchronous
+// (WaitForUnbuiltDispatch).
 bool PipelineCache::CanTranslateAsynchronously() const {
     if (!use_async_translation || !CanSkipDraw()) {
         return false;
@@ -1550,13 +1637,21 @@ std::optional<std::future<void>> PipelineCache::QueueGraphicsTranslation() {
 bool PipelineCache::WaitForGraphicsTranslation(std::future<void>& done) {
     // Waiting only helps when the job starts right away: behind a backlog it would spend the
     // whole budget without getting the pipeline.
-    if (translation_wait_budget.count() == 0 ||
-        translating_graphics.size() > num_translation_threads) {
+    std::chrono::microseconds budget{translation_wait_budget};
+    const bool bounded = native_draw_wait == NativeDrawWait::Bounded;
+    if (bounded) {
+        budget = std::min(budget, native_draw_wait_left);
+    }
+    if (budget.count() <= 0 || translating_graphics.size() > num_translation_threads) {
         return false;
     }
     const auto begin = std::chrono::steady_clock::now();
-    const bool in_time = done.wait_for(translation_wait_budget) == std::future_status::ready;
-    GetTranslationReport().Waited(std::chrono::steady_clock::now() - begin, in_time);
+    const bool in_time = done.wait_for(budget) == std::future_status::ready;
+    const auto waited = std::chrono::steady_clock::now() - begin;
+    if (bounded) {
+        ChargeNativeDrawWait(waited);
+    }
+    GetTranslationReport().Waited(waited, in_time);
     if (!in_time) {
         return false;
     }

@@ -6,6 +6,17 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased
+
+- Ported from Lichii build 341: fewer shader freezes. Switch 2 draws and compute dispatches no
+  longer wait in full for a pipeline that is still compiling. They wait within 8 ms per frame in
+  all (`EDEN_NX2_ASYNC_DRAW_WAIT_MS`; translation waits count too), then are skipped and catch up
+  once the pipeline is built. A draw is skipped only when it is depth-tested, a dispatch only when
+  everything it writes already holds GPU writes (a skip leaves last frame's results, never
+  garbage); other ones still wait. `EDEN_NX2_ASYNC_SKIP=0` waits in full as before, `=1` skips at
+  once. The driver's pipeline cache is written to a temporary file and renamed over the old one, so
+  a crash while saving keeps the previous cache.
+
 ## Dozer 0.1.6 (`v0.1.6`)
 
 - Ported from Lichii: CPU-side performance work. A guest core polls for interrupts in hardware for

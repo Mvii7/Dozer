@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -227,6 +228,14 @@ public:
 
     [[nodiscard]] bool IsBuilt() const noexcept {
         return is_built.load(std::memory_order::relaxed);
+    }
+
+    /// Waits up to timeout for the build; true if it is done. The GPU thread and the scheduler's
+    /// worker can both wait, so the build wakes all waiters.
+    [[nodiscard]] bool WaitBuilt(std::chrono::microseconds timeout) {
+        std::unique_lock lock{build_mutex};
+        return build_condvar.wait_for(lock, timeout,
+                                      [this] { return is_built.load(std::memory_order::relaxed); });
     }
 
     template <typename Spec>

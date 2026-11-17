@@ -122,16 +122,35 @@ public:
 
     [[nodiscard]] ComputePipeline* CurrentComputePipeline(u64* native_key = nullptr);
 
+    /// Gives native draws their per-frame wait budget again.
+    void TickFrame() noexcept;
+
+    /// A native dispatch whose pipeline is still compiling, with outputs that already hold GPU
+    /// writes: whether to go on with it (built in time, or EDEN_NX2_ASYNC_SKIP=0) or skip it.
+    [[nodiscard]] bool WaitForUnbuiltDispatch(ComputePipeline& pipeline);
+
+    /// What a native draw does when its pipeline is still compiling (EDEN_NX2_ASYNC_SKIP).
+    enum class NativeDrawWait {
+        Full,    ///< Waits until it is built.
+        Bounded, ///< Waits within the frame's budget, then is skipped.
+        Skip,    ///< Is skipped at once.
+    };
+
     void LoadDiskResources(u64 title_id, std::stop_token stop_loading,
                            const VideoCore::DiskResourceLoadCallback& callback);
 
 private:
     [[nodiscard]] GraphicsPipeline* CurrentGraphicsPipelineSlowPath();
 
-    [[nodiscard]] GraphicsPipeline* BuiltPipeline(GraphicsPipeline* pipeline) const noexcept;
+    [[nodiscard]] GraphicsPipeline* BuiltPipeline(GraphicsPipeline* pipeline);
 
     /// Whether the current draw may be skipped while its pipeline is being built.
     [[nodiscard]] bool CanSkipDraw() const noexcept;
+
+    /// The stricter test for native draws once they have waited their budget.
+    [[nodiscard]] bool CanSkipNativeDraw() const noexcept;
+
+    void ChargeNativeDrawWait(std::chrono::steady_clock::duration waited) noexcept;
 
     /// Builds the pipeline of graphics_key, which is not in graphics_cache. Returns false when it
     /// was left translating on a worker thread (the draw is skipped), true when graphics_cache
@@ -227,6 +246,10 @@ private:
     bool use_async_translation{};
     bool use_shader_reuse{};
     std::chrono::microseconds translation_wait_budget{};
+    NativeDrawWait native_draw_wait{};
+    std::chrono::microseconds native_draw_wait_budget{};
+    /// What is left of native_draw_wait_budget this frame (GPU thread only).
+    std::chrono::microseconds native_draw_wait_left{};
     size_t num_translation_threads{};
 
     GraphicsPipelineCacheKey graphics_key{};
