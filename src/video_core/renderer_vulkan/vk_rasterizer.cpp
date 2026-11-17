@@ -60,6 +60,7 @@
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 #include "video_core/nx2.h"
 #include "video_core/nx2_profile.h"
+#include "video_core/nx2_uniform_census.h"
 #include "video_core/nx2_stage_api.h"
 #include "video_core/renderer_vulkan/nx2_record_list.h"
 
@@ -1410,6 +1411,7 @@ void TraceWindowTarget(const Tegra::Engines::Maxwell3D& maxwell3d, Tegra::Memory
 } // Anonymous namespace
 
 void RasterizerVulkan::Draw(bool is_indexed, u32 instance_count) {
+    VideoCommon::Nx2UniformCensus::NoteDraw();
     if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
         Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::Draws, 1);
     }
@@ -1572,6 +1574,7 @@ void RasterizerVulkan::Draw(bool is_indexed, u32 instance_count) {
 }
 
 void RasterizerVulkan::DrawIndirect() {
+    VideoCommon::Nx2UniformCensus::NoteDraw();
     if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
         Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::Draws, 1);
     }
@@ -2191,6 +2194,15 @@ bool RasterizerVulkan::HoldsGpuWrittenData(DAddr addr, u64 size) {
     return false;
 }
 
+bool RasterizerVulkan::MayHoldImages(DAddr addr, u64 size) const {
+    // EDEN_NX2_TEX_PAGE_FILTER=0: the texture cache is always looked at under its lock.
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_TEX_PAGE_FILTER");
+        return value == nullptr || value[0] != '0';
+    }();
+    return !enabled || texture_cache.page_filter.Any(addr, size);
+}
+
 VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64 size) {
     // EDEN_NX2_REACTIVE_STATS: calls and the two cache mutexes' waits
     const bool stats = Common::Nx2Reactive::StatsEnabled();
@@ -2227,6 +2239,11 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
             buffer_cache.ForgetReadTraps(page_start, page_end - page_start);
         }
     }
+    if (!MayHoldImages(addr, size)) {
+        // No image was ever registered here: the texture cache has no area to give.
+        return VideoCommon::Nx2Reactive::CombineFlushArea(std::nullopt, page_start, page_end,
+                                                          flush_buffer);
+    }
     {
         const s64 lock_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
         std::scoped_lock lock{texture_cache.mutex};
@@ -2248,7 +2265,7 @@ void RasterizerVulkan::InvalidateRegion(DAddr addr, u64 size, VideoCommon::Cache
     if (addr == 0 || size == 0) {
         return;
     }
-    if (True(which & VideoCommon::CacheType::TextureCache)) {
+    if (True(which & VideoCommon::CacheType::TextureCache) && MayHoldImages(addr, size)) {
         std::scoped_lock lock{texture_cache.mutex};
         texture_cache.WriteMemory(addr, size);
     }
@@ -2323,12 +2340,41 @@ bool RasterizerVulkan::OnCPUWrite(DAddr addr, u64 size) {
     NoteLightWork();
     DEBUG_ASSERT(addr != 0 || size != 0);
     {
-        std::scoped_lock lock{buffer_cache.mutex};
-        if (buffer_cache.OnCPUWrite(addr, size)) {
+        // The pages the write untracks change their host protection after the lock is dropped:
+        // drawing waited for those system calls. A write trapping on a page still protected until
+        // then finds it already untracked and changes nothing. BufferCache::OnCPUWrite only
+        // untracks pages here (it never uploads), which is all that may wait. Device unmaps wait
+        // for these changes (BeginDeferredCachedUpdates). EDEN_NX2_DEFER_PROTECT=0: under the lock.
+        static const bool defer_enabled = [] {
+            const char* value = std::getenv("EDEN_NX2_DEFER_PROTECT");
+            return value == nullptr || value[0] != '0';
+        }();
+        static thread_local VideoCommon::DeferredPageCaching deferred;
+        const bool defer = defer_enabled && VideoCommon::t_deferred_page_caching == nullptr;
+        bool gpu_modified;
+        {
+            std::scoped_lock lock{buffer_cache.mutex};
+            if (defer) {
+                VideoCommon::t_deferred_page_caching = &deferred;
+            }
+            gpu_modified = buffer_cache.OnCPUWrite(addr, size);
+            if (defer) {
+                VideoCommon::t_deferred_page_caching = nullptr;
+                if (!deferred.Empty()) {
+                    device_memory.BeginDeferredCachedUpdates();
+                }
+            }
+        }
+        if (defer && !deferred.Empty()) {
+            deferred.ApplyAll();
+            device_memory.EndDeferredCachedUpdates();
+        }
+        if (gpu_modified) {
             return true;
         }
     }
-    {
+    // The back holds the texture cache's lock through each draw.
+    if (MayHoldImages(addr, size)) {
         std::scoped_lock lock{texture_cache.mutex};
         texture_cache.WriteMemory(addr, size);
     }
@@ -2766,8 +2812,29 @@ void RasterizerVulkan::AccelerateInlineToMemory(GPUVAddr address, size_t copy_si
     const bool defer = InlineDeferEnabled();
     // One cache at a time: holding both while waiting for either (std::lock) waited longer, the
     // fencing thread and CPU write traps holding one of them most of the time.
-    bool uploaded;
-    {
+    // InlineMemory uploads only into GPU-written buffer data, and every range the buffer cache
+    // records as GPU-written marks its pages in Tegra::g_nx2_gpu_written_pages (never cleared).
+    // A deferred write to pages without a mark changes nothing under the lock, and the uniform
+    // log hears of it at the next FlushCaching. EDEN_NX2_INLINE_NOLOCK=0: always locked.
+    static const bool nolock_enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_INLINE_NOLOCK");
+        return value == nullptr || value[0] != '0';
+    }();
+    const auto may_be_gpu_written = [&] {
+        const DAddr page_end = Common::AlignUp(*cpu_addr + copy_size, Core::DEVICE_PAGESIZE);
+        for (DAddr page = Common::AlignDown(*cpu_addr, Core::DEVICE_PAGESIZE); page < page_end;
+             page += DAddr{1} << Tegra::Nx2WrittenPageBits) {
+            if (Tegra::Nx2IsGpuWritten(page)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const bool lock_free = nolock_enabled && defer && copy_size != 0 &&
+                           Tegra::g_nx2_ampere.load(std::memory_order_relaxed) &&
+                           !may_be_gpu_written();
+    bool uploaded = false;
+    if (!lock_free) {
         CheckBufferLockOffB("RasterizerVulkan::AccelerateInlineToMemory");
         std::scoped_lock lock{buffer_cache.mutex};
         uploaded = buffer_cache.InlineMemory(*cpu_addr, copy_size, memory);

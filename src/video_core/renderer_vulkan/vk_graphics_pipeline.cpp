@@ -754,6 +754,7 @@ bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
     RenderAreaPushConstant render_area;
     const VideoCommon::SamplerId* samplers_it{samplers.data()};
     const VideoCommon::ImageViewInOut* views_it{views.data()};
+    [[maybe_unused]] size_t fragment_entry{};
     const auto prepare_stage{[&](size_t stage) LAMBDA_FORCEINLINE {
         {
             Profile::Scope scope{Profile::Zone::BindStageBuffers};
@@ -761,6 +762,9 @@ bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
         }
         {
             Profile::Scope scope{Profile::Zone::PushDescriptors};
+            if (stage == 4) {
+                fragment_entry = guest_descriptor_queue.UpdateCount();
+            }
             PushStageImageDescriptors(stage, rescaling, samplers_it, views_it);
         }
         const auto& info{stage_infos[stage]};
@@ -798,6 +802,11 @@ bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
         texture_cache.CheckFeedbackLoop(
             std::span<const VideoCommon::ImageViewInOut>{views.data(), views.size()},
             first_fragment_view);
+        if constexpr (Spec::enabled_stages[4]) {
+            CheckColorFeedbackLoop(
+                std::span<const VideoCommon::ImageViewInOut>{views.data(), views.size()},
+                first_fragment_view, fragment_entry);
+        }
     }
     if (IsBuilt() && !pipeline) {
         return false;
@@ -1262,6 +1271,7 @@ bool GraphicsPipeline::ConfigureTexturesImpl(const StageDrawReader& in,
     RenderAreaPushConstant render_area;
     const VideoCommon::SamplerId* samplers_it{samplers.data()};
     const VideoCommon::ImageViewInOut* views_it{views.data()};
+    [[maybe_unused]] size_t fragment_entry{};
     const auto prepare_stage{[&](size_t stage) LAMBDA_FORCEINLINE {
         // B's buffer entries of the stage, where BindHostStageBuffers puts them.
         const u32 stage_index = static_cast<u32>(stage);
@@ -1270,6 +1280,9 @@ bool GraphicsPipeline::ConfigureTexturesImpl(const StageDrawReader& in,
             in.StageEntryCount(stage_index));
         {
             Profile::Scope scope{Profile::Zone::PushDescriptors};
+            if (stage == 4) {
+                fragment_entry = guest_descriptor_queue.UpdateCount();
+            }
             PushStageImageDescriptors(stage, rescaling, samplers_it, views_it);
         }
         const auto& info{stage_infos[stage]};
@@ -1303,6 +1316,11 @@ bool GraphicsPipeline::ConfigureTexturesImpl(const StageDrawReader& in,
         texture_cache.CheckFeedbackLoop(
             std::span<const VideoCommon::ImageViewInOut>{views.data(), views.size()},
             first_fragment_view);
+        if constexpr (Spec::enabled_stages[4]) {
+            CheckColorFeedbackLoop(
+                std::span<const VideoCommon::ImageViewInOut>{views.data(), views.size()},
+                first_fragment_view, fragment_entry);
+        }
     }
     if (IsBuilt() && !pipeline) {
         return false;
@@ -1835,6 +1853,56 @@ void GraphicsPipeline::PushStageImageDescriptors(size_t stage, RescalingPushCons
     memo.texture_epoch = texture_epoch;
     memo.sampler_generation = sampler_generation;
     memo.valid = true;
+}
+
+void GraphicsPipeline::CheckColorFeedbackLoop(std::span<const VideoCommon::ImageViewInOut> views,
+                                              size_t first_fragment_view, size_t fragment_entry) {
+    for (const Shader::Info& stage_info : stage_infos) {
+        for (const auto& desc : stage_info.image_descriptors) {
+            if (desc.is_written) {
+                return;
+            }
+        }
+    }
+    const Shader::Info& info{stage_infos[4]};
+    size_t view_index = first_fragment_view +
+                        Shader::NumDescriptors(info.texture_buffer_descriptors) +
+                        Shader::NumDescriptors(info.image_buffer_descriptors);
+    bool snapshot_used{};
+    for (const auto& desc : info.texture_descriptors) {
+        for (u32 element = 0; element < desc.count; ++element, ++view_index, ++fragment_entry) {
+            if (desc.type != Shader::TextureType::Color2D || desc.is_depth ||
+                !views[view_index].id) {
+                continue;
+            }
+            const ImageView& sampled = texture_cache.GetImageView(views[view_index].id);
+            if (sampled.format != VideoCore::Surface::PixelFormat::A2B10G10R10_UNORM) {
+                continue;
+            }
+            // Do not replace a null/fallback descriptor with a real image.
+            if (guest_descriptor_queue.UpdateData()[fragment_entry].image.imageView !=
+                sampled.Handle(desc.type)) {
+                continue;
+            }
+            for (const auto attachment_id : texture_cache.ActiveColorTargets()) {
+                if (!attachment_id) {
+                    continue;
+                }
+                const ImageView& attachment = texture_cache.GetImageView(attachment_id);
+                if (const VkImageView snapshot =
+                        texture_cache.GetRuntime().ResolveColorFeedback(sampled, attachment)) {
+                    guest_descriptor_queue.ReplaceSampledImage(fragment_entry, snapshot);
+                    snapshot_used = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (snapshot_used) {
+        // The kept descriptors hold the original views: a later draw reusing them would sample
+        // the attachment again, so it takes the full setup instead.
+        image_descriptor_memos[4].valid = false;
+    }
 }
 
 bool GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,

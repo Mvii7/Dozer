@@ -36,6 +36,52 @@ enum class Type {
     Max
 };
 
+/// Page untracking a thread applies itself once it drops the buffer cache's lock
+/// (RasterizerVulkan::OnCPUWrite): changing a page's host protection is a system call, and other
+/// threads drawing or reading waited for it. Only untracking waits: a page protected a little
+/// longer traps a write that then finds it untracked, but a page tracked late lets a write through
+/// unseen.
+class DeferredPageCaching {
+public:
+    using Ranges = std::vector<std::pair<VAddr, size_t>>;
+    using Apply = void (*)(void* tracker, std::span<const std::pair<VAddr, size_t>>, s32 delta);
+
+    void Add(void* tracker, Apply apply, const Ranges& ranges, s32 delta) {
+        batches.push_back(Batch{tracker, apply, delta, collected.size(), ranges.size()});
+        collected.insert(collected.end(), ranges.begin(), ranges.end());
+    }
+
+    /// In the order they were made: one page can be untracked and tracked again in between.
+    void ApplyAll() {
+        for (const Batch& batch : batches) {
+            batch.apply(batch.tracker,
+                        std::span<const std::pair<VAddr, size_t>>(collected).subspan(batch.begin,
+                                                                                    batch.count),
+                        batch.delta);
+        }
+        batches.clear();
+        collected.clear();
+    }
+
+    [[nodiscard]] bool Empty() const {
+        return batches.empty();
+    }
+
+private:
+    struct Batch {
+        void* tracker;
+        Apply apply;
+        s32 delta;
+        size_t begin;
+        size_t count;
+    };
+    std::vector<Batch> batches;
+    Ranges collected;
+};
+
+/// Set while the calling thread collects its page untracking instead of applying it.
+inline thread_local DeferredPageCaching* t_deferred_page_caching{};
+
 // EDEN_NX2_SYNC_SKIP (WordManager::SyncSkipMode) and EDEN_NX2_SYNC_EXACT (MayHaveCpuDirtyWords),
 // read once at startup (from the real environment only, as nx2_switches.txt is loaded later): as
 // function-local statics every query paid a thread-safe initialization check (SyncSkipMode alone
@@ -247,6 +293,18 @@ struct WordManager {
             mask = continuous_bits < PAGES_PER_WORD ? (mask >> continuous_bits) : 0;
             offset += continuous_bits;
         }
+    }
+
+    /// ChangeRegionState(Type::CPU, true, ...) leaving the pages tracked (Untracked unchanged):
+    /// pages tracked now stay tracked, so clearing the bits later tracks nothing again.
+    void MarkWrittenTracked(u64 dirty_addr, u64 size) noexcept {
+        std::span<u64> cpu_words = Span(Type::CPU);
+        std::span<u64> cached_words = Span(Type::CachedCPU);
+        IterateWords(dirty_addr - cpu_addr, size, [&](size_t index, u64 mask) {
+            cpu_words[index] |= mask;
+            cached_words[index] &= ~mask;
+            RefreshDirtyWord(index);
+        });
     }
 
     /// @brief Change the state of a range of pages
@@ -461,6 +519,18 @@ struct WordManager {
             }
         }
         coalesced.emplace_back(cur_addr, cur_size);
+        if (t_deferred_page_caching != nullptr && delta < 0) {
+            t_deferred_page_caching->Add(
+                tracker,
+                [](void* deferred_tracker, std::span<const std::pair<VAddr, size_t>> runs,
+                   s32 run_delta) {
+                    static_cast<DeviceTracker*>(deferred_tracker)
+                        ->UpdatePagesCachedBatch(runs, run_delta);
+                },
+                coalesced, delta);
+            ranges.clear();
+            return;
+        }
         // Use batch API to reduce lock acquisitions and contention.
         tracker->UpdatePagesCachedBatch(coalesced, delta);
         ranges.clear();

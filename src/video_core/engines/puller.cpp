@@ -11,6 +11,7 @@
 
 #include "common/assert.h"
 #include "common/logging.h"
+#include "common/nx2_sync_serial.h"
 #include "common/settings.h"
 #include "core/core.h"
 #include "video_core/nx2_profile.h"
@@ -412,6 +413,7 @@ bool Puller::ResumeAcquire(DmaPusher& dma_pusher) {
     }
     pending_acquire.reset();
     Nx2SemaphoreWaiters::Get().Remove(this);
+    Common::Nx2SyncSerial::Bump();
     return true;
 }
 
@@ -560,9 +562,14 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
         }
         // Registered before the fences run, so a release among them that meets the value counts
         // even if a later one overwrites it.
+        // The word in memory is watched for the guest CPU's stores (Nx2SemaphoreWaiters::WordStored).
         auto& waiters = Nx2SemaphoreWaiters::Get();
         if (const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address)) {
-            waiters.Add(this, *device, acquire.value, acquire.operation);
+            u32* word = reinterpret_cast<u32*>(dma_pusher.memory_manager.GetPointer(acquire.address));
+            if (reinterpret_cast<uintptr_t>(word) % alignof(u32) != 0) {
+                word = nullptr;
+            }
+            waiters.Add(this, *device, acquire.value, acquire.operation, word);
         }
         dma_pusher.rasterizer->ReleaseFences();
         if (!waiters.Latched(this) && !acquire.Matches(ReadSemaphoreWord(dma_pusher, acquire.address))) {
@@ -716,6 +723,7 @@ void Puller::CallPullerMethod(DmaPusher& dma_pusher, const MethodCall& method_ca
     }
     regs.reg_array[method_call.method] = method_call.argument;
     const auto method = static_cast<BufferMethods>(method_call.method);
+    Common::Nx2SyncSerial::Bump();
 
     switch (method) {
     case BufferMethods::BindObject: {
@@ -800,6 +808,8 @@ void Puller::CallPullerMethod(DmaPusher& dma_pusher, const MethodCall& method_ca
         }
         break;
     }
+    // Again once the method is done: an acquire may have waited for the guest CPU.
+    Common::Nx2SyncSerial::Bump();
 }
 
 /// Calls a GPU engine method.
