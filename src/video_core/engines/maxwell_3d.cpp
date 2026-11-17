@@ -24,6 +24,7 @@
 #include "video_core/gpu.h"
 #include "video_core/gpu_split.h"
 #include "video_core/memory_manager.h"
+#include "video_core/nx2_uniform_prep.h"
 #include "video_core/nx2.h"
 #include "video_core/nx2_front_diag_hooks.h"
 #include "video_core/nx2_front_same.h"
@@ -2470,6 +2471,7 @@ MAXWELL3D_NOINLINE void Maxwell3D::StageCbForward(const u32* start_base, u32 amo
     ASSERT(regs.const_buffer.offset <= regs.const_buffer.size);
     const GPUVAddr address{buffer_address + regs.const_buffer.offset};
     regs.const_buffer.offset += amount * static_cast<u32>(sizeof(u32));
+    VideoCommon::Nx2UniformPrep::NotePostedCb(*this, address, start_base, amount);
     VideoCommon::Nx2Stages::PostCbData(VideoCommon::Nx2Stages::Ring::ToB, *this, address,
                                        start_base, amount);
 }

@@ -32,6 +32,7 @@
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "common/slot_vector.h"
+#include "video_core/nx2_uniform_prep.h"
 #include "video_core/buffer_cache/buffer_base.h"
 #include "video_core/buffer_cache/nx2_draw_memo.h"
 #include "video_core/buffer_cache/usage_tracker.h"
@@ -594,7 +595,13 @@ public:
         UniformWriteLog& log = uniform_write_log;
         log.ranges[log.count % UniformWriteLog::SIZE] = {device_addr, device_addr + size};
         ++log.count;
+        if (!constant_buffer_writes) {
+            Nx2UniformPrep::NoteForeign(device_addr, size);
+        }
     }
+    /// EDEN_NX2_UBO_PREP: WriteMemoryRanges runs (constant buffer data, which GPUBack lays over
+    /// what it reads itself, and inline data, told of on its own when written).
+    bool constant_buffer_writes = false;
     /// Whether a write noted since the log counted `since` may have reached the range.
     [[nodiscard]] bool UniformWrittenSince(u64 since, DAddr device_addr, u64 size) const {
         const UniformWriteLog& log = uniform_write_log;

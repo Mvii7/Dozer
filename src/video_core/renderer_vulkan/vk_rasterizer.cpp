@@ -5255,6 +5255,7 @@ void RasterizerVulkan::InlineRunsB(std::span<const std::pair<GPUVAddr, u32>> run
             commands += buffer_cache.FlushInlineBatch(batch) ? 1 : 0;
             gpu_memory->WriteBlockUnsafe(address, bytes.data(), size, true);
             gpu_memory->AccumulateInvalidation(address, size);
+            VideoCommon::Nx2UniformPrep::NoteForeignAll();
             continue;
         }
         gpu_memory->WriteBlockUnsafe(address, bytes.data(), size, true);
@@ -5309,6 +5310,7 @@ void RasterizerVulkan::InlineToMemoryB(GPUVAddr address, size_t copy_size,
         // the next FlushCaching (which runs before anything of theirs is used).
         gpu_memory->WriteBlockUnsafe(address, memory.data(), copy_size, true);
         gpu_memory->AccumulateInvalidation(address, copy_size);
+        VideoCommon::Nx2UniformPrep::NoteForeignAll();
         return;
     }
     gpu_memory->WriteBlockUnsafe(address, memory.data(), copy_size, true);
