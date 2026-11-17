@@ -161,6 +161,11 @@ public:
 
     void BarrierFeedbackLoop();
 
+    /// A copy of the color image `sampled` and `attachment` both view, for a draw that samples
+    /// what it renders into. A null handle where it cannot be copied: the draw then samples the
+    /// attachment itself.
+    VkImageView ResolveColorFeedback(const ImageView& sampled, const ImageView& attachment);
+
     bool IsFormatDitherable(VideoCore::Surface::PixelFormat format);
     bool IsFormatScalable(VideoCore::Surface::PixelFormat format);
 
@@ -216,6 +221,17 @@ public:
     };
 
     std::vector<MsaaScratchImage> msaa_scratch_images;
+
+    struct ColorFeedbackSnapshot {
+        vk::Image image;
+        vk::ImageView view;
+        VideoCommon::Extent3D size;
+        VkComponentMapping swizzle;
+        u64 tick{};
+        u32 unused_frames{};
+        bool used_this_frame{};
+    };
+    std::vector<ColorFeedbackSnapshot> color_feedback_snapshots;
     ::Common::unordered_map<VkImage, ResolveShadow> resolve_shadows;
     std::vector<std::pair<u64, ResolveShadow>> pending_resolve_shadows;
 };
@@ -529,6 +545,10 @@ public:
 
     [[nodiscard]] VkImage ImageHandle() const noexcept {
         return image_handle;
+    }
+
+    [[nodiscard]] const Image* BackingImage() const noexcept {
+        return slot_images && image_id ? &(*slot_images)[image_id] : nullptr;
     }
 
     [[nodiscard]] VkImageView RenderTarget() const noexcept {
