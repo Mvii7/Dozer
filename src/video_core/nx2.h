@@ -16,7 +16,6 @@
 #include "common/common_types.h"
 #include "common/nx2_sync_serial.h"
 #include "common/thread.h"
-#include "video_core/nx2_uniform_prep.h"
 
 namespace Tegra {
 
@@ -137,7 +136,6 @@ inline void Nx2MarkUntrackedWrite(u64 device_address, u64 size) {
         return;
     }
     Common::Nx2SyncSerial::Bump();
-    VideoCommon::Nx2UniformPrep::NoteForeign(device_address, size);
     const u64 last = (std::min)((device_address + size - 1) >> Nx2WrittenPageBits,
                                 u64{g_nx2_untracked_pages.size() * 64 - 1});
     for (u64 page = device_address >> Nx2WrittenPageBits; page <= last; ++page) {

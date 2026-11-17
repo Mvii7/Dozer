@@ -22,7 +22,6 @@
 #include "video_core/nx2_stage_api.h"
 #include "video_core/nx2_stage_proxy.h"
 #include "video_core/nx2_stages.h"
-#include "video_core/nx2_uniform_prep.h"
 
 namespace VideoCommon::Nx2Stages {
 
@@ -83,12 +82,10 @@ void CheckStaged(Tegra::Control::ChannelState& channel) {
 /// What a draw-like record runs on BC, after the side state that changed before it.
 enum class Event : u8 { Draw, DrawIndirect, DrawTexture, Clear };
 
-/// Word 0 of a draw-like record: bits 0-7 the event, bit 8 indexed, bits 16-31 the words of
-/// prepared uniform buffers (EDEN_NX2_UBO_PREP), bits 32-63 the instance or layer count. Word 1
-/// the primary Maxwell3D, then the prepared words, then its side state (WriteSideState).
-constexpr u64 EventWord(Event event, bool is_indexed, u32 count, u32 prepared_words) {
-    return static_cast<u64>(event) | (is_indexed ? u64{1} << 8 : 0) |
-           (u64{prepared_words} << 16) | (u64{count} << 32);
+/// Word 0 of a draw-like record: bits 0-7 the event, bit 8 indexed, bits 32-63 the instance or
+/// layer count. Word 1 the primary Maxwell3D, then its side state (WriteSideState).
+constexpr u64 EventWord(Event event, bool is_indexed, u32 count) {
+    return static_cast<u64>(event) | (is_indexed ? u64{1} << 8 : 0) | (u64{count} << 32);
 }
 
 void RunEvent(VideoCore::RasterizerInterface& real, Event event, bool is_indexed, u32 count) {
@@ -106,26 +103,18 @@ void RunEvent(VideoCore::RasterizerInterface& real, Event event, bool is_indexed
 
 void EventThunk(const u64* payload, u32 words) {
     auto& real = OnBc("Nx2StageProxy draw");
-    const u64 word = payload[0];
-    const u32 prepared = static_cast<u32>((word >> 16) & 0xffff);
-    auto* const primary = reinterpret_cast<Tegra::Engines::Maxwell3D*>(payload[1]);
-    auto* const replica = ReplicaOf(*primary, Stage::B);
-    if (words > 2 + prepared) {
+    if (words > 2) {
         Nx2Profile::Scope scope{Nx2Profile::Zone::ReplicaApply};
-        if (replica != nullptr) [[likely]] {
-            ApplySideState(*replica, payload + 2 + prepared, words - 2 - prepared);
+        auto* const primary = reinterpret_cast<Tegra::Engines::Maxwell3D*>(payload[1]);
+        if (auto* const replica = ReplicaOf(*primary, Stage::B)) [[likely]] {
+            ApplySideState(*replica, payload + 2, words - 2);
         } else {
             ReportUnstaged("drew without a replica for B", -1);
         }
     }
-    if (prepared != 0 && replica != nullptr) {
-        Nx2UniformPrep::BeginDraw(*replica, payload + 2, prepared);
-    }
+    const u64 word = payload[0];
     RunEvent(real, static_cast<Event>(word & 0xff), ((word >> 8) & 1) != 0,
              static_cast<u32>(word >> 32));
-    if (prepared != 0) {
-        Nx2UniformPrep::EndDraw();
-    }
 }
 
 /// A: a draw-like record with the side state of the bound channel's Maxwell3D that changed since
@@ -134,19 +123,8 @@ void EventThunk(const u64* payload, u32 words) {
 void PostEvent(Event event, bool is_indexed, u32 count) {
     Nx2Profile::Scope scope{Nx2Profile::Zone::PacketBuild};
     auto& primary = g_system->GPU().Maxwell3D();
-    // EDEN_NX2_UBO_PREP: the draw's uniform buffers, read and uploaded here.
-    thread_local std::vector<u64> prepared;
-    prepared.clear();
-    if (event == Event::Draw || event == Event::DrawIndirect) {
-        Nx2UniformPrep::Prepare(*g_system, primary, prepared);
-    }
     const u32 light_changes = primary.light.changes;
     const u32 side_words = SideStateWords(primary);
-    if (1 + 2 + prepared.size() + side_words > MaxBodyWords || prepared.size() > 0xffff)
-        [[unlikely]] {
-        prepared.clear();
-    }
-    const u32 prepared_words = static_cast<u32>(prepared.size());
     if (1 + 2 + side_words > MaxBodyWords) [[unlikely]] {
         // Too long for a record (K9): applied to the replica and drawn with the stages parked.
         // SideStateWords starts A's light changes over for the draw; until the join record
@@ -168,14 +146,11 @@ void PostEvent(Event event, bool is_indexed, u32 count) {
         });
         return;
     }
-    u64* const payload = Reserve(Ring::ToB, &EventThunk, 2 + prepared_words + side_words);
-    payload[0] = EventWord(event, is_indexed, count, prepared_words);
+    u64* const payload = Reserve(Ring::ToB, &EventThunk, 2 + side_words);
+    payload[0] = EventWord(event, is_indexed, count);
     payload[1] = reinterpret_cast<u64>(&primary);
-    if (prepared_words != 0) {
-        std::memcpy(payload + 2, prepared.data(), prepared_words * sizeof(u64));
-    }
     if (side_words != 0) {
-        WriteSideState(primary, payload + 2 + prepared_words);
+        WriteSideState(primary, payload + 2);
     }
     Commit(Ring::ToB);
 }

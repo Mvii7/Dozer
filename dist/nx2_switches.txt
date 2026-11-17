@@ -165,11 +165,6 @@
 # =2 compares anyway and logs "EDEN_NX2_UBO_KEEP: ... changed" for any range a keep would have
 # got wrong; the "Uniform buffer reuse" line counts kept, checked and changed binds.
 #EDEN_NX2_UBO_KEEP=0
-# UBO_PREP (back stages with cut a, off by default): GPUBack reads, compares and uploads each
-# draw's uniform buffers into a ring of its own, and GPUMem binds those instead of doing it. 1 on,
-# 2 verify (GPUMem also reads guest memory and logs "EDEN_NX2_UBO_PREP: ... differs" for any slice
-# that would have been wrong, then binds its own). Counts in the log: "nx2 uniform prep".
-#EDEN_NX2_UBO_PREP=1
 #EDEN_NX2_SSBO_FAST=0
 #EDEN_NX2_SSBO_MEMO=0
 #EDEN_NX2_SYNC_SETS=0

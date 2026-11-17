@@ -31,7 +31,6 @@
 #include "video_core/nx2_stage_proxy.h"
 #include "video_core/nx2_stage_split.h"
 #include "video_core/nx2_stages.h"
-#include "video_core/nx2_uniform_prep.h"
 #include "video_core/rasterizer_interface.h"
 #include "video_core/renderer_base.h"
 
@@ -129,12 +128,9 @@ struct GpuHandler {
                 // Into a pool C may still read for work B sent before (omur-1): C parked having
                 // run it, B the record owner.
                 JoinFromB([&] { StageCbWrite(*replica, address, data, count); });
-            } else {
-                StageCbWrite(*replica, address, data, count);
+                return;
             }
-        }
-        if (stage == StageIdB) {
-            Nx2UniformPrep::NoteAppliedCb(count);
+            StageCbWrite(*replica, address, data, count);
         }
     }
     void ExecA(u64 position, u64 words) {

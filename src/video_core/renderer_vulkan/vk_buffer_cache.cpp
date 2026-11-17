@@ -500,34 +500,6 @@ BufferCacheRuntime::BufferCacheRuntime(const Device& device_, MemoryAllocator& m
         device_, memory_allocator_, scheduler_, staging_pool_, target);
     quad_strip_index_buffer = std::make_shared<QuadStripIndexBuffer>(
         device_, memory_allocator_, scheduler_, staging_pool_, target);
-    if (VideoCommon::Nx2UniformPrep::Mode() != 0) {
-        constexpr VkDeviceSize PREP_RING_SIZE = 64ULL << 20;
-        VkBufferCreateInfo ring_ci{
-            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .size = PREP_RING_SIZE,
-            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .queueFamilyIndexCount = 0,
-            .pQueueFamilyIndices = nullptr,
-        };
-        if (device.IsBufferDeviceAddressSupported()) {
-            ring_ci.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        }
-        prep_ring = memory_allocator.CreateBuffer(ring_ci, MemoryUsage::Upload);
-        if (device.IsBufferDeviceAddressSupported()) {
-            prep_ring_address = device.GetLogical().GetBufferDeviceAddress(*prep_ring);
-        }
-        VideoCommon::Nx2UniformPrep::SetRing(
-            prep_ring.Mapped(),
-            [](void* context) { return static_cast<Scheduler*>(context)->CurrentTick(); },
-            [](void* context, u64 tick) { return static_cast<Scheduler*>(context)->IsFree(tick); },
-            &scheduler);
-        LOG_INFO(Render_Vulkan, "EDEN_NX2_UBO_PREP={}: uniform buffers read and uploaded on "
-                                "GPUBack ({} MiB ring)",
-                 VideoCommon::Nx2UniformPrep::Mode(), PREP_RING_SIZE >> 20);
-    }
 }
 
 BufferCacheRuntime::~BufferCacheRuntime() = default;

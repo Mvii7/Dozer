@@ -12,11 +12,6 @@ and `=0` brings back the 2.0.0 code path.
   GPU-written range set already holds whole, with no subtract reaching it since, is no longer
   added to the set again (about 4% of the memory stage in Donkey Kong Bananza).
   `EDEN_NX2_ADD_MEMO=0` turns it off; start-safe.bat turns it off.
-- Uniform buffers prepared on GPUBack (`EDEN_NX2_UBO_PREP`, off by default): GPUBack reads each
-  draw's uniform buffers, lays the constant buffer data GPUMem has not written yet over them,
-  reuses or uploads them into a ring of its own, and the draw carries the slices; GPUMem binds
-  them unless something else wrote the range since GPUBack read it. `=2` verifies every slice
-  against guest memory and logs any that differs.
 
 ## Dozer 0.1.6 (`v0.1.6`)
 

@@ -211,10 +211,6 @@ void BufferCache<P>::MarkCpuWritten(DAddr device_addr, u64 size, bool engine_wri
 
 template <class P>
 void BufferCache<P>::WriteMemoryRanges(std::span<const std::pair<DAddr, std::size_t>> ranges) {
-    const bool was_constant = std::exchange(constant_buffer_writes, true);
-    SCOPE_EXIT {
-        constant_buffer_writes = was_constant;
-    };
     // EDEN_NX2_INVAL_HULL=0: one GPU-modified lookup per range, as WriteMemory does.
     static const bool use_hull = [] {
         const char* value = std::getenv("EDEN_NX2_INVAL_HULL");
@@ -1394,10 +1390,6 @@ void BufferCache<P>::BindHostDrawIndirectBuffers() {
 
 template <class P>
 void BufferCache<P>::BindHostGraphicsUniformBuffers(size_t stage) {
-    if (Nx2UniformPrep::Mode() != 0 && channel_state->uniform_buffer_sizes != nullptr) {
-        Nx2UniformPrep::PublishUsage(stage, channel_state->enabled_uniform_buffer_masks[stage],
-                                     (*channel_state->uniform_buffer_sizes)[stage].data());
-    }
     u32 dirty = ~0U;
     if constexpr (HAS_PERSISTENT_UNIFORM_BUFFER_BINDINGS) {
         dirty = std::exchange(channel_state->dirty_uniform_buffers[stage], 0);
@@ -1499,36 +1491,6 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
             // several stages) and streams a new one otherwise. One descriptor per bind either way.
             // EDEN_NX2_UBO_STAGE: also the slice this stage's slot was bound to last.
             if (runtime.UniformReuseEnabled()) {
-                // EDEN_NX2_UBO_PREP: the slice GPUBack read and uploaded for this draw, when it is
-                // this binding's range and nothing wrote there since GPUBack read it.
-                if (const auto* const prepared = Nx2UniformPrep::Find(stage, index)) {
-                    const bool usable = prepared->device_addr == device_addr &&
-                                        prepared->size >= size &&
-                                        !Nx2UniformPrep::WrittenSinceRead(device_addr, size);
-                    bool mismatch = false;
-                    if (usable && Nx2UniformPrep::Mode() == 2) {
-                        const std::span<u8> bytes = runtime.UniformReuseScratch(size);
-                        device_memory.ReadBlockUnsafe(device_addr, bytes.data(), size);
-                        const std::span<const u8> ring =
-                            Nx2UniformPrep::RingBytes(prepared->offset, size);
-                        mismatch = ring.size() != size ||
-                                   std::memcmp(ring.data(), bytes.data(), size) != 0;
-                        if (mismatch) {
-                            static u32 reports = 0;
-                            if (reports++ < 16) {
-                                LOG_ERROR(HW_GPU,
-                                          "EDEN_NX2_UBO_PREP: stage {} slot {} range {:#x}+{:#x} "
-                                          "prepared by GPUBack differs from guest memory",
-                                          stage, index, device_addr, size);
-                            }
-                        }
-                    }
-                    Nx2UniformPrep::CountBind(usable && !mismatch, mismatch);
-                    if (usable && Nx2UniformPrep::Mode() != 2) {
-                        runtime.BindPreparedUniform(prepared->offset, size);
-                        return;
-                    }
-                }
                 // EDEN_NX2_UBO_KEEP: taken before guest memory is read, what a later bind of the
                 // slot compares with.
                 const int keep_mode = Nx2UniformKeep();

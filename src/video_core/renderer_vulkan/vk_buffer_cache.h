@@ -206,11 +206,6 @@ public:
         return value != 0;
     }
 
-    /// EDEN_NX2_UBO_PREP: binds `size` bytes at `offset` of GPUBack's upload ring.
-    void BindPreparedUniform(u32 offset, u32 size) {
-        guest_descriptor_queue.AddBuffer(*prep_ring, prep_ring_address, offset, size);
-    }
-
     [[nodiscard]] std::span<u8> UniformReuseScratch(u32 size) {
         if (uniform_reuse_scratch.size() < size) {
             uniform_reuse_scratch.resize((std::max<size_t>)(size, 4096));
@@ -528,9 +523,6 @@ private:
     Scheduler& scheduler;
     StagingBufferPool& staging_pool;
     GuestDescriptorQueue& guest_descriptor_queue;
-    /// EDEN_NX2_UBO_PREP: GPUBack's upload ring (Nx2UniformPrep).
-    vk::Buffer prep_ring;
-    VkDeviceAddress prep_ring_address{};
 
     std::shared_ptr<QuadArrayIndexBuffer> quad_array_index_buffer;
     std::shared_ptr<QuadStripIndexBuffer> quad_strip_index_buffer;

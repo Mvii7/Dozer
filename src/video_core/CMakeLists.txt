@@ -131,8 +131,6 @@ add_library(video_core STATIC
     nx2_stages.cpp
     nx2_stages.h
     nx2_uniform_census.h
-    nx2_uniform_prep.cpp
-    nx2_uniform_prep.h
     present.h
     pte_kind.h
     query_cache/bank_base.h
