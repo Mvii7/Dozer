@@ -36,11 +36,16 @@ struct Settings {
     bool particles_off = false;
     bool alive_off = false;
     bool material_off = false;
+    int voxel_emitter = 0;     ///< % of the voxel effect emitter's buffer
+    int voxel_surface = 0;     ///< % of the voxel surface effects' buffer
+    bool voxel_surface_off = false;
+    bool depth_collision_off = false;
 
     [[nodiscard]] bool Active() const {
         return off || cap != 0 || frustum_off || density != 0 || far_clip != 0 || lod != 0 || emit != 0 || particles != 0 ||
                alive != 0 || material != 0 || emit_off ||
-               particles_off || alive_off || material_off;
+               particles_off || alive_off || material_off || voxel_emitter != 0 ||
+               voxel_surface != 0 || voxel_surface_off || depth_collision_off;
     }
 };
 
@@ -58,7 +63,9 @@ inline Settings FromEnvironment() {
             ReadEnv(Id::EffectParticleCap), ReadEnv(Id::EffectAliveCap),
             ReadEnv(Id::EffectMaterialCap), ReadEnv(Id::EffectEmitOff) != 0,
             ReadEnv(Id::EffectParticleOff) != 0, ReadEnv(Id::EffectAliveOff) != 0,
-            ReadEnv(Id::EffectMaterialOff) != 0};
+            ReadEnv(Id::EffectMaterialOff) != 0,
+            ReadEnv(Id::VoxelEmitterBuffer), ReadEnv(Id::VoxelSurfaceBuffer),
+            ReadEnv(Id::VoxelSurfaceEffectOff) != 0, ReadEnv(Id::DepthCollisionEffectOff) != 0};
 }
 
 constexpr std::string_view SystemSettingsPath = "ClusteredRendering/SystemSettings.alsarc.zs";
@@ -69,7 +76,7 @@ constexpr std::string_view SettingUnitPath = "MaterialEffect/SettingUnit.alsarc.
 
 namespace Detail {
 
-constexpr u8 TypeArray = 0xC0, TypeDict = 0xC1, TypeFloat = 0xD2, TypeInt = 0xD1, TypeUInt = 0xD3;
+constexpr u8 TypeBool = 0xD0, TypeArray = 0xC0, TypeDict = 0xC1, TypeFloat = 0xD2, TypeInt = 0xD1, TypeUInt = 0xD3;
 
 struct Reader {
     std::span<u8> data;
@@ -313,6 +320,19 @@ inline bool PatchEffectSettings(std::span<u8> archive, const Settings& settings)
             } else if (key == "MaxMatEffActiveUsersNumPerSlot") {
                 percent = settings.material;
                 off = settings.material_off;
+            }
+            if (type == Detail::TypeBool) {
+                if ((key == "IsUseVoxelSurfaceEffect" && settings.voxel_surface_off) ||
+                    (key == "IsUseDepthCollisionEffect" && settings.depth_collision_off)) {
+                    Detail::Put(in, at, 0);
+                    changed = true;
+                }
+                return;
+            }
+            if (key == "BufferSize") {
+                percent = settings.voxel_emitter;
+            } else if (key == "VoxelSurfaceEffectBufferSize") {
+                percent = settings.voxel_surface;
             }
             if (!(type == Detail::TypeInt || type == Detail::TypeUInt)) {
                 return;

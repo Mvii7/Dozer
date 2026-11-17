@@ -77,6 +77,10 @@ enum Id : size_t {
     EffectParticleOff, ///< particles per emitter at 1
     EffectAliveOff,    ///< effects alive per rule at 1
     EffectMaterialOff, ///< terrain material effects at 1
+    VoxelEmitterBuffer, ///< buffer of the voxel effect emitter (voxel debris), %
+    VoxelSurfaceBuffer, ///< buffer of the voxel surface effects, %
+    VoxelSurfaceEffectOff, ///< voxel surface effects off
+    DepthCollisionEffectOff, ///< depth collision effects off
     Count,
 };
 
@@ -146,6 +150,10 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"effect_particle_off", "EDEN_NX2_DKQ_EFFECT_PARTICLE_OFF", 1, 1, 0},
     {"effect_alive_off", "EDEN_NX2_DKQ_EFFECT_ALIVE_OFF", 1, 1, 0},
     {"effect_material_off", "EDEN_NX2_DKQ_EFFECT_MATERIAL_OFF", 1, 1, 0},
+    {"voxel_emitter_buffer", "EDEN_NX2_DKQ_VOXEL_EMITTER_BUFFER", 1, 100, 100},
+    {"voxel_surface_buffer", "EDEN_NX2_DKQ_VOXEL_SURFACE_BUFFER", 1, 100, 100},
+    {"voxel_surface_effect_off", "EDEN_NX2_DKQ_VOXEL_SURFACE_EFFECT_OFF", 1, 1, 0},
+    {"depth_collision_effect_off", "EDEN_NX2_DKQ_DEPTH_COLLISION_EFFECT_OFF", 1, 1, 0},
 }};
 
 /// One number per knob; 0 leaves the game's own.

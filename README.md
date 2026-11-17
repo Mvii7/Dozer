@@ -255,6 +255,8 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Foliage placement density | 100% | scales the chance and rate of the foliage placed while playing (foliage in the stage's data is only cut by the cap) |
 | Effects started per frame / Particles per emitter | 156 / 512 | scales the most effects the game starts in a frame and the most particles in one emitter (dust, debris, sparks); in the game's effect settings files as they are read |
 | Effect starts / Emitter particles / Alive effects / Terrain material effects off | off | one box per effect cap; ticked sets that cap to 1 (the game's: 156 / 512 / 64 / its own); something that expects an effect may break |
+| Voxel debris buffer / Voxel surface effect buffer | 100% | scales the buffers of the game's voxel effect emitter (1024) and voxel surface effects (5000), found in the effect settings; for finding out which is the debris |
+| Voxel surface effects off / Depth collision effects off | off | turn those effect systems off in the effect settings; not tested yet |
 | Effects alive per rule / Terrain material effects | 100% | scales how many effects the emission rules keep alive and how many terrain material effects (dust, smoke, snow) are active at once |
 | Shadow masks off | on | turns off the game's shadow masks (volume shadows); shadows may go missing (for testing) |
 | Occlusion query depth / radius / polygons | 100% | scales the thresholds of the game's occlusion queries (effect not known; for testing) |

@@ -262,3 +262,15 @@ TEST_CASE("Nx2DkFoliage: effect caps off", "[core]") {
     REQUIRE(PatchSettingUnits(units, settings));
     REQUIRE(Read32(units, 0x60 + Read32(units, 12 + 0x60) + 4 + 4) == 1);
 }
+
+TEST_CASE("Nx2DkFoliage: voxel effect rows", "[core]") {
+    auto effects = Sarc(Byml({{"BufferSize", 0xD1, 1024}, {"IsUseDepthCollisionEffect", 0xD0, 1}}));
+    Settings settings;
+    settings.voxel_emitter = 25;
+    settings.depth_collision_off = true;
+    REQUIRE(settings.Active());
+    REQUIRE(PatchEffectSettings(effects, settings));
+    const size_t root = 0x60 + Read32(effects, 12 + 0x60) + 4;
+    REQUIRE(Read32(effects, root + 4) == 256);
+    REQUIRE(Read32(effects, root + 8 + 4) == 0);
+}

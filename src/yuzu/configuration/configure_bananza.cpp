@@ -303,6 +303,22 @@ void ConfigureBananza::RetranslateUI() {
         tr("Terrain material effects off"),
         tr("Lets one terrain material effect (dust, smoke, snow) be active at most. Needs a "
            "restart.")};
+    texts[Quality::VoxelEmitterBuffer] = {
+        tr("Voxel debris buffer"),
+        tr("Scales the buffer of the voxel effect emitter, which the game uses for the voxel "
+           "pieces that fly off when terrain breaks (its own is 1024). Needs a restart.")};
+    texts[Quality::VoxelSurfaceBuffer] = {
+        tr("Voxel surface effect buffer"),
+        tr("Scales the buffer of the effects that sit on voxel surfaces (the game's own is "
+           "5000). Needs a restart.")};
+    texts[Quality::VoxelSurfaceEffectOff] = {
+        tr("Voxel surface effects off"),
+        tr("Turns the game's voxel surface effects off. For finding out what they are. Needs a "
+           "restart.")};
+    texts[Quality::DepthCollisionEffectOff] = {
+        tr("Depth collision effects off"),
+        tr("Turns the effects that collide with the scene's depth (particles that bounce off "
+           "terrain) off. Needs a restart.")};
     texts[Quality::VoxelBorderMeshOff] = {
         tr("Terrain border mesh off"),
         tr("Builds no border mesh between neighbouring terrain chunks. Cracks may show. For "
