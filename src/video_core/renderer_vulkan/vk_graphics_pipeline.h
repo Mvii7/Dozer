@@ -422,6 +422,12 @@ private:
                                    const VideoCommon::SamplerId*& samplers,
                                    const VideoCommon::ImageViewInOut*& views);
 
+    /// A draw that samples a color image it renders into (A2B10G10R10, the same view) gets a copy
+    /// of it for that sampled descriptor: `fragment_entry` is the guest queue index of the
+    /// fragment stage's first texture, `first_fragment_view` where its views begin.
+    void CheckColorFeedbackLoop(std::span<const VideoCommon::ImageViewInOut> views,
+                                size_t first_fragment_view, size_t fragment_entry);
+
     void MakePipeline(VkRenderPass render_pass);
 
     void Validate();
