@@ -16,6 +16,7 @@
 #include "common/address_space.h"
 #include "common/address_space.inc"
 #include "common/alignment.h"
+#include "common/nx2_sync_serial.h"
 #include "common/assert.h"
 #include "common/div_ceil.h"
 #include "common/scope_exit.h"
@@ -205,6 +206,12 @@ void DeviceMemoryManager<Traits>::Free(DAddr start, size_t size) {
 template <typename Traits>
 void DeviceMemoryManager<Traits>::Map(DAddr address, VAddr virtual_address, size_t size, Asid asid,
                                       bool track) {
+    // After the mapping changed (EDEN_NX2_UBO_KEEP).
+    const struct BumpAfter {
+        ~BumpAfter() {
+            Common::Nx2SyncSerial::Bump();
+        }
+    } bump_after;
     Core::Memory::Memory* process_memory = registered_processes[asid.id];
     size_t start_page_d = address >> Memory::YUZU_PAGEBITS;
     size_t num_pages = Common::AlignUp(size, Memory::YUZU_PAGESIZE) >> Memory::YUZU_PAGEBITS;
@@ -246,6 +253,12 @@ void DeviceMemoryManager<Traits>::Map(DAddr address, VAddr virtual_address, size
 
 template <typename Traits>
 void DeviceMemoryManager<Traits>::Unmap(DAddr address, size_t size) {
+    // After the mapping changed (EDEN_NX2_UBO_KEEP).
+    const struct BumpAfter {
+        ~BumpAfter() {
+            Common::Nx2SyncSerial::Bump();
+        }
+    } bump_after;
     size_t start_page_d = address >> Memory::YUZU_PAGEBITS;
     size_t num_pages = Common::AlignUp(size, Memory::YUZU_PAGESIZE) >> Memory::YUZU_PAGEBITS;
     device_inter->InvalidateRegion(address, size);
