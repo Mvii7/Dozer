@@ -27,59 +27,57 @@ using Tegra::Engines::Maxwell3D;
 
 // ---- Foreign writes (any thread writes, B reads) ----
 
-/// A ring of the last writes. An entry's index is stored last: a reader seeing another index
-/// (overwritten, or being written) counts the entry as reaching every range.
-struct ForeignLog {
-    static constexpr u64 SIZE = 4096;
-    /// Entries read from this far before A's count: a write noted just before A read memory may
+/// Each write gets the next number; a table of 4 KiB pages (hashed, so pages share entries) holds
+/// the highest number of a write that reached each, and writes too large for it raise one number
+/// for all. A range was written since number n when any of its pages' entries is above n.
+struct ForeignWrites {
+    static constexpr u32 PAGE_BITS = 16;
+    /// Pages a write marks one by one; larger ones count for every range.
+    static constexpr u64 MAX_PAGES = 4096;
+    /// Numbers compared from this far below A's: a write numbered just before A read memory may
     /// land in it just after (a write around the caches is noted before it is made).
     static constexpr u64 SLACK = 16;
-    struct Entry {
-        std::atomic<u64> index{~u64{0}};
-        std::atomic<u64> begin{};
-        std::atomic<u64> end{};
-    };
-    std::array<Entry, SIZE> entries{};
+    std::array<std::atomic<u64>, size_t{1} << PAGE_BITS> pages{};
     std::atomic<u64> count{};
-    std::atomic_flag lock = ATOMIC_FLAG_INIT;
+    std::atomic<u64> all{};
 };
-ForeignLog g_foreign;
+ForeignWrites g_foreign;
+
+void RaiseTo(std::atomic<u64>& value, u64 number) {
+    u64 current = value.load(std::memory_order_relaxed);
+    while (current < number &&
+           !value.compare_exchange_weak(current, number, std::memory_order_release,
+                                        std::memory_order_relaxed)) {
+    }
+}
+
+std::atomic<u64>& PageEntry(u64 page) {
+    return g_foreign.pages[(page * 0x9E3779B97F4A7C15ULL) >> (64 - ForeignWrites::PAGE_BITS)];
+}
 
 void NoteForeignRange(u64 begin, u64 end) {
-    ForeignLog& log = g_foreign;
-    while (log.lock.test_and_set(std::memory_order_acquire)) {
+    ForeignWrites& writes = g_foreign;
+    const u64 number = writes.count.fetch_add(1, std::memory_order_acq_rel) + 1;
+    const u64 first = begin >> 12;
+    const u64 last = (end - 1) >> 12;
+    if (end <= begin || last - first >= ForeignWrites::MAX_PAGES) {
+        RaiseTo(writes.all, number);
+        return;
     }
-    const u64 index = log.count.load(std::memory_order_relaxed);
-    ForeignLog::Entry& entry = log.entries[index % ForeignLog::SIZE];
-    entry.index.store(~u64{0}, std::memory_order_relaxed);
-    std::atomic_thread_fence(std::memory_order_release);
-    entry.begin.store(begin, std::memory_order_relaxed);
-    entry.end.store(end, std::memory_order_relaxed);
-    entry.index.store(index, std::memory_order_release);
-    log.count.store(index + 1, std::memory_order_release);
-    log.lock.clear(std::memory_order_release);
+    for (u64 page = first; page <= last; ++page) {
+        RaiseTo(PageEntry(page), number);
+    }
 }
 
 bool ForeignSince(u64 since, u64 addr, u64 size) {
-    ForeignLog& log = g_foreign;
-    const u64 now = log.count.load(std::memory_order_acquire);
-    since = since > ForeignLog::SLACK ? since - ForeignLog::SLACK : 0;
-    if (now - since >= ForeignLog::SIZE - 64) {
+    const ForeignWrites& writes = g_foreign;
+    since = since > ForeignWrites::SLACK ? since - ForeignWrites::SLACK : 0;
+    if (writes.all.load(std::memory_order_acquire) > since) {
         return true;
     }
-    const u64 end = addr + size;
-    for (u64 i = since; i < now; ++i) {
-        const ForeignLog::Entry& entry = log.entries[i % ForeignLog::SIZE];
-        if (entry.index.load(std::memory_order_acquire) != i) {
-            return true;
-        }
-        const u64 begin = entry.begin.load(std::memory_order_relaxed);
-        const u64 write_end = entry.end.load(std::memory_order_relaxed);
-        std::atomic_thread_fence(std::memory_order_acquire);
-        if (entry.index.load(std::memory_order_relaxed) != i) {
-            return true;
-        }
-        if (begin < end && addr < write_end) {
+    const u64 last = (addr + size - 1) >> 12;
+    for (u64 page = addr >> 12; page <= last; ++page) {
+        if (PageEntry(page).load(std::memory_order_acquire) > since) {
             return true;
         }
     }
@@ -175,7 +173,7 @@ public:
 
     /// Drops what B applied.
     void Trim(u64 applied) {
-        if (blocks.size() > 64) {
+        if (blocks.size() > 64 && (++trims & 255) == 0) {
             for (auto it = blocks.begin(); it != blocks.end();) {
                 it = it->second->max_seq <= applied ? blocks.erase(it) : std::next(it);
             }
@@ -214,6 +212,7 @@ private:
     std::vector<Poison> poisons;
     u64 poison_all{};
     u64 posted{};
+    u64 trims{};
     u64 last_page{~u64{0}};
     Block* last_block{};
 };
@@ -405,7 +404,7 @@ void NoteForeignAll() {
     if (Mode() == 0) {
         return;
     }
-    NoteForeignRange(0, ~u64{0});
+    RaiseTo(g_foreign.all, g_foreign.count.fetch_add(1, std::memory_order_acq_rel) + 1);
 }
 
 void NotePostedCb(Maxwell3D& primary, u64 address, const u32* data, u32 count) {
