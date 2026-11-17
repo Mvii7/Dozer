@@ -2194,6 +2194,15 @@ bool RasterizerVulkan::HoldsGpuWrittenData(DAddr addr, u64 size) {
     return false;
 }
 
+bool RasterizerVulkan::MayHoldImages(DAddr addr, u64 size) const {
+    // EDEN_NX2_TEX_PAGE_FILTER=0: the texture cache is always looked at under its lock.
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_TEX_PAGE_FILTER");
+        return value == nullptr || value[0] != '0';
+    }();
+    return !enabled || texture_cache.page_filter.Any(addr, size);
+}
+
 VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64 size) {
     // EDEN_NX2_REACTIVE_STATS: calls and the two cache mutexes' waits
     const bool stats = Common::Nx2Reactive::StatsEnabled();
@@ -2230,6 +2239,11 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
             buffer_cache.ForgetReadTraps(page_start, page_end - page_start);
         }
     }
+    if (!MayHoldImages(addr, size)) {
+        // No image was ever registered here: the texture cache has no area to give.
+        return VideoCommon::Nx2Reactive::CombineFlushArea(std::nullopt, page_start, page_end,
+                                                          flush_buffer);
+    }
     {
         const s64 lock_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
         std::scoped_lock lock{texture_cache.mutex};
@@ -2251,7 +2265,7 @@ void RasterizerVulkan::InvalidateRegion(DAddr addr, u64 size, VideoCommon::Cache
     if (addr == 0 || size == 0) {
         return;
     }
-    if (True(which & VideoCommon::CacheType::TextureCache)) {
+    if (True(which & VideoCommon::CacheType::TextureCache) && MayHoldImages(addr, size)) {
         std::scoped_lock lock{texture_cache.mutex};
         texture_cache.WriteMemory(addr, size);
     }
@@ -2359,7 +2373,8 @@ bool RasterizerVulkan::OnCPUWrite(DAddr addr, u64 size) {
             return true;
         }
     }
-    {
+    // The back holds the texture cache's lock through each draw.
+    if (MayHoldImages(addr, size)) {
         std::scoped_lock lock{texture_cache.mutex};
         texture_cache.WriteMemory(addr, size);
     }

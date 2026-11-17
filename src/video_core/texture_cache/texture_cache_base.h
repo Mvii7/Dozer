@@ -43,6 +43,7 @@
 #include "video_core/texture_cache/image_base.h"
 #include "video_core/texture_cache/image_info.h"
 #include "video_core/texture_cache/image_view_base.h"
+#include "video_core/page_filter.h"
 #include "video_core/texture_cache/render_targets.h"
 #include "video_core/texture_cache/types.h"
 #include "video_core/textures/texture.h"
@@ -358,6 +359,9 @@ public:
     void PrepareImage(ImageId image_id, bool is_modification, bool invalidate);
 
     Common::SpinRecursiveMutex mutex;
+    /// The pages an image was ever registered or tracked on: elsewhere the cache holds nothing,
+    /// and guest accesses skip its lock (RasterizerVulkan::MayHoldImages).
+    VideoCommon::PageFilter page_filter;
 
 private:
     /// Iterate over all page indices in a range
