@@ -6,6 +6,13 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased (Dozer)
+
+- Buffer cache: a GPU-written range (each written storage binding, every draw) that the
+  GPU-written range set already holds whole, with no subtract reaching it since, is no longer
+  added to the set again (about 4% of the memory stage in Donkey Kong Bananza).
+  `EDEN_NX2_ADD_MEMO=0` turns it off; start-safe.bat turns it off.
+
 ## Dozer 0.1.5 (`v0.1.5`)
 
 - One submission per real fence (EDEN_NX2_RX_ONE_SUBMIT) is now on in every game, not only

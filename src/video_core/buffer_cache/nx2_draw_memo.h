@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstdlib>
 #include <memory>
 #include <span>
 #include <type_traits>
@@ -199,10 +200,11 @@ public:
     SummarizedRangeSet() = default;
     SummarizedRangeSet(SummarizedRangeSet&& other) noexcept
         : set{std::move(other.set)}, mode{other.mode}, low{other.low}, high{other.high},
-          stats{other.stats} {
+          stats{other.stats}, added{other.added}, next_added{other.next_added} {
         static_assert(!PageBits, "moving the page summary is not supported");
         other.low = ~u64{0};
         other.high = 0;
+        other.added.fill({});
     }
     SummarizedRangeSet& operator=(SummarizedRangeSet&&) = delete;
 
@@ -212,6 +214,24 @@ public:
     }
 
     void Add(u64 addr, size_t size) {
+        // EDEN_NX2_ADD_MEMO (on unless =0): a range inside one added earlier, with no Subtract
+        // or Clear reaching it since, is in the set already (each written storage binding adds
+        // the same window every draw).
+        static const bool add_memo = [] {
+            const char* const value = std::getenv("EDEN_NX2_ADD_MEMO");
+            return value == nullptr || value[0] != '0';
+        }();
+        if (add_memo && size != 0) {
+            const u64 end = addr + size;
+            for (const Added& range : added) {
+                if (range.begin <= addr && end <= range.end && addr < end) {
+                    return;
+                }
+            }
+            if (addr < end) {
+                added[next_added++ % added.size()] = Added{addr, end};
+            }
+        }
         if (mode != 0 && size != 0) {
             ++stats.adds;
             low = (std::min)(low, addr);
@@ -224,6 +244,7 @@ public:
     }
 
     void Subtract(u64 addr, size_t size) {
+        ForgetAdded(addr, size);
         if (mode != 0) {
             ++stats.subtracts;
             if (Missed(addr, size)) {
@@ -266,6 +287,7 @@ public:
 
     void Clear() {
         set.Clear();
+        added.fill({});
         Reset();
     }
 
@@ -340,6 +362,20 @@ public:
     }
 
 private:
+    struct Added {
+        u64 begin;
+        u64 end; ///< Equal to begin: empty
+    };
+
+    void ForgetAdded(u64 addr, size_t size) noexcept {
+        const u64 end = addr + size < addr ? ~u64{0} : addr + size;
+        for (Added& range : added) {
+            if (range.begin < end && addr < range.end) {
+                range = {};
+            }
+        }
+    }
+
     static u64 WordMask(u64 page, u64 count) noexcept {
         return (count == 64 ? ~u64{0} : ((u64{1} << count) - 1)) << (page & 63);
     }
@@ -425,6 +461,8 @@ private:
     u64 high = 0;
     mutable Stats stats{};
     u64 rebuild_false_positives = 0;
+    std::array<Added, 4> added{}; ///< EDEN_NX2_ADD_MEMO: ranges the set holds whole
+    u32 next_added = 0;
     [[no_unique_address]] std::conditional_t<PageBits, std::unique_ptr<u64[]>, NoPages> pages{};
     [[no_unique_address]] std::conditional_t<PageBits, std::array<u64, REGION_WORDS>, NoPages>
         regions{};

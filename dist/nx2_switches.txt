@@ -178,6 +178,9 @@
 #EDEN_NX2_USAGE_SKIP=0
 #EDEN_NX2_USAGE_RESET_SKIP=0
 #EDEN_NX2_GPU_WRITTEN_FILTER=0
+# ADD_MEMO=0: a GPU-written range already held whole is added to the range set again (default:
+# skipped while no subtract reached it).
+#EDEN_NX2_ADD_MEMO=0
 #EDEN_NX2_MARK_WORDS=0
 #EDEN_NX2_INVAL_HULL=0
 #EDEN_NX2_INVAL_SKIP=0
