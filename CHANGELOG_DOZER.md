@@ -6,6 +6,16 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased (Dozer)
+
+- Draw setup looks up a sampler or image view by index in the descriptor table, instead of hashing
+  that index. Deleting an image no longer walks every channel's view ids in a release build.
+- An ASTC texture's opacity scan uses a table of the 2048 block modes, instead of decoding each
+  block's mode bits on the GPU thread.
+- The GPU split's published and consumed counters sit on separate cache lines.
+- A macro DMA read copies its words in one read.
+- A draw or dispatch keeps room for 160 image views and 96 samplers without a heap allocation.
+
 ## Dozer 0.1.5 (`v0.1.5`)
 
 - One submission per real fence (EDEN_NX2_RX_ONE_SUBMIT) is now on in every game, not only
@@ -55,14 +65,6 @@ and `=0` brings back the 2.0.0 code path.
   that shape instead of being made for every texture (freed after 300 frames unused). In Mario
   Kart World a burst of ~1100 new course textures took ~200 ms of uploads on the GPU thread in one
   frame, at ~0.18 ms each. Not measured yet.
-
-- Draw setup looks up a sampler or image view by index in the descriptor table, instead of hashing
-  that index. Deleting an image no longer walks every channel's view ids in a release build.
-- An ASTC texture's opacity scan uses a table of the 2048 block modes, instead of decoding each
-  block's mode bits on the GPU thread.
-- The GPU split's published and consumed counters sit on separate cache lines.
-- A macro DMA read copies its words in one read.
-- A draw or dispatch keeps room for 160 image views and 96 samplers without a heap allocation.
 
 ## Dozer 0.1.3 (`v0.1.3`)
 
