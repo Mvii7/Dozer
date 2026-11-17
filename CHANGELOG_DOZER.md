@@ -18,6 +18,37 @@ and `=0` brings back the 2.0.0 code path.
   them unless something else wrote the range since GPUBack read it. `=2` verifies every slice
   against guest memory and logs any that differs.
 
+## Dozer 0.1.6 (`v0.1.6`)
+
+- Ported from Lichii: CPU-side performance work. A guest core polls for interrupts in hardware for
+  up to 100 us before it idles (`EDEN_NX2_IDLE_SPIN_US=0` blocks at once as before); the GPU
+  thread is woken for suspended channels instead of polling them (`EDEN_NX2_PENDING_WAKE`) and the
+  fencing thread only when it waits for fences. Guest reads and writes skip the texture cache on
+  pages no image was registered on (`EDEN_NX2_TEX_PAGE_FILTER`); the buffer cache reuses a page
+  table walk for shorter sizes, keeps pages of engine-written data tracked
+  (`EDEN_NX2_ENGINE_WRITE_TRACKED`), changes page protection after dropping its lock
+  (`EDEN_NX2_DEFER_PROTECT`), and deferred inline writes skip its lock off GPU-written pages
+  (`EDEN_NX2_INLINE_NOLOCK`). Collected CPU writes are gathered only when a core collected one
+  (`EDEN_NX2_GATHER_SKIP`). Windows `Protect` tries `VirtualProtect` without the placeholder lock
+  first (`EDEN_NX2_PROTECT_NOLOCK`). The texture cache keeps images used in the last 150 frames
+  until the budget runs short and evicts GPU-modified images only once the heap runs short
+  (`EDEN_NX2_TC_KEEP_RECENT`, `EDEN_NX2_TC_MIN_AGE`). KeplerCompute's upload list no longer grows
+  forever with native launches.
+
+- Ported from Lichii: dynarmic JIT. RegAlloc tracks slots in bitmasks, which shortens JIT compile
+  time; x86-64 code generation improvements for A64 (free registers for spills, folded address
+  offsets, a smaller dispatch table, a return stack buffer, shared exit stubs, far code), on for
+  every CPU accuracy but Paranoid; plain loads for LDAR, LDAPR and LDAXR and no barrier for DMB
+  LD/ST on x86; no perf map lock or name per block without `PERF_BUILDID_DIR`; each processor's
+  exclusive reservation has its own cache line. SM4E reads its S-box through a 64-bit address, so
+  blocks with SM4E/SM4EKEY no longer fail to emit when the host image is above 4 GiB.
+
+- Vulkan: a draw that samples a color image it also renders into (Donkey Kong Bananza's tutorial
+  gamma draw, A2B10G10R10) samples a copy made before the draw, so the panel no longer shows
+  garbage. Falls back to sampling the attachment when the copy gets no memory.
+
+- `EDEN_NX2_VDEC_DUMP` also writes the full-size luma and the NV12 chroma plane.
+
 ## Dozer 0.1.5 (`v0.1.5`)
 
 - One submission per real fence (EDEN_NX2_RX_ONE_SUBMIT) is now on in every game, not only

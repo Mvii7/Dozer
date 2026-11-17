@@ -280,6 +280,32 @@ vk::Image MemoryAllocator::CreateImage(const VkImageCreateInfo &ci, bool dedicat
                         device.GetDispatchLoader());
 }
 
+vk::Image MemoryAllocator::TryCreateImage(const VkImageCreateInfo &ci, bool dedicated) const {
+    const VmaAllocationCreateInfo alloc_ci = {
+            .flags = static_cast<VmaAllocationCreateFlags>(VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT) |
+                     (dedicated ? VmaAllocationCreateFlags{VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT}
+                               : VmaAllocationCreateFlags{0}),
+            .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+            .requiredFlags = 0,
+            .preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            .memoryTypeBits = 0,
+            .pool = VK_NULL_HANDLE,
+            .pUserData = nullptr,
+            .priority = 0.f,
+    };
+    VkImage handle{};
+    VmaAllocation allocation{};
+    VmaAllocationInfo alloc_info{};
+    const VkResult result =
+        vmaCreateImage(allocator, &ci, &alloc_ci, &handle, &allocation, &alloc_info);
+    if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY || result == VK_ERROR_OUT_OF_HOST_MEMORY) {
+        return vk::Image{};
+    }
+    vk::Check(result);
+    return vk::Image(handle, ci.usage, *device.GetLogical(), allocator, allocation,
+                     device.GetDispatchLoader());
+}
+
 vk::Image MemoryAllocator::CreateUnbackedImage(const VkImageCreateInfo &ci) const {
     if (ci.imageType == VK_IMAGE_TYPE_1D) {
         return vk::Image{};
