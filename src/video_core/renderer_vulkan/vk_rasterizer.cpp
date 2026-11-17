@@ -2326,8 +2326,36 @@ bool RasterizerVulkan::OnCPUWrite(DAddr addr, u64 size) {
     NoteLightWork();
     DEBUG_ASSERT(addr != 0 || size != 0);
     {
-        std::scoped_lock lock{buffer_cache.mutex};
-        if (buffer_cache.OnCPUWrite(addr, size)) {
+        // The pages the write untracks change their host protection after the lock is dropped:
+        // drawing waited for those system calls. A write trapping on a page still protected until
+        // then finds it already untracked and changes nothing. BufferCache::OnCPUWrite only
+        // untracks pages here (it never uploads), which is all that may wait. Device unmaps wait
+        // for these changes (BeginDeferredCachedUpdates). EDEN_NX2_DEFER_PROTECT=0: under the lock.
+        static const bool defer_enabled = [] {
+            const char* value = std::getenv("EDEN_NX2_DEFER_PROTECT");
+            return value == nullptr || value[0] != '0';
+        }();
+        static thread_local VideoCommon::DeferredPageCaching deferred;
+        const bool defer = defer_enabled && VideoCommon::t_deferred_page_caching == nullptr;
+        bool gpu_modified;
+        {
+            std::scoped_lock lock{buffer_cache.mutex};
+            if (defer) {
+                VideoCommon::t_deferred_page_caching = &deferred;
+            }
+            gpu_modified = buffer_cache.OnCPUWrite(addr, size);
+            if (defer) {
+                VideoCommon::t_deferred_page_caching = nullptr;
+                if (!deferred.Empty()) {
+                    device_memory.BeginDeferredCachedUpdates();
+                }
+            }
+        }
+        if (defer && !deferred.Empty()) {
+            deferred.ApplyAll();
+            device_memory.EndDeferredCachedUpdates();
+        }
+        if (gpu_modified) {
             return true;
         }
     }
