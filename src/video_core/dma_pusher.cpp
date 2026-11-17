@@ -378,6 +378,33 @@ size_t DmaPusher::ProcessCommands(std::span<const CommandHeader> commands, size_
             dma_state.is_last_call = true;
             index += max_write;
         } else if (dma_state.method_count) {
+            // An increasing run of 3D state methods goes to the split front in one call.
+            if (!dma_state.non_incrementing && !dma_increment_once) {
+                if (auto* const maxwell3d = FrontRunTarget()) {
+                    const u32 amount = static_cast<u32>(
+                        std::min<size_t>(dma_state.method_count, commands.size() - index));
+                    if (dma_state.method + amount <= MacroRegistersStart) {
+                        const bool last = amount == dma_state.method_count;
+                        const u32* const words = &commands[index].argument;
+                        const auto run = [&] {
+                            Diag::SetSendKind(Diag::SendKind::Front3D);
+                            maxwell3d->FrontCallRun(system, VideoCommon::GpuSplit::Get(),
+                                                    dma_state.method, words, amount, last);
+                        };
+                        dma_state.dma_word_offset = u64((word_offset + index + amount - 1) * sizeof(u32));
+                        dma_state.is_last_call = last;
+                        if (diag) {
+                            Diag::TimedSend(run);
+                        } else {
+                            run();
+                        }
+                        dma_state.method += amount;
+                        dma_state.method_count -= amount;
+                        index += amount;
+                        continue;
+                    }
+                }
+            }
             auto const command_header = commands[index]; //can copy
             dma_state.dma_word_offset = u64((word_offset + index) * sizeof(u32));
             dma_state.is_last_call = dma_state.method_count <= 1;
@@ -511,6 +538,33 @@ void DmaPusher::WatchArgument(u32 method, u32 argument) const {
         LOG_INFO(HW_GPU, "Semaphore watch: channel {} subchannel {} method {:#x} argument {:#x}",
                  channel_state.bind_id, dma_state.subchannel, method, argument);
     }
+}
+
+// EDEN_NX2_FRONT_RUNS=0: increasing runs of 3D state methods go to the split front word by
+// word, as before (ProcessCommands). Read at the first call, after nx2_switches.txt is loaded.
+static bool FrontRunsEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_FRONT_RUNS");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+Engines::Maxwell3D* DmaPusher::FrontRunTarget() {
+    if (dma_state.method < non_puller_methods || g_semaphore_watch != 0 || !FrontRunsEnabled()) {
+        return nullptr;
+    }
+    auto* const subchannel = subchannels[dma_state.subchannel];
+    if (subchannel == nullptr ||
+        subchannel_type[dma_state.subchannel] != Engines::EngineTypes::Maxwell3D) {
+        return nullptr;
+    }
+    const auto& split = VideoCommon::GpuSplit::Get();
+    if (!split.Active() || !split.FrontMacros()) {
+        return nullptr;
+    }
+    auto* const maxwell3d = static_cast<Engines::Maxwell3D*>(subchannel);
+    return maxwell3d->GetNativeMacroEngine().native_turing ? maxwell3d : nullptr;
 }
 
 bool DmaPusher::WantsSegment() const {

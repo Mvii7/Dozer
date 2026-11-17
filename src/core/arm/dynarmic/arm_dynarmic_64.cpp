@@ -9,6 +9,7 @@
 #if defined(_M_X64) || defined(__x86_64__)
 #include <immintrin.h>
 #endif
+#include "common/nx2_reactive.h"
 #include "common/settings.h"
 #include "core/arm/dynarmic/arm_dynarmic.h"
 #include "core/arm/dynarmic/arm_dynarmic_64.h"
@@ -382,6 +383,13 @@ void ArmDynarmic64::MakeJit(Common::PageTable* page_table, std::size_t address_s
         config.fastmem_pointer = std::nullopt;
         config.fastmem_exclusive_access = false;
     }
+    // Read traps (Memory::RasterizerArmReadTraps) protect a page only until its next read, so
+    // that read should not take the instruction off fastmem for good.
+    const char* read_traps = Common::Nx2Reactive::GetEnv("EDEN_NX2_READ_TRAPS");
+    config.fastmem_read_faults_transient =
+        config.fastmem_pointer.has_value() && (read_traps == nullptr || read_traps[0] != '0') &&
+        !Settings::values.use_reactive_flushing.GetValue() &&
+        Common::Nx2Reactive::TrapFaultsKeepFastmem();
     m_jit.emplace(config);
 }
 

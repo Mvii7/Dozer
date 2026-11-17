@@ -122,6 +122,8 @@ add_executable(yuzu
     configuration/configure_nx2perf.cpp
     configuration/configure_nx2perf.h
     configuration/configure_nx2perf.ui
+    configuration/configure_nx2perf_per_game.cpp
+    configuration/configure_nx2perf_per_game.h
     configuration/configure_network.cpp
     configuration/configure_network.h
     configuration/configure_network.ui

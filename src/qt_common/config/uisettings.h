@@ -8,6 +8,7 @@
 
 #include <array>
 #include <atomic>
+#include <map>
 #include <vector>
 #include <QByteArray>
 #include <QMetaType>
@@ -235,6 +236,8 @@ struct Values {
 
     // Anka: the [Anka] group (core/nx2_perf_settings.h), global only.
     Core::Nx2PerfSettings::Switches nx2perf{};
+    // The tuning boxes a game sets over those, by program id (the [AnkaGames] array).
+    std::map<u64, Core::Nx2PerfSettings::Overrides> nx2perf_games;
 
     bool configuration_applied;
     bool reset_to_defaults;

@@ -14,7 +14,7 @@
 
 // Anka's settings in the Qt program (anka.exe): the EDEN_NX2_* switches of the launchers
 // (dist/dozer/start-*.bat), as a preset and on / off settings kept in the [Anka] group of
-// qt-config.ini, the Performance preset until changed. The program sets the variables in its own
+// qt-config.ini, the Balanced preset until changed. The program sets the variables in its own
 // environment before a game boots (yuzu/nx2perf_session.h); anka-cli and the launchers don't read
 // these settings.
 //
@@ -68,7 +68,8 @@ struct Switches {
     bool operator==(const Switches&) const = default;
 };
 
-/// What the performance launcher sets (and the first start's settings).
+/// What the performance launcher sets. A file that stores no choice (`preset\default`) still means
+/// this, as it did before Balanced became the first start's preset (FirstStart).
 constexpr Switches Performance() {
     return Switches{};
 }
@@ -79,6 +80,11 @@ constexpr Switches Balanced() {
     switches.read_traps = true;
     switches.preset = Preset::Balanced;
     return switches;
+}
+
+/// The settings of a first start (no [Anka] group yet): the balanced launcher's.
+constexpr Switches FirstStart() {
+    return Balanced();
 }
 
 /// start-safe.bat's setup: none of the switches, and the per-draw shortcuts off.
@@ -115,6 +121,83 @@ inline constexpr std::array<Key, 2> GameKeys{{
     {"bananza_dynamic_fps", &Switches::dk_dyn},
     {"mariokart_dynamic_fps", &Switches::mkw_dyn},
 }};
+
+inline constexpr std::size_t KeyCount = Keys.size() + GameKeys.size();
+
+/// The key at `index`: Keys, then GameKeys.
+constexpr const Key& KeyAt(std::size_t index) {
+    return index < Keys.size() ? Keys[index] : GameKeys[index - Keys.size()];
+}
+
+/// One game's own choices over what it would run with: a preset, and a box per KeyAt() slot, each
+/// or none (it follows the global one). A game with a preset of its own (GamePreset) follows the
+/// global preset instead when `global_preset` is set.
+struct Overrides {
+    std::optional<Preset> preset;
+    bool global_preset = false;
+    std::array<std::optional<bool>, KeyCount> boxes{};
+
+    constexpr bool Empty() const {
+        if (preset || global_preset) {
+            return false;
+        }
+        for (const auto& box : boxes) {
+            if (box) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool operator==(const Overrides&) const = default;
+};
+
+/// `switches` with the overrides' boxes over them (the preset stays).
+constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) {
+    for (std::size_t i = 0; i < KeyCount; ++i) {
+        if (overrides.boxes[i]) {
+            switches.*KeyAt(i).field = *overrides.boxes[i];
+        }
+    }
+    return switches;
+}
+
+/// What a game's "preset" is stored as when it follows the global preset.
+inline constexpr int FollowGlobalPreset = -2;
+
+/// Reads a game's overrides through `read(key)`: -1 for no override, 0 off, 1 on; "preset" is
+/// a preset number, FollowGlobalPreset, or -1 (Custom, or anything else, is none).
+template <typename Read>
+Overrides LoadOverrides(Read&& read) {
+    Overrides overrides;
+    const int preset = read("preset");
+    overrides.global_preset = preset == FollowGlobalPreset;
+    if (preset != static_cast<int>(Preset::Custom) && preset >= 0 &&
+        preset <= static_cast<int>(Preset::Performance)) {
+        overrides.preset = static_cast<Preset>(preset);
+    }
+    for (std::size_t i = 0; i < KeyCount; ++i) {
+        const int value = read(KeyAt(i).name);
+        if (value == 0 || value == 1) {
+            overrides.boxes[i] = value == 1;
+        }
+    }
+    return overrides;
+}
+
+/// Writes a game's overrides through `write(key, value)`, with the values `LoadOverrides` reads.
+template <typename Write>
+void SaveOverrides(const Overrides& overrides, Write&& write) {
+    int preset = overrides.preset ? static_cast<int>(*overrides.preset) : -1;
+    if (overrides.global_preset) {
+        preset = FollowGlobalPreset;
+    }
+    write("preset", preset);
+    for (std::size_t i = 0; i < KeyCount; ++i) {
+        const auto& box = overrides.boxes[i];
+        write(KeyAt(i).name, box ? static_cast<int>(*box) : -1);
+    }
+}
 
 /// A stored preset number. Anything else is Custom (a file edited by hand).
 constexpr Preset PresetFromInt(int value) {
@@ -312,6 +395,32 @@ constexpr Game GameOf(u64 program_id) {
     return Game::Other;
 }
 
+/// The preset a game starts from instead of the global one: Bananza Performance (read traps off).
+/// Other games: none, they follow the global preset (Balanced from the first start).
+constexpr std::optional<Preset> GamePreset(Game game) {
+    return game == Game::Bananza ? std::optional{Preset::Performance} : std::nullopt;
+}
+
+/// The preset a game runs with: its own choice, else its starting one (unless it follows the
+/// global preset), else the global one.
+constexpr Preset PresetFor(Preset global, Game game, const Overrides& own) {
+    if (own.preset) {
+        return *own.preset;
+    }
+    const auto start = GamePreset(game);
+    return start && !own.global_preset ? *start : global;
+}
+
+/// The settings a game runs with: its preset's, then its own boxes.
+constexpr Switches ForGame(const Switches& global, Game game, const Overrides& own) {
+    Switches switches = global;
+    const Preset preset = PresetFor(global.preset, game, own);
+    if (preset != global.preset) {
+        switches = FromPreset(preset, global);
+    }
+    return WithOverrides(switches, own);
+}
+
 struct Var {
     std::string_view name;
     std::string_view value;
@@ -321,7 +430,7 @@ struct Var {
 
 /// The per-draw shortcuts this fork keeps on by default; the Safe preset turns them off (=0), as
 /// start-safe.bat does.
-inline constexpr std::array<std::string_view, 61> SafeOff{
+inline constexpr std::array<std::string_view, 64> SafeOff{
     "EDEN_NX2_LIGHT_DRAW",       "EDEN_NX2_LIGHT_UNIFORM",     "EDEN_NX2_LIGHT_UNIFORM_VALUES",
     "EDEN_NX2_LIGHT_STORAGE",    "EDEN_NX2_UNIFORM_SYNC_SKIP", "EDEN_NX2_STORAGE_KEEP",
     "EDEN_NX2_UBO_REUSE",        "EDEN_NX2_UBO_DIRECT",        "EDEN_NX2_UBO_STAGE",
@@ -342,7 +451,8 @@ inline constexpr std::array<std::string_view, 61> SafeOff{
     "EDEN_NX2_INDIRECT_BATCH",   "EDEN_NX2_LAYOUT_MEMO",       "EDEN_NX2_SAME_SKIP",
     "EDEN_NX2_HSETP2_REG",       "EDEN_NX2_DIRTY_THUNK_SKIP",  "EDEN_NX2_FAST_PRIORITY_SCAN",
     "EDEN_NX2_PBFLUSH_WINDOW_KIB", "EDEN_NX2_UPSCALE_SCAN",    "EDEN_NX2_UPSCALE_LEARN",
-    "EDEN_NX2_UPSCALE_HEADER",
+    "EDEN_NX2_UPSCALE_HEADER",   "EDEN_NX2_FRONT_RUNS",        "EDEN_NX2_UBO_KEEP",
+    "EDEN_NX2_RX_ONE_SUBMIT",
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.

@@ -3214,6 +3214,10 @@ public:
                          u32 argument, bool is_last_call);
     void FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit& split, u32 method,
                               const u32* base_start, u32 amount, u32 methods_pending);
+    /// FrontCallMethod for an increasing run of `amount` methods from `method`, all below the
+    /// macro registers. `last`: the run ends its command.
+    void FrontCallRun(Core::System& system, VideoCommon::GpuSplit& split, u32 method,
+                      const u32* words, u32 amount, bool last);
     /// Split GPU thread's front (DmaPusher): the macro being called continues with `method` and
     /// five words at `record`, on a page the GPU wrote. When the macro is NVN's indexed indirect
     /// draw (checked on its first calls), returns true: the front then does not need the words,

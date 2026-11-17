@@ -11,6 +11,7 @@
 
 #include "common/assert.h"
 #include "common/logging.h"
+#include "common/nx2_sync_serial.h"
 #include "common/settings.h"
 #include "core/core.h"
 #include "video_core/nx2_profile.h"
@@ -412,6 +413,7 @@ bool Puller::ResumeAcquire(DmaPusher& dma_pusher) {
     }
     pending_acquire.reset();
     Nx2SemaphoreWaiters::Get().Remove(this);
+    Common::Nx2SyncSerial::Bump();
     return true;
 }
 
@@ -716,6 +718,7 @@ void Puller::CallPullerMethod(DmaPusher& dma_pusher, const MethodCall& method_ca
     }
     regs.reg_array[method_call.method] = method_call.argument;
     const auto method = static_cast<BufferMethods>(method_call.method);
+    Common::Nx2SyncSerial::Bump();
 
     switch (method) {
     case BufferMethods::BindObject: {
@@ -800,6 +803,8 @@ void Puller::CallPullerMethod(DmaPusher& dma_pusher, const MethodCall& method_ca
         }
         break;
     }
+    // Again once the method is done: an acquire may have waited for the guest CPU.
+    Common::Nx2SyncSerial::Bump();
 }
 
 /// Calls a GPU engine method.

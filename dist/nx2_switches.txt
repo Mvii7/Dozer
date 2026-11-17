@@ -113,6 +113,8 @@
 # ACQUIRE_PEEK: a semaphore acquire whose value memory already holds goes on without
 # draining the back. 0 off (default), 1 on (recommended), 2 drains and logs where 1 would not.
 #EDEN_NX2_ACQUIRE_PEEK=1
+# FRONT_RUNS=0: increasing runs of 3D state methods go to the front word by word, as before.
+#EDEN_NX2_FRONT_RUNS=0
 # JIT_SAME: the front's macro JIT drops state writes that would change nothing. 0 off
 # (default), 1 in the JIT (recommended), 2 verify, 3 in C++.
 #EDEN_NX2_JIT_SAME=1
@@ -157,6 +159,12 @@
 #EDEN_NX2_UBO_DIRECT=0
 #EDEN_NX2_UBO_STAGE=0
 #EDEN_NX2_UBO_BIND_SKIP=0
+# UBO_KEEP: a uniform buffer bound to the same slot and range as last time is bound again without
+# reading guest memory while no write notice reached the range and nothing let the guest CPU
+# change it (a submission, a semaphore or syncpoint, a write around the caches, a mapping).
+# =2 compares anyway and logs "EDEN_NX2_UBO_KEEP: ... changed" for any range a keep would have
+# got wrong; the "Uniform buffer reuse" line counts kept, checked and changed binds.
+#EDEN_NX2_UBO_KEEP=0
 #EDEN_NX2_SSBO_FAST=0
 #EDEN_NX2_SSBO_MEMO=0
 #EDEN_NX2_SYNC_SETS=0
@@ -193,6 +201,10 @@
 #EDEN_NX2_BLIT_NATIVE_TILING=0
 # ASYNC_SKIP=1: skip draws whose pipeline is still compiling (things pop in; off).
 #EDEN_NX2_ASYNC_SKIP=1
+# ASTC_BC1=1|0: re-compressed ASTC images with no alpha go to BC1 (half the memory of BC3), found by
+# reading every block of each new image on the GPU thread (hitches when many textures stream in).
+# Unset: on only when the driver's memory budget is under 12 GiB.
+#EDEN_NX2_ASTC_BC1=0
 
 # --- presents and frame pacing (core/hle/service/nx2_gsv.h, video_core/nx2_mode_pace*.h) ---
 # PRESENT_INTERVAL=<1-4>: hold each present at least n vblanks after the previous one.
@@ -271,6 +283,27 @@
 # Balanced leaves this unset. Performance, Experimental and Safe set 0 (start-performance.bat,
 # start-reactive-experimental.bat, start-safe.bat).
 #EDEN_NX2_READ_TRAPS=0
+# TRAP_FASTMEM=0: a guest instruction whose read hits a read trap leaves fastmem for good, as
+# after any other fastmem fault (every later read of a GPU-cached page it makes then takes the
+# slow path). Unset (on): it takes the slow path for that one read and keeps fastmem; one that
+# faults more than 1000 times in a second leaves fastmem anyway. Only with read traps on; the
+# reactive stats line shows "fastmem read fallbacks" and "read faults kept".
+#EDEN_NX2_TRAP_FASTMEM=0
+# TRAP_REARM=0: a buffer page's read trap is armed by the GPU's first write there only; after
+# the guest's first read, later GPU writes reach it only through the copies back at fences, so a
+# read before the next fence can find older data. Unset (on): each read lets the next GPU write
+# arm the page again, and a read after that write flushes it.
+#EDEN_NX2_TRAP_REARM=0
+# TRAP_POP_DISARM=0: a copy back at a fence leaves the read traps of its pages armed, so the
+# guest's next read still faults (and finds nothing left to flush). Unset (on): the copy back
+# disarms the pages the GPU has not written since; the next GPU write arms them again.
+#EDEN_NX2_TRAP_POP_DISARM=0
+# COPYBACK_WAIT=0: a read trap that finds GPU writes not in guest memory yet always sync flushes
+# (the CPU waits for the GPU thread to reach it and for a new download). Unset (on): when all of
+# them are in copies back already committed at a fence, it waits for those to land instead
+# (8 ms at most, then the sync flush). The reactive stats line shows "traps disarmed at copy
+# back" and "copy back waits".
+#EDEN_NX2_COPYBACK_WAIT=0
 
 # --- reactive flushing (video_core/nx2_reactive_flush.h, common/nx2_reactive.h) ---
 # All off by default. Most matter only with use_reactive_flushing=true in the config;
@@ -290,8 +323,9 @@
 # every fence, images downloaded at every bind) is dropped when not read again for that
 # many frames. 0 / unset: kept for good.
 #EDEN_NX2_READ_LATCH_AGE=60
-# RX_ONE_SUBMIT=1: no second, empty submission after a fence's own one.
-#EDEN_NX2_RX_ONE_SUBMIT=1
+# RX_ONE_SUBMIT=0: a second, empty submission after a fence's own one, as before (default: left
+# out, in every game).
+#EDEN_NX2_RX_ONE_SUBMIT=0
 # RX_COALESCE=<n>: a buffer copy back that alone would turn a fence real waits for a fence
 # made anyway, at most n - 1 fences (only without delayed fences). 0 / 1: off.
 #EDEN_NX2_RX_COALESCE=4

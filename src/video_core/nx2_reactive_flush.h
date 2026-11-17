@@ -219,14 +219,16 @@ template <typename Stubbed>
     return real_work || (!loose && stubbed());
 }
 
-/// EDEN_NX2_RX_ONE_SUBMIT=1: a fence with downloads to wait for is made real, and a real fence's
-/// Queue submits the command buffer (InnerFence::Queue: scheduler.Flush); SignalFence then called
-/// FlushCommands, which submits again whenever the rasterizer drew since its last own flush: an
-/// empty submission (and state invalidation) per such fence. With the switch the second one is
-/// left out; nothing was recorded between the two.
+/// EDEN_NX2_RX_ONE_SUBMIT (on unless =0): a fence with downloads to wait for is made real, and a
+/// real fence's Queue submits the command buffer (InnerFence::Queue: scheduler.Flush); SignalFence
+/// then called FlushCommands, which submits again whenever the rasterizer drew since its last own
+/// flush: an empty submission (and state invalidation) per such fence. The second one is left
+/// out; nothing was recorded between the two. =0 submits it as before.
 [[nodiscard]] inline bool OneSubmit() noexcept {
-    static const bool enabled =
-        Common::Nx2Reactive::ParseFlag(Common::Nx2Reactive::GetEnv("EDEN_NX2_RX_ONE_SUBMIT"));
+    static const bool enabled = [] {
+        const char* const value = Common::Nx2Reactive::GetEnv("EDEN_NX2_RX_ONE_SUBMIT");
+        return value == nullptr || value[0] == '\0' || Common::Nx2Reactive::ParseFlag(value);
+    }();
     return enabled;
 }
 
@@ -361,6 +363,38 @@ enum class FitFeedback : u32 {
         return FitFeedback::None;
     }
     return FitInPassBarrier(mode) && fragment_read ? FitFeedback::InPass : FitFeedback::EndPass;
+}
+
+/// EDEN_NX2_TRAP_REARM=0: a buffer page's read trap is armed by the first GPU write only; after
+/// the guest's first read, only the copies back at fences bring it later GPU writes. Unset: a
+/// read lets the next GPU write arm it again (BufferCache::ForgetReadTraps).
+[[nodiscard]] inline bool TrapRearm() noexcept {
+    static const bool enabled = [] {
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_TRAP_REARM");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+/// EDEN_NX2_TRAP_POP_DISARM=0: a copy back to a read-trapped page leaves the trap armed until the
+/// guest's next read. Unset: the copy back disarms it (BufferCache::DisarmCopiedReadTraps).
+[[nodiscard]] inline bool TrapPopDisarm() noexcept {
+    static const bool enabled = [] {
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_TRAP_POP_DISARM");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+/// EDEN_NX2_COPYBACK_WAIT=0: a read trap that finds GPU writes not in guest memory yet always
+/// sync flushes. Unset: when they are all in committed copies back, it waits for those to land
+/// (BufferCache::WaitForCopyBack).
+[[nodiscard]] inline bool CopyBackWait() noexcept {
+    static const bool enabled = [] {
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_COPYBACK_WAIT");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
 }
 
 /// EDEN_NX2_RX_NO_COPYBACK=1 (DIAGNOSTIC ONLY, breaks reactive flushing's point): guest CPU reads

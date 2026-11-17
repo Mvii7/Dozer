@@ -16,6 +16,7 @@
 #include "common/assert.h"
 #include "common/nx2_reactive.h"
 #include "common/settings.h"
+#include "common/nx2_sync_serial.h"
 #include "common/settings_enums.h"
 #include "core/core.h"
 #include "core/core_timing.h"
@@ -287,6 +288,7 @@ struct GPU::Impl {
 
     /// Push GPU command entries to be processed
     void PushGPUEntries(s32 channel, Tegra::CommandList&& entries) {
+        Common::Nx2SyncSerial::Bump();
         gpu_thread.SubmitList(channel, std::move(entries), is_async);
     }
 

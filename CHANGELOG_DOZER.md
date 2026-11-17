@@ -6,7 +6,89 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Unreleased (Dozer)
+## Dozer 0.1.5 (`v0.1.5`)
+
+- One submission per real fence (EDEN_NX2_RX_ONE_SUBMIT) is now on in every game, not only
+  Donkey Kong Bananza; `=0` turns it off, and start-safe.bat turns it off.
+
+- Uniform buffers: a buffer bound to the same stage slot and range as the slot's last bind takes
+  that bind's upload again without reading and comparing guest memory, while no write notice
+  reached the range and nothing let the guest CPU change it since (a command submission, a
+  semaphore or syncpoint, a write around the caches, a memory mapping). After Lichii's uniform
+  keeps. `EDEN_NX2_UBO_KEEP=0` turns it off, `=2` compares anyway and logs any range a keep
+  would have got wrong. A census line, "nx2 uniform census", counts uniform binds, constant
+  buffer and inline writes per draw.
+
+## Dozer 0.1.4 (`v0.1.4`)
+
+- Mario Kart World: software 2D blits (a copy of CPU-written data that the GPU path does not take)
+  read and write only the block rows they touch, copy whole GOBs between tiled surfaces of one
+  format that differ only in block height, copy same-layout surfaces as they are and skip reading
+  a destination they overwrite. Tiled copies of 1 MiB and up go to a worker thread, which queues up
+  to 256 MiB of source snapshots; the memory manager makes reads, writes, flushes and unmaps of an
+  overlapping GPU range wait for them (`EDEN_NX2_ASYNC_BLIT=0` keeps every copy on the GPU thread).
+  Streamed course textures took 10-100 ms each on the GPU thread.
+
+- Network: a joined room can act as the LAN for local wireless games: LDN joins wait for the
+  host's reply, room datagrams go through `ProxySocket::Recv`, ZSTD room packets are decompressed
+  with a size check, and bsd sockets are closed once and survive a concurrent close. Ported from
+  Eglantine-Community/Eglantine#313; not tested here.
+
+- Donkey Kong Bananza: `EDEN_NX2_RX_ONE_SUBMIT=1` is set for it by the Tuning settings and the
+  launchers (start-safe.bat clears it). A real fence no longer submits a second, empty command
+  buffer after its own: about half the game's submissions, no visible change in play.
+
+- Split GPU thread front: an increasing run of 3D state methods goes to the front in one call
+  instead of one call per word (`EDEN_NX2_FRONT_RUNS=0` turns it off).
+
+- Buffer cache: the per-draw uniform, index, vertex and storage paths, buffer lookups and inline
+  writes read the GPU fence setting once a frame instead of on every call, and a uniform bind whose stage slot already held the
+  range with other bytes compares them once instead of twice.
+
+- Opaque ASTC to BC1 (`EDEN_NX2_ASTC_BC1`) is now on by default only when the driver's memory
+  budget is under 12 GiB. Finding the opaque images reads every block of each new ASTC image on the
+  GPU thread: in Mario Kart World, ~180 ms of a frame that brought ~1100 new course textures. With
+  more memory BC3 for all of them fits; `EDEN_NX2_ASTC_BC1=1` turns it on anyway, `=0` off.
+
+- ASTC re-compressed on the GPU (BC1/BC3 with GPU decoding): the RGBA8 image each texture is
+  decoded into, and its view per level, are now kept per shape and reused by the next texture of
+  that shape instead of being made for every texture (freed after 300 frames unused). In Mario
+  Kart World a burst of ~1100 new course textures took ~200 ms of uploads on the GPU thread in one
+  frame, at ~0.18 ms each. Not measured yet.
+
+## Dozer 0.1.3 (`v0.1.3`)
+
+- Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
+  and boxes as that game runs them. A setting changed for the game gets a cross that resets it to
+  the global one. Donkey Kong Bananza starts with the Performance preset (read traps off) instead
+  of the global one, shown as a changed preset that the cross resets to the global preset; other
+  games use the global settings. Only the changes are kept, in `qt-config.ini` (`[AnkaGames]`). A
+  game whose settings differ from the session's first game asks to restart, as before. The
+  Bananza and Mario Kart World dynamic frame rate boxes move from the global tab to those games'
+  own Tuning tabs (on by default, no cross); a game that had its box off keeps it off.
+
+- Tuning: the first start's preset is now Balanced (read traps on, which Mario Kart World needs)
+  instead of Performance. A `qt-config.ini` that already has a preset keeps it.
+
+- Read traps: a guest read that hits one no longer takes its instruction off fastmem for good.
+  Dynarmic sends that one read down the slow path and keeps the instruction on fastmem, so later
+  reads of pages already flushed stay fast. An instruction that faults more than 1000 times in a
+  second is still recompiled. `EDEN_NX2_TRAP_FASTMEM=0` brings back the old behaviour. The
+  reactive stats line also counts the read fallbacks and the faults kept on fastmem.
+  A buffer page's trap is also armed again by the next GPU write after each read
+  (`EDEN_NX2_TRAP_REARM=0`: only the first). Before, the instructions that left fastmem flushed
+  on their reads; without them, distant terrain in Bananza flickered on data the fences had not
+  copied back yet.
+  A copy back at a fence now disarms the traps of its pages (`EDEN_NX2_TRAP_POP_DISARM=0`: they
+  stay armed until a read), so reads after it no longer fault for nothing, and a trapped read
+  whose GPU writes are already in a committed copy back waits for it instead of a sync flush
+  (`EDEN_NX2_COPYBACK_WAIT=0`: always the sync flush). Disarming re-protects pages in runs.
+
+- Shader cache: a graphics pipeline key no longer includes the Vulkan driver id or version, so a
+  driver update still uses the pipelines in `vulkan.bin` instead of building them all again during
+  play. Older caches are read as they are; the driver words are cleared when a record is loaded, and
+  a pipeline saved under two driver versions is built once. If the driver rejects the device static
+  pipeline cache, that file is dropped and a new one is started.
 
 ## Dozer 0.1.2 (`v0.1.2`)
 

@@ -31,6 +31,7 @@
 #include "video_core/nx2_mode_diag.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/nx2_stages.h"
+#include "video_core/nx2_uniform_census.h"
 #include "video_core/rasterizer_interface.h"
 #include "shader_recompiler/ir_opt/nx2_root.h"
 #include "video_core/textures/texture.h"
@@ -1208,6 +1209,8 @@ MAXWELL3D_FORCE_INLINE void Maxwell3D::NoteLightWrite(GPUVAddr address, u32 size
 MAXWELL3D_FORCE_INLINE void Maxwell3D::CbWriteImpl(GPUVAddr address, const u32* start_base,
                                                    u32 amount) {
     const size_t copy_size = amount * sizeof(u32);
+    VideoCommon::Nx2UniformCensus::Add(VideoCommon::Nx2UniformCensus::CbWrites, 1);
+    VideoCommon::Nx2UniformCensus::Add(VideoCommon::Nx2UniformCensus::CbWriteBytes, copy_size);
     bool skip_write = false;
     if (LightTrackingEnabled()) {
         const u64 same_writes = light.same_writes;
@@ -1847,6 +1850,14 @@ void Maxwell3D::FrontCallMethod(Core::System& system, VideoCommon::GpuSplit& spl
         return;
     }
     FrontWrite(split, fs, method, argument, is_last_call, false);
+}
+
+void Maxwell3D::FrontCallRun(Core::System& system, VideoCommon::GpuSplit& split, u32 method,
+                             const u32* words, u32 amount, bool last) {
+    auto& fs = Front(system, split);
+    for (u32 i = 0; i < amount; ++i) {
+        FrontWrite(split, fs, method + i, words[i], last && i + 1 == amount, false);
+    }
 }
 
 void Maxwell3D::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit& split,
