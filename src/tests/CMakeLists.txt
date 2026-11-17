@@ -77,6 +77,11 @@ create_target_directory_groups(tests)
 target_link_libraries(tests PRIVATE common core frontend_common input_common video_core)
 target_link_libraries(tests PRIVATE ${PLATFORM_LIBRARIES} Catch2::Catch2WithMain Threads::Threads)
 
+if (TARGET dynarmic::dynarmic)
+    target_sources(tests PRIVATE core/jit_codegen_options.cpp)
+    target_link_libraries(tests PRIVATE dynarmic::dynarmic)
+endif()
+
 target_compile_definitions(tests PRIVATE
     YUZU_NX_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/core/nx_fixtures")
 
