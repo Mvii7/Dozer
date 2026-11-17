@@ -33,7 +33,6 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
     {"EDEN_NX2_MODE_PACE", "2"},
     {"EDEN_NX2_PACE_SPIN_US", "1500"},
-    {"EDEN_NX2_RX_ONE_SUBMIT", "1"},
 };
 
 const std::vector<Var> BananzaVars{
@@ -41,7 +40,6 @@ const std::vector<Var> BananzaVars{
     {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
     {"EDEN_NX2_MODE_PACE", "2"},
     {"EDEN_NX2_PACE_SPIN_US", "1500"},
-    {"EDEN_NX2_RX_ONE_SUBMIT", "1"},
 };
 
 const std::vector<Var> MkwVars{
@@ -66,7 +64,6 @@ const std::set<std::string_view> BananzaOnly{
     "EDEN_NX2_PRESENT_INTERVAL_WORD",
     "EDEN_NX2_MODE_PACE",
     "EDEN_NX2_PACE_SPIN_US",
-    "EDEN_NX2_RX_ONE_SUBMIT",
 };
 
 // An ini group as the config sees it: the on / off keys and "preset".
@@ -310,8 +307,8 @@ TEST_CASE("Nx2PerfSettings: a game's settings never reach another game", "[core]
     Switches no_dk = Balanced();
     no_dk.dk_dyn = false;
     const auto pacing = Wanted(no_dk, Game::Bananza);
-    REQUIRE(pacing.size() == other.size() + 4);
-    REQUIRE(pacing.back() == Var{"EDEN_NX2_RX_ONE_SUBMIT", "1"});
+    REQUIRE(pacing.size() == other.size() + 3);
+    REQUIRE(pacing.back() == Var{"EDEN_NX2_PACE_SPIN_US", "1500"});
     // Mario Kart World's switch is its own: Bananza's box does not touch it.
     REQUIRE(Wanted(no_dk, Game::MarioKartWorld) == Wanted(Balanced(), Game::MarioKartWorld));
     auto mkw = other;

@@ -219,14 +219,16 @@ template <typename Stubbed>
     return real_work || (!loose && stubbed());
 }
 
-/// EDEN_NX2_RX_ONE_SUBMIT=1: a fence with downloads to wait for is made real, and a real fence's
-/// Queue submits the command buffer (InnerFence::Queue: scheduler.Flush); SignalFence then called
-/// FlushCommands, which submits again whenever the rasterizer drew since its last own flush: an
-/// empty submission (and state invalidation) per such fence. With the switch the second one is
-/// left out; nothing was recorded between the two.
+/// EDEN_NX2_RX_ONE_SUBMIT (on unless =0): a fence with downloads to wait for is made real, and a
+/// real fence's Queue submits the command buffer (InnerFence::Queue: scheduler.Flush); SignalFence
+/// then called FlushCommands, which submits again whenever the rasterizer drew since its last own
+/// flush: an empty submission (and state invalidation) per such fence. The second one is left
+/// out; nothing was recorded between the two. =0 submits it as before.
 [[nodiscard]] inline bool OneSubmit() noexcept {
-    static const bool enabled =
-        Common::Nx2Reactive::ParseFlag(Common::Nx2Reactive::GetEnv("EDEN_NX2_RX_ONE_SUBMIT"));
+    static const bool enabled = [] {
+        const char* const value = Common::Nx2Reactive::GetEnv("EDEN_NX2_RX_ONE_SUBMIT");
+        return value == nullptr || value[0] == '\0' || Common::Nx2Reactive::ParseFlag(value);
+    }();
     return enabled;
 }
 

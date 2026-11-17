@@ -6,7 +6,64 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Unreleased (Dozer)
+## Dozer 0.1.6 (`v0.1.6`)
+
+- Ported from Lichii: CPU-side performance work. A guest core polls for interrupts in hardware for
+  up to 100 us before it idles (`EDEN_NX2_IDLE_SPIN_US=0` blocks at once as before); the GPU
+  thread is woken for suspended channels instead of polling them (`EDEN_NX2_PENDING_WAKE`) and the
+  fencing thread only when it waits for fences. Guest reads and writes skip the texture cache on
+  pages no image was registered on (`EDEN_NX2_TEX_PAGE_FILTER`); the buffer cache reuses a page
+  table walk for shorter sizes, keeps pages of engine-written data tracked
+  (`EDEN_NX2_ENGINE_WRITE_TRACKED`), changes page protection after dropping its lock
+  (`EDEN_NX2_DEFER_PROTECT`), and deferred inline writes skip its lock off GPU-written pages
+  (`EDEN_NX2_INLINE_NOLOCK`). Collected CPU writes are gathered only when a core collected one
+  (`EDEN_NX2_GATHER_SKIP`). Windows `Protect` tries `VirtualProtect` without the placeholder lock
+  first (`EDEN_NX2_PROTECT_NOLOCK`). The texture cache keeps images used in the last 150 frames
+  until the budget runs short and evicts GPU-modified images only once the heap runs short
+  (`EDEN_NX2_TC_KEEP_RECENT`, `EDEN_NX2_TC_MIN_AGE`). KeplerCompute's upload list no longer grows
+  forever with native launches.
+
+- Ported from Lichii: dynarmic JIT. RegAlloc tracks slots in bitmasks, which shortens JIT compile
+  time; x86-64 code generation improvements for A64 (free registers for spills, folded address
+  offsets, a smaller dispatch table, a return stack buffer, shared exit stubs, far code), on for
+  every CPU accuracy but Paranoid; plain loads for LDAR, LDAPR and LDAXR and no barrier for DMB
+  LD/ST on x86; no perf map lock or name per block without `PERF_BUILDID_DIR`; each processor's
+  exclusive reservation has its own cache line. SM4E reads its S-box through a 64-bit address, so
+  blocks with SM4E/SM4EKEY no longer fail to emit when the host image is above 4 GiB.
+
+- Vulkan: a draw that samples a color image it also renders into (Donkey Kong Bananza's tutorial
+  gamma draw, A2B10G10R10) samples a copy made before the draw, so the panel no longer shows
+  garbage. Falls back to sampling the attachment when the copy gets no memory.
+
+- `EDEN_NX2_VDEC_DUMP` also writes the full-size luma and the NV12 chroma plane.
+
+## Dozer 0.1.5 (`v0.1.5`)
+
+- One submission per real fence (EDEN_NX2_RX_ONE_SUBMIT) is now on in every game, not only
+  Donkey Kong Bananza; `=0` turns it off, and start-safe.bat turns it off.
+
+- Uniform buffers: a buffer bound to the same stage slot and range as the slot's last bind takes
+  that bind's upload again without reading and comparing guest memory, while no write notice
+  reached the range and nothing let the guest CPU change it since (a command submission, a
+  semaphore or syncpoint, a write around the caches, a memory mapping). After Lichii's uniform
+  keeps. `EDEN_NX2_UBO_KEEP=0` turns it off, `=2` compares anyway and logs any range a keep
+  would have got wrong. A census line, "nx2 uniform census", counts uniform binds, constant
+  buffer and inline writes per draw.
+
+## Dozer 0.1.4 (`v0.1.4`)
+
+- Mario Kart World: software 2D blits (a copy of CPU-written data that the GPU path does not take)
+  read and write only the block rows they touch, copy whole GOBs between tiled surfaces of one
+  format that differ only in block height, copy same-layout surfaces as they are and skip reading
+  a destination they overwrite. Tiled copies of 1 MiB and up go to a worker thread, which queues up
+  to 256 MiB of source snapshots; the memory manager makes reads, writes, flushes and unmaps of an
+  overlapping GPU range wait for them (`EDEN_NX2_ASYNC_BLIT=0` keeps every copy on the GPU thread).
+  Streamed course textures took 10-100 ms each on the GPU thread.
+
+- Network: a joined room can act as the LAN for local wireless games: LDN joins wait for the
+  host's reply, room datagrams go through `ProxySocket::Recv`, ZSTD room packets are decompressed
+  with a size check, and bsd sockets are closed once and survive a concurrent close. Ported from
+  Eglantine-Community/Eglantine#313; not tested here.
 
 - Donkey Kong Bananza: `EDEN_NX2_RX_ONE_SUBMIT=1` is set for it by the Tuning settings and the
   launchers (start-safe.bat clears it). A real fence no longer submits a second, empty command
@@ -15,8 +72,8 @@ and `=0` brings back the 2.0.0 code path.
 - Split GPU thread front: an increasing run of 3D state methods goes to the front in one call
   instead of one call per word (`EDEN_NX2_FRONT_RUNS=0` turns it off).
 
-- Buffer cache: the per-draw uniform, index, vertex and storage paths read the GPU fence setting
-  once a frame instead of on every draw, and a uniform bind whose stage slot already held the
+- Buffer cache: the per-draw uniform, index, vertex and storage paths, buffer lookups and inline
+  writes read the GPU fence setting once a frame instead of on every call, and a uniform bind whose stage slot already held the
   range with other bytes compares them once instead of twice.
 
 - Donkey Kong Bananza's Properties window has a **Quality** tab (only that game has it): a Default / Balanced / Performance / Custom preset box and
@@ -30,6 +87,17 @@ and `=0` brings back the 2.0.0 code path.
   as an in-memory mod layer (`core/loader/nx2_dk_foliage.h`): models at once, view margin, placement
   density, draw distance and LOD bias per model, plus four effect caps (effects per frame, particles per emitter, effects alive, terrain
   material effects) from the effect settings files.
+
+- Opaque ASTC to BC1 (`EDEN_NX2_ASTC_BC1`) is now on by default only when the driver's memory
+  budget is under 12 GiB. Finding the opaque images reads every block of each new ASTC image on the
+  GPU thread: in Mario Kart World, ~180 ms of a frame that brought ~1100 new course textures. With
+  more memory BC3 for all of them fits; `EDEN_NX2_ASTC_BC1=1` turns it on anyway, `=0` off.
+
+- ASTC re-compressed on the GPU (BC1/BC3 with GPU decoding): the RGBA8 image each texture is
+  decoded into, and its view per level, are now kept per shape and reused by the next texture of
+  that shape instead of being made for every texture (freed after 300 frames unused). In Mario
+  Kart World a burst of ~1100 new course textures took ~200 ms of uploads on the GPU thread in one
+  frame, at ~0.18 ms each. Not measured yet.
 
 ## Dozer 0.1.3 (`v0.1.3`)
 

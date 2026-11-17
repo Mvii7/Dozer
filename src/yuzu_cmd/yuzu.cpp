@@ -42,6 +42,7 @@
 #include "core/file_sys/vfs/vfs_real.h"
 #include "core/hle/service/am/applet_manager.h"
 #include "core/hle/service/filesystem/filesystem.h"
+#include "core/internal_network/network.h"
 #include "core/loader/loader.h"
 #include "frontend_common/config.h"
 #include "hid_core/frontend/emulated_controller.h"
@@ -261,6 +262,7 @@ struct SdlState {
     // EDEN_NX2_OSD (frontend_common/nx2_osd.h): reads the system's clock, stopped before it
     // shuts down.
     Nx2Osd::WriterPtr osd;
+    bool network_initialized{};
 };
 
 extern "C" SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
@@ -310,6 +312,12 @@ extern "C" SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 
     if (lp.filepath.empty()) {
         LOG_CRITICAL(Frontend, "Failed to load ROM: No ROM specified");
+        return SDL_APP_FAILURE;
+    }
+
+    state->network_initialized = Network::Init();
+    if (!state->network_initialized) {
+        LOG_CRITICAL(Network, "Failed to initialize room networking");
         return SDL_APP_FAILURE;
     }
 
@@ -741,7 +749,11 @@ extern "C" void SDL_AppQuit(void *appstate, SDL_AppResult result) {
         void(state->system.Pause());
         state->system.ShutdownMainProcess();
     }
+    const bool network_initialized = state->network_initialized;
     delete state;
+    if (network_initialized) {
+        Network::Shutdown();
+    }
 }
 
 #define VMA_IMPLEMENTATION

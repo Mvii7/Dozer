@@ -14,6 +14,7 @@
 #include <fmt/ranges.h>
 
 #include "common/nx2_reactive.h"
+#include "common/nx2_sync_serial.h"
 #include "common/range_sets.inc"
 #include "video_core/buffer_cache/buffer_cache_base.h"
 #include "video_core/buffer_cache/word_manager.h"
@@ -21,6 +22,7 @@
 #include "video_core/host1x/gpu_device_memory_manager.h"
 #include "video_core/nx2.h"
 #include "video_core/nx2_profile.h"
+#include "video_core/nx2_uniform_census.h"
 #include "video_core/texture_cache/util.h"
 
 namespace VideoCommon {
@@ -183,12 +185,28 @@ void BufferCache<P>::UnmapGPUMemory(size_t as_id, GPUVAddr gpu_addr, size_t size
 }
 
 template <class P>
-void BufferCache<P>::WriteMemory(DAddr device_addr, u64 size) {
+void BufferCache<P>::WriteMemory(DAddr device_addr, u64 size, bool engine_write) {
+    NoteUniformWrite(device_addr, size);
     if (IsRegionGpuModified(device_addr, size)) {
         ClearDownload(device_addr, size);
         gpu_modified_ranges.Subtract(device_addr, size);
     }
-    memory_tracker.MarkRegionAsCpuModified(device_addr, size);
+    MarkCpuWritten(device_addr, size, engine_write);
+}
+
+template <class P>
+void BufferCache<P>::MarkCpuWritten(DAddr device_addr, u64 size, bool engine_write) {
+    // Untracking the pages and tracking them again at the upload changed their host protection
+    // twice for writes no guest CPU access saw (EDEN_NX2_ENGINE_WRITE_TRACKED=0: untracked).
+    static const bool keep_tracked = [] {
+        const char* value = std::getenv("EDEN_NX2_ENGINE_WRITE_TRACKED");
+        return value == nullptr || value[0] != '0';
+    }();
+    if (engine_write && keep_tracked) {
+        memory_tracker.MarkRegionAsWrittenTracked(device_addr, size);
+    } else {
+        memory_tracker.MarkRegionAsCpuModified(device_addr, size);
+    }
 }
 
 template <class P>
@@ -209,18 +227,20 @@ void BufferCache<P>::WriteMemoryRanges(std::span<const std::pair<DAddr, std::siz
         }
         if (!IsRegionGpuModified(lowest, static_cast<size_t>(highest - lowest))) {
             for (const auto& [addr, size] : ranges) {
-                memory_tracker.MarkRegionAsCpuModified(addr, size);
+                NoteUniformWrite(addr, size);
+                MarkCpuWritten(addr, size, true);
             }
             return;
         }
     }
     for (const auto& [addr, size] : ranges) {
-        WriteMemory(addr, size);
+        WriteMemory(addr, size, true);
     }
 }
 
 template <class P>
 void BufferCache<P>::CachedWriteMemory(DAddr device_addr, u64 size) {
+    NoteUniformWrite(device_addr, size);
     const bool is_dirty = IsRegionRegistered(device_addr, size);
     if (!is_dirty) {
         return;
@@ -240,6 +260,7 @@ void BufferCache<P>::CachedWriteMemory(DAddr device_addr, u64 size) {
 
 template <class P>
 bool BufferCache<P>::OnCPUWrite(DAddr device_addr, u64 size) {
+    NoteUniformWrite(device_addr, size);
     const bool is_dirty = IsRegionRegistered(device_addr, size);
     if (!is_dirty) {
         return false;
@@ -294,6 +315,7 @@ bool BufferCache<P>::DMACopy(GPUVAddr src_address, GPUVAddr dest_address, u64 am
     if (!cpu_src_address || !cpu_dest_address) {
         return false;
     }
+    NoteUniformWrite(*cpu_dest_address, amount);
     const bool source_dirty = IsRegionRegistered(*cpu_src_address, amount);
     const bool dest_dirty = IsRegionRegistered(*cpu_dest_address, amount);
     if (!source_dirty && !dest_dirty) {
@@ -363,6 +385,7 @@ bool BufferCache<P>::DMAClear(GPUVAddr dst_address, u64 amount, u32 value) {
     if (!cpu_dst_address) {
         return false;
     }
+    NoteUniformWrite(*cpu_dst_address, amount * sizeof(u32));
     const bool dest_dirty = IsRegionRegistered(*cpu_dst_address, amount);
     if (!dest_dirty) {
         return false;
@@ -1384,12 +1407,14 @@ void BufferCache<P>::BindHostGraphicsUniformBuffers(size_t stage) {
 template <class P>
 void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 binding_index, bool needs_bind) {
     ++channel_state->uniform_cache_shots[0];
+    Nx2UniformCensus::Add(Nx2UniformCensus::UniformBinds, 1);
     // EDEN_NX2_ROOT_TABLES (shader_recompiler/ir_opt/nx2_root.h; `loaded` is set only with it):
     // bank 24, root table 0, is read as bank 17, which such games do not bind; stream the table's
     // words as that buffer (Duck912 0e0ccd768b). A table write makes the next draw a full setup,
     // which gets here again.
     if (index == 17 && maxwell3d->root_tables.loaded &&
         channel_state->uniform_buffers[stage][index].size == 0) [[unlikely]] {
+        Nx2UniformCensus::Add(Nx2UniformCensus::UniformRootTable, 1);
         const auto& words = maxwell3d->root_tables.tables[0];
         const u32 size = (*channel_state->uniform_buffer_sizes)[stage][index];
         const u32 copied = (std::min)(size, static_cast<u32>(sizeof(words)));
@@ -1429,6 +1454,17 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
         || (has_host_buffer && size <= channel_state->uniform_buffer_skip_cache_size
             && !memory_tracker.IsRegionGpuModified(device_addr, size));
     if (use_fast_buffer) {
+        Nx2UniformCensus::Add(Nx2UniformCensus::UniformFast, 1);
+        Nx2UniformCensus::Add(Nx2UniformCensus::UniformBytes, size);
+    } else {
+        using namespace Nx2UniformCensus;
+        Add(!has_host_buffer                                         ? UniformNoBuffer
+            : channel_state->uniform_buffer_skip_cache_size == 0     ? UniformNoSkip
+            : size > channel_state->uniform_buffer_skip_cache_size   ? UniformTooBig
+                                                                     : UniformGpuWritten,
+            1);
+    }
+    if (use_fast_buffer) {
         if constexpr (IS_OPENGL) {
             if (runtime.HasFastBufferSubData()) {
                 // Fast path for Nvidia
@@ -1455,6 +1491,34 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
             // several stages) and streams a new one otherwise. One descriptor per bind either way.
             // EDEN_NX2_UBO_STAGE: also the slice this stage's slot was bound to last.
             if (runtime.UniformReuseEnabled()) {
+                // EDEN_NX2_UBO_KEEP: taken before guest memory is read, what a later bind of the
+                // slot compares with.
+                const int keep_mode = Nx2UniformKeep();
+                const u64 sync_serial = Common::Nx2SyncSerial::Get();
+                const u64 writes = uniform_write_log.count;
+                if (keep_mode != 0) {
+                    const auto* const kept =
+                        runtime.KeptUniform(stage, index, device_addr, size, sync_serial);
+                    if (kept != nullptr &&
+                        !UniformWrittenSince(runtime.KeptUniformWrites(stage, index), device_addr,
+                                             size)) {
+                        if (keep_mode != 2) {
+                            runtime.BindKeptUniform(stage, index, *kept, size, writes);
+                            ++uniform_keeps;
+                            return;
+                        }
+                        const std::span<u8> bytes = runtime.UniformReuseScratch(size);
+                        device_memory.ReadBlockUnsafe(device_addr, bytes.data(), size);
+                        ++uniform_keep_checks;
+                        if (std::memcmp(kept->bytes.data(), bytes.data(), size) != 0 &&
+                            uniform_keep_mismatches++ < 16) {
+                            LOG_ERROR(HW_GPU,
+                                      "EDEN_NX2_UBO_KEEP: stage {} slot {} range {:#x}+{:#x} "
+                                      "changed without a write notice or sync",
+                                      stage, index, device_addr, size);
+                        }
+                    }
+                }
                 // EDEN_NX2_UBO_DIRECT: when the guest bytes lie in one run of host memory (at most
                 // two device pages, the second right after the first), the runtime compares and
                 // copies them in place instead of from a copy read into the scratch first.
@@ -1477,6 +1541,7 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
                     device_memory.ReadBlockUnsafe(device_addr, bytes.data(), size);
                     reused = runtime.BindMappedUniformBufferReuse(stage, index, device_addr, size);
                 }
+                runtime.NoteUniformKeep(stage, index, device_addr, size, sync_serial, writes);
                 static u64 binds{};
                 static u64 reuses{};
                 static u64 reused_bytes{};
@@ -1488,8 +1553,10 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
                 if ((binds & ((u64{1} << 22) - 1)) == 0) {
                     LOG_INFO(HW_GPU,
                              "Uniform buffer reuse: {} of {} streamed binds reused, {} MiB not "
-                             "copied ({} only through EDEN_NX2_UBO_STAGE)",
-                             reuses, binds, reused_bytes >> 20, runtime.UniformStageReuses());
+                             "copied ({} only through EDEN_NX2_UBO_STAGE); {} kept without "
+                             "reading (EDEN_NX2_UBO_KEEP), {} checked, {} changed",
+                             reuses, binds, reused_bytes >> 20, runtime.UniformStageReuses(),
+                             uniform_keeps, uniform_keep_checks, uniform_keep_mismatches);
                 }
                 return;
             }
@@ -2340,7 +2407,7 @@ BufferId BufferCache<P>::FindBuffer(DAddr device_addr, u32 size, bool sparse_com
     if (buffer_id) {
         Buffer& buffer = slot_buffers[buffer_id];
         if (buffer.IsInBounds(device_addr, size)) {
-            const bool should_sync = Settings::IsGPUFenceBehaviorAccurate();
+            const bool should_sync = fence_accurate;
             if (should_sync) {
                 SynchronizeBufferWrites(buffer);
             }
@@ -2790,6 +2857,9 @@ void BufferCache<P>::MappedUploadMemory([[maybe_unused]] Buffer& buffer,
 template <class P>
 bool BufferCache<P>::InlineMemory(DAddr dest_address, size_t copy_size,
                                   std::span<const u8> inlined_buffer) {
+    NoteUniformWrite(dest_address, copy_size);
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineWrites, 1);
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineWriteBytes, copy_size);
     const bool is_dirty = IsRegionRegistered(dest_address, copy_size);
     if (!is_dirty) {
         return false;
@@ -2799,6 +2869,7 @@ bool BufferCache<P>::InlineMemory(DAddr dest_address, size_t copy_size,
     if (!IsRegionGpuModified(aligned_start, aligned_end - aligned_start)) {
         return false;
     }
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineGpuWritten, 1);
 
     InlineMemoryImplementation(dest_address, copy_size, inlined_buffer);
 
@@ -2843,10 +2914,13 @@ bool BufferCache<P>::InlineMemoryBatched(DAddr dest_address, size_t copy_size,
     // writes keep their order), and when it is full. Until then this records only uploads of
     // CPU-modified guest memory into the buffer (SynchronizeBuffer), the bytes an upload made
     // in its place would have found there: each byte of the buffer ends up as it would have.
-    if (Settings::IsGPUFenceBehaviorAccurate()) [[unlikely]] {
+    if (fence_accurate) {
         FlushInlineBatch(batch);
         return InlineMemory(dest_address, copy_size, inlined_buffer);
     }
+    NoteUniformWrite(dest_address, copy_size);
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineWrites, 1);
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineWriteBytes, copy_size);
     if (!IsRegionRegistered(dest_address, copy_size)) {
         return false;
     }
@@ -2855,6 +2929,7 @@ bool BufferCache<P>::InlineMemoryBatched(DAddr dest_address, size_t copy_size,
     if (!IsRegionGpuModified(aligned_start, aligned_end - aligned_start)) {
         return false;
     }
+    Nx2UniformCensus::Add(Nx2UniformCensus::InlineGpuWritten, 1);
     ClearDownload(dest_address, copy_size);
     gpu_modified_ranges.Subtract(dest_address, copy_size);
 
