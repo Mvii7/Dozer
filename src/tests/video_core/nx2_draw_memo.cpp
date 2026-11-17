@@ -608,3 +608,53 @@ TEST_CASE("SlotVector iterates the stored slots", "[common][nx2]") {
         REQUIRE(seen == expected);
     }
 }
+
+TEST_CASE("SummarizedRangeSet pending subtracts", "[video_core][nx2]") {
+    // Subtracts inside a window the next add covers (EDEN_NX2_LAZY_SUBTRACT), seen by every query.
+    std::mt19937_64 rng{11};
+    SummarizedRangeSet<true> summarized;
+    summarized.SetMode(1);
+    Common::RangeSet<u64> tree;
+    const u64 windows[] = {0x1'0000'0000ULL, 0x1'0080'0000ULL};
+    for (int step = 0; step < 20000; ++step) {
+        const u64 window = windows[rng() % 2];
+        const u64 offset = rng() % 0x80'0000;
+        const u64 size = 1 + rng() % 0x1000;
+        switch (rng() % 7) {
+        case 0:
+        case 1:
+            summarized.Subtract(window + offset, size);
+            tree.Subtract(window + offset, size);
+            break;
+        case 2:
+            summarized.Add(window + offset, size);
+            tree.Add(window + offset, size);
+            break;
+        case 3:
+            REQUIRE(summarized.Intersects(window + offset, size) ==
+                    tree.Intersects(window + offset, size));
+            break;
+        case 4: {
+            std::vector<std::pair<u64, u64>> in_summarized;
+            std::vector<std::pair<u64, u64>> in_tree;
+            summarized.ForEachInRange(window + offset, size, [&](u64 begin, u64 end) {
+                in_summarized.emplace_back(begin, end);
+            });
+            tree.ForEachInRange(window + offset, size,
+                                [&](u64 begin, u64 end) { in_tree.emplace_back(begin, end); });
+            REQUIRE(in_summarized == in_tree);
+            REQUIRE(summarized.Empty() == tree.Empty());
+            break;
+        }
+        default:
+            summarized.Add(window, 0x80'0000);
+            tree.Add(window, 0x80'0000);
+            break;
+        }
+    }
+    std::vector<std::pair<u64, u64>> all_summarized;
+    std::vector<std::pair<u64, u64>> all_tree;
+    summarized.ForEach([&](u64 begin, u64 end) { all_summarized.emplace_back(begin, end); });
+    tree.ForEach([&](u64 begin, u64 end) { all_tree.emplace_back(begin, end); });
+    REQUIRE(all_summarized == all_tree);
+}

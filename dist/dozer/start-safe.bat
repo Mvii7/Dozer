@@ -150,6 +150,7 @@ set EDEN_NX2_UPSCALE_HEADER=0
 set EDEN_NX2_FRONT_RUNS=0
 set EDEN_NX2_UBO_KEEP=0
 set EDEN_NX2_ADD_MEMO=0
+set EDEN_NX2_LAZY_SUBTRACT=0
 if defined CONFIG goto withconfig
 "%HERE%dozer-cli.exe" %FULLSCREEN% -g "%GAME%"
 goto ran

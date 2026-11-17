@@ -200,11 +200,13 @@ public:
     SummarizedRangeSet() = default;
     SummarizedRangeSet(SummarizedRangeSet&& other) noexcept
         : set{std::move(other.set)}, mode{other.mode}, low{other.low}, high{other.high},
-          stats{other.stats}, added{other.added}, next_added{other.next_added} {
+          stats{other.stats}, added{other.added}, next_added{other.next_added},
+          pending{other.pending}, pending_count{other.pending_count} {
         static_assert(!PageBits, "moving the page summary is not supported");
         other.low = ~u64{0};
         other.high = 0;
         other.added.fill({});
+        other.pending_count = 0;
     }
     SummarizedRangeSet& operator=(SummarizedRangeSet&&) = delete;
 
@@ -221,6 +223,9 @@ public:
             const char* const value = std::getenv("EDEN_NX2_ADD_MEMO");
             return value == nullptr || value[0] != '0';
         }();
+        if (pending_count != 0 && size != 0) {
+            ResolvePending(addr, addr + size < addr ? ~u64{0} : addr + size);
+        }
         if (add_memo && size != 0) {
             const u64 end = addr + size;
             for (const Added& range : added) {
@@ -244,21 +249,33 @@ public:
     }
 
     void Subtract(u64 addr, size_t size) {
-        ForgetAdded(addr, size);
         if (mode != 0) {
             ++stats.subtracts;
             if (Missed(addr, size)) {
                 ++stats.subtract_misses;
+                ForgetAdded(addr, size);
                 return;
             }
-            if constexpr (PageBits) {
-                ClearWholePages(addr, size);
-            }
         }
-        set.Subtract(addr, size);
+        // EDEN_NX2_LAZY_SUBTRACT (on unless =0): kept until a query or an Add reaches it, so that
+        // one an Add covers whole is dropped instead (an inline write into a written storage
+        // binding, which the next draw adds again).
+        static const bool lazy = [] {
+            const char* const value = std::getenv("EDEN_NX2_LAZY_SUBTRACT");
+            return value == nullptr || value[0] != '0';
+        }();
+        if (lazy && size != 0 && addr + size > addr) {
+            if (pending_count == pending.size()) {
+                ApplyPending(0);
+            }
+            pending[pending_count++] = Added{addr, addr + size};
+            return;
+        }
+        ApplySubtract(addr, size);
     }
 
     [[nodiscard]] bool Intersects(u64 addr, size_t size) {
+        FlushPending(addr, size);
         if (mode == 0) {
             return set.Intersects(addr, size);
         }
@@ -274,6 +291,7 @@ public:
 
     template <typename Func>
     void ForEachInRange(u64 addr, size_t size, Func&& func) const {
+        FlushPending(addr, size);
         if (mode != 0 && Missed(addr, size)) {
             return;
         }
@@ -282,21 +300,25 @@ public:
 
     template <typename Func>
     void ForEach(Func&& func) const {
+        FlushPending(0, ~size_t{0});
         set.ForEach(std::forward<Func>(func));
     }
 
     void Clear() {
         set.Clear();
         added.fill({});
+        pending_count = 0;
         Reset();
     }
 
     [[nodiscard]] bool Empty() const {
+        FlushPending(0, ~size_t{0});
         return set.Empty();
     }
 
     /// Makes the summary exact again (the ranges as they are now).
     void Rebuild() {
+        FlushPending(0, ~size_t{0});
         Reset();
         if (mode == 0) {
             return;
@@ -317,6 +339,7 @@ public:
     }
 
     [[nodiscard]] size_t Count() const {
+        FlushPending(0, ~size_t{0});
         size_t count = 0;
         set.ForEach([&count](u64, u64) { ++count; });
         return count;
@@ -366,6 +389,54 @@ private:
         u64 begin;
         u64 end; ///< Equal to begin: empty
     };
+
+    void ApplySubtract(u64 addr, size_t size) {
+        ForgetAdded(addr, size);
+        if constexpr (PageBits) {
+            if (mode != 0) {
+                ClearWholePages(addr, size);
+            }
+        }
+        set.Subtract(addr, size);
+    }
+
+    void ApplyPending(u32 index) {
+        const Added range = pending[index];
+        pending[index] = pending[--pending_count];
+        ApplySubtract(range.begin, range.end - range.begin);
+    }
+
+    /// Before an Add of [addr, end): drops the pending subtracts inside it and applies the others
+    /// that reach it.
+    void ResolvePending(u64 addr, u64 end) {
+        for (u32 i = 0; i < pending_count;) {
+            const Added range = pending[i];
+            if (range.end <= addr || end <= range.begin) {
+                ++i;
+            } else if (addr <= range.begin && range.end <= end) {
+                pending[i] = pending[--pending_count];
+            } else {
+                ApplyPending(i);
+            }
+        }
+    }
+
+    /// Applies the pending subtracts that reach [addr, addr + size) (queries see them).
+    void FlushPending(u64 addr, size_t size) const {
+        if (pending_count == 0) {
+            return;
+        }
+        auto* const self = const_cast<SummarizedRangeSet*>(this);
+        const u64 end = addr + size < addr ? ~u64{0} : addr + size;
+        for (u32 i = 0; i < pending_count;) {
+            const Added range = pending[i];
+            if (range.begin < end && addr < range.end) {
+                self->ApplyPending(i);
+            } else {
+                ++i;
+            }
+        }
+    }
 
     void ForgetAdded(u64 addr, size_t size) noexcept {
         const u64 end = addr + size < addr ? ~u64{0} : addr + size;
@@ -463,6 +534,8 @@ private:
     u64 rebuild_false_positives = 0;
     std::array<Added, 4> added{}; ///< EDEN_NX2_ADD_MEMO: ranges the set holds whole
     u32 next_added = 0;
+    std::array<Added, 4> pending{}; ///< EDEN_NX2_LAZY_SUBTRACT: subtracts not applied yet
+    u32 pending_count = 0;
     [[no_unique_address]] std::conditional_t<PageBits, std::unique_ptr<u64[]>, NoPages> pages{};
     [[no_unique_address]] std::conditional_t<PageBits, std::array<u64, REGION_WORDS>, NoPages>
         regions{};
