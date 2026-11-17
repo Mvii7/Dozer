@@ -6,7 +6,7 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Unreleased (Dozer)
+## Dozer 0.1.5 (`v0.1.5`)
 
 - One submission per real fence (EDEN_NX2_RX_ONE_SUBMIT) is now on in every game, not only
   Donkey Kong Bananza; `=0` turns it off, and start-safe.bat turns it off.
