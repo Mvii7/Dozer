@@ -562,9 +562,14 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
         }
         // Registered before the fences run, so a release among them that meets the value counts
         // even if a later one overwrites it.
+        // The word in memory is watched for the guest CPU's stores (Nx2SemaphoreWaiters::WordStored).
         auto& waiters = Nx2SemaphoreWaiters::Get();
         if (const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address)) {
-            waiters.Add(this, *device, acquire.value, acquire.operation);
+            u32* word = reinterpret_cast<u32*>(dma_pusher.memory_manager.GetPointer(acquire.address));
+            if (reinterpret_cast<uintptr_t>(word) % alignof(u32) != 0) {
+                word = nullptr;
+            }
+            waiters.Add(this, *device, acquire.value, acquire.operation, word);
         }
         dma_pusher.rasterizer->ReleaseFences();
         if (!waiters.Latched(this) && !acquire.Matches(ReadSemaphoreWord(dma_pusher, acquire.address))) {

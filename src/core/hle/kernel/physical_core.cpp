@@ -9,6 +9,7 @@
 #include <thread>
 #include "common/scope_exit.h"
 #include "common/settings.h"
+#include "common/thread.h"
 #include "core/core.h"
 #include "core/debugger/debugger.h"
 #include "core/hle/kernel/k_process.h"
@@ -224,23 +225,43 @@ void PhysicalCore::LogBacktrace(KernelCore& kernel) {
     }
 }
 
-void PhysicalCore::Idle() {
+void PhysicalCore::Idle(KernelCore& kernel) {
     // Guest job systems hand work between cores many times per frame; blocking at once adds the
-    // host's thread wake-up latency to every handoff. EDEN_NX2_IDLE_SPIN_US=<n>: poll for that
-    // many microseconds before blocking.
-    static const auto spin = std::chrono::microseconds{[] {
+    // host's thread wake-up latency to every handoff. EDEN_NX2_IDLE_SPIN_US=<n>: poll for up to
+    // that many microseconds before blocking (0 blocks at once). Switch 2 titles poll 100 us by
+    // default outside Android.
+    static const long long spin_setting = [] {
         const char* text = std::getenv("EDEN_NX2_IDLE_SPIN_US");
-        return text ? std::strtoll(text, nullptr, 10) : 0LL;
-    }()};
-    if (spin.count() > 0) {
-        const auto deadline = std::chrono::steady_clock::now() + spin;
-        while (!m_is_interrupted.load(std::memory_order_acquire) &&
-               std::chrono::steady_clock::now() < deadline) {
-            std::this_thread::yield();
-        }
+        return text ? std::strtoll(text, nullptr, 10) : -1LL;
+    }();
+    long long spin_us = spin_setting;
+    if (spin_us < 0) {
+#ifdef __ANDROID__
+        spin_us = 0;
+#else
+        const KProcess* process = kernel.ApplicationProcess();
+        spin_us = process != nullptr && process->IsSwitch2() ? 100 : 0;
+#endif
     }
-    std::unique_lock lk{m_guard};
-    m_on_interrupt.wait(lk, [this] { return m_is_interrupted.load(); });
+    // The poll waits on the interrupt flag in hardware (Common::WaitForFlag), and only as long as
+    // recent idle periods suggest it pays (Common::NextPollWindow).
+    const std::chrono::nanoseconds limit = std::chrono::microseconds{spin_us};
+    const auto start = std::chrono::steady_clock::now();
+    bool polled = false;
+    if (limit.count() > 0) {
+        if (m_idle_poll.count() <= 0 || m_idle_poll > limit) {
+            m_idle_poll = limit;
+        }
+        polled = Common::WaitForFlag(m_is_interrupted, start + m_idle_poll);
+    }
+    if (!polled) {
+        std::unique_lock lk{m_guard};
+        m_on_interrupt.wait(lk, [this] { return m_is_interrupted.load(); });
+    }
+    if (limit.count() > 0) {
+        m_idle_poll =
+            Common::NextPollWindow(m_idle_poll, std::chrono::steady_clock::now() - start, limit);
+    }
 }
 
 bool PhysicalCore::IsInterrupted() const {

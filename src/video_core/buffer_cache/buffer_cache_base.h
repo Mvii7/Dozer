@@ -372,9 +372,11 @@ public:
 
     void UnmapGPUMemory(size_t as_id, GPUVAddr gpu_addr, size_t size);
 
-    void WriteMemory(DAddr device_addr, u64 size);
+    /// `engine_write`: the GPU's own engines wrote it (inline constant buffer data,
+    /// MemoryManager::FlushCaching), not the guest CPU.
+    void WriteMemory(DAddr device_addr, u64 size, bool engine_write = false);
 
-    /// WriteMemory for each range, in order (the pre-draw invalidation).
+    /// WriteMemory for each range, in order (the pre-draw invalidation of engine writes).
     void WriteMemoryRanges(std::span<const std::pair<DAddr, std::size_t>> ranges);
 
     void CachedWriteMemory(DAddr device_addr, u64 size);
@@ -619,6 +621,9 @@ public:
     void CommitVertexStreamNote();
 
 private:
+    /// Marks a written range CPU-modified; an engine write keeps its pages tracked.
+    void MarkCpuWritten(DAddr device_addr, u64 size, bool engine_write);
+
     template <typename Func>
     static void ForEachEnabledBit(u32 enabled_mask, Func&& func) {
         for (u32 index = 0; enabled_mask != 0; ++index, enabled_mask >>= 1) {
