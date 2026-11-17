@@ -84,6 +84,7 @@ add_library(
     multi_level_page_table.cpp
     multi_level_page_table.h
     nx2_rtss_osd.h
+    nx2_sync_serial.h
     overflow.h
     page_table.cpp
     page_table.h

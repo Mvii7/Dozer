@@ -11,6 +11,14 @@ and `=0` brings back the 2.0.0 code path.
 - One submission per real fence (EDEN_NX2_RX_ONE_SUBMIT) is now on in every game, not only
   Donkey Kong Bananza; `=0` turns it off, and start-safe.bat turns it off.
 
+- Uniform buffers: a buffer bound to the same stage slot and range as the slot's last bind takes
+  that bind's upload again without reading and comparing guest memory, while no write notice
+  reached the range and nothing let the guest CPU change it since (a command submission, a
+  semaphore or syncpoint, a write around the caches, a memory mapping). After Lichii's uniform
+  keeps. `EDEN_NX2_UBO_KEEP=0` turns it off, `=2` compares anyway and logs any range a keep
+  would have got wrong. A census line, "nx2 uniform census", counts uniform binds, constant
+  buffer and inline writes per draw.
+
 ## Dozer 0.1.4 (`v0.1.4`)
 
 - Mario Kart World: software 2D blits (a copy of CPU-written data that the GPU path does not take)

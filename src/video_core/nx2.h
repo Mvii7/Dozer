@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "common/common_types.h"
+#include "common/nx2_sync_serial.h"
 
 namespace Tegra {
 
@@ -132,6 +133,7 @@ inline void Nx2MarkUntrackedWrite(u64 device_address, u64 size) {
     if (size == 0) {
         return;
     }
+    Common::Nx2SyncSerial::Bump();
     const u64 last = (std::min)((device_address + size - 1) >> Nx2WrittenPageBits,
                                 u64{g_nx2_untracked_pages.size() * 64 - 1});
     for (u64 page = device_address >> Nx2WrittenPageBits; page <= last; ++page) {
