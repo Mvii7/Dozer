@@ -6,6 +6,16 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased (Dozer)
+
+- Draw setup looks up a sampler or image view by index in the descriptor table, instead of hashing
+  that index. Deleting an image no longer walks every channel's view ids in a release build.
+- An ASTC texture's opacity scan uses a table of the 2048 block modes, instead of decoding each
+  block's mode bits on the GPU thread.
+- The GPU split's published and consumed counters sit on separate cache lines.
+- A macro DMA read copies its words in one read.
+- A draw or dispatch keeps room for 160 image views and 96 samplers without a heap allocation.
+
 ## Dozer 0.1.6 (`v0.1.6`)
 
 - Ported from Lichii: CPU-side performance work. A guest core polls for interrupts in hardware for
