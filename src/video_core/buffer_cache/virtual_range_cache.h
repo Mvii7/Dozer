@@ -51,9 +51,13 @@ public:
         const size_t as_id = memory.GetID();
         const u64 key = MakeKey(as_id, gpu_addr);
         const auto it = entries.find(key);
-        if (it != entries.end() && it->second.as_id == as_id &&
-            it->second.gpu_addr == gpu_addr && it->second.size == size) {
-            return &it->second.segments;
+        if (it != entries.end() && it->second.as_id == as_id && it->second.gpu_addr == gpu_addr) {
+            const Entry& cached = it->second;
+            // Titles bind one address with several sizes. Keep the page table walk of the
+            // longest: its prefixes are contiguous too (one segment may then cover more than asked).
+            if (cached.size == size || (cached.segments.size() == 1 && size < cached.size)) {
+                return &cached.segments;
+            }
         }
         Entry entry{};
         entry.as_id = as_id;

@@ -43,6 +43,7 @@
 #include "video_core/texture_cache/image_base.h"
 #include "video_core/texture_cache/image_info.h"
 #include "video_core/texture_cache/image_view_base.h"
+#include "video_core/page_filter.h"
 #include "video_core/texture_cache/render_targets.h"
 #include "video_core/texture_cache/types.h"
 #include "video_core/textures/texture.h"
@@ -135,6 +136,9 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     u64 largest_upload{};    ///< Largest of them
     u64 layer_uploads{};     ///< Of them, uploads of only the written layers
     bool native_thresholds_applied{};
+    /// Usage under which the collector keeps images used in the last MinEvictionAge frames
+    /// (EvictionAge): the device budget less its margin and block slack; 0 without a budget.
+    u64 retention_limit{};
     u64 native_critical_memory{};
     u64 native_expected_memory{};
     u64 budget_check_frames{};
@@ -358,6 +362,9 @@ public:
     void PrepareImage(ImageId image_id, bool is_modification, bool invalidate);
 
     Common::SpinRecursiveMutex mutex;
+    /// The pages an image was ever registered or tracked on: elsewhere the cache holds nothing,
+    /// and guest accesses skip its lock (RasterizerVulkan::MayHoldImages).
+    VideoCommon::PageFilter page_filter;
 
 private:
     /// Iterate over all page indices in a range

@@ -7,6 +7,7 @@
 #include <atomic>
 #include <limits>
 #include <memory>
+#include <thread>
 #include <type_traits>
 #include <algorithm>
 #include <vector>
@@ -262,6 +263,9 @@ void DeviceMemoryManager<Traits>::Unmap(DAddr address, size_t size) {
     size_t start_page_d = address >> Memory::YUZU_PAGEBITS;
     size_t num_pages = Common::AlignUp(size, Memory::YUZU_PAGESIZE) >> Memory::YUZU_PAGEBITS;
     device_inter->InvalidateRegion(address, size);
+    while (deferred_cached_updates.load(std::memory_order_acquire) != 0) {
+        std::this_thread::yield();
+    }
     std::scoped_lock lk(mapping_guard);
 
     tracked_entries.CommitRegion(start_page_d, start_page_d + num_pages); // should already be committed, but just in case

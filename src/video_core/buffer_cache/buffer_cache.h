@@ -185,13 +185,28 @@ void BufferCache<P>::UnmapGPUMemory(size_t as_id, GPUVAddr gpu_addr, size_t size
 }
 
 template <class P>
-void BufferCache<P>::WriteMemory(DAddr device_addr, u64 size) {
+void BufferCache<P>::WriteMemory(DAddr device_addr, u64 size, bool engine_write) {
     NoteUniformWrite(device_addr, size);
     if (IsRegionGpuModified(device_addr, size)) {
         ClearDownload(device_addr, size);
         gpu_modified_ranges.Subtract(device_addr, size);
     }
-    memory_tracker.MarkRegionAsCpuModified(device_addr, size);
+    MarkCpuWritten(device_addr, size, engine_write);
+}
+
+template <class P>
+void BufferCache<P>::MarkCpuWritten(DAddr device_addr, u64 size, bool engine_write) {
+    // Untracking the pages and tracking them again at the upload changed their host protection
+    // twice for writes no guest CPU access saw (EDEN_NX2_ENGINE_WRITE_TRACKED=0: untracked).
+    static const bool keep_tracked = [] {
+        const char* value = std::getenv("EDEN_NX2_ENGINE_WRITE_TRACKED");
+        return value == nullptr || value[0] != '0';
+    }();
+    if (engine_write && keep_tracked) {
+        memory_tracker.MarkRegionAsWrittenTracked(device_addr, size);
+    } else {
+        memory_tracker.MarkRegionAsCpuModified(device_addr, size);
+    }
 }
 
 template <class P>
@@ -213,13 +228,13 @@ void BufferCache<P>::WriteMemoryRanges(std::span<const std::pair<DAddr, std::siz
         if (!IsRegionGpuModified(lowest, static_cast<size_t>(highest - lowest))) {
             for (const auto& [addr, size] : ranges) {
                 NoteUniformWrite(addr, size);
-                memory_tracker.MarkRegionAsCpuModified(addr, size);
+                MarkCpuWritten(addr, size, true);
             }
             return;
         }
     }
     for (const auto& [addr, size] : ranges) {
-        WriteMemory(addr, size);
+        WriteMemory(addr, size, true);
     }
 }
 

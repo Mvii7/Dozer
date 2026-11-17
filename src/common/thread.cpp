@@ -727,4 +727,48 @@ bool Event::WaitFor(const std::chrono::nanoseconds time) {
 }
 #endif
 
+#if defined(ARCHITECTURE_x86_64) && defined(__clang__)
+__attribute__((target("waitpkg,mwaitx")))
+#endif
+bool WaitForFlag(const std::atomic<bool>& flag, std::chrono::steady_clock::time_point deadline) {
+#ifdef ARCHITECTURE_x86_64
+    if (const auto& caps = Common::g_cpu_caps; caps.monitorx || caps.waitpkg) {
+        auto* const line = const_cast<std::atomic<bool>*>(std::addressof(flag));
+        const u64 ticks_per_second = Common::g_wall_clock.NsToTicks(std::chrono::seconds{1});
+        while (true) {
+            if (caps.monitorx) {
+                _mm_monitorx(line, 0, 0);
+            } else {
+                _umonitor(line);
+            }
+            if (flag.load(std::memory_order_acquire)) {
+                return true;
+            }
+            // Armed before the load, so a store after it ends the wait. Interrupts and stores to
+            // the rest of the line end it early too: wait again until the deadline.
+            const auto remaining = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                deadline - std::chrono::steady_clock::now());
+            if (remaining.count() <= 0) {
+                return false;
+            }
+            constexpr u64 MaxCycles = (std::numeric_limits<u32>::max)();
+            const u64 ns = static_cast<u64>(remaining.count());
+            const u32 cycles =
+                ns > MaxCycles * 1'000'000'000ULL / ticks_per_second
+                    ? static_cast<u32>(MaxCycles)
+                    : static_cast<u32>((ns * ticks_per_second + 999'999'999ULL) / 1'000'000'000ULL);
+            if (caps.monitorx) {
+                _mm_mwaitx(1 << 1, 0u, cycles);
+            } else {
+                _umwait(0, Common::X64::FencedRDTSC() + cycles);
+            }
+        }
+    }
+#endif
+    while (!flag.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+    }
+    return flag.load(std::memory_order_acquire);
+}
+
 } // namespace Common

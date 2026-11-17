@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -114,5 +115,24 @@ void SetCurrentThreadToAllCores();
 
 void RefreshThreadPolicies();
 void PollThreadPolicies();
+
+/// How long to poll before blocking next time, after a wait of `waited` that polled `poll`, with
+/// `limit` the longest poll (the cpuidle-haltpoll governor's rule): a wait a longer poll would have
+/// caught doubles the poll, one longer than the limit halves it, down to an eighth of the limit.
+constexpr std::chrono::nanoseconds NextPollWindow(std::chrono::nanoseconds poll,
+                                                  std::chrono::nanoseconds waited,
+                                                  std::chrono::nanoseconds limit) {
+    if (waited <= poll) {
+        return poll;
+    }
+    if (waited <= limit) {
+        return (std::min)(poll * 2, limit);
+    }
+    return (std::max)(poll / 2, limit / 8);
+}
+
+/// Waits until flag is true or the deadline passes, and returns the flag. With MWAITX (AMD) or
+/// UMWAIT (Intel) the thread waits on the flag's cache line in hardware; other CPUs yield.
+bool WaitForFlag(const std::atomic<bool>& flag, std::chrono::steady_clock::time_point deadline);
 
 } // namespace Common
