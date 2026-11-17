@@ -136,6 +136,9 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     u64 largest_upload{};    ///< Largest of them
     u64 layer_uploads{};     ///< Of them, uploads of only the written layers
     bool native_thresholds_applied{};
+    /// Usage under which the collector keeps images used in the last MinEvictionAge frames
+    /// (EvictionAge): the device budget less its margin and block slack; 0 without a budget.
+    u64 retention_limit{};
     u64 native_critical_memory{};
     u64 native_expected_memory{};
     u64 budget_check_frames{};

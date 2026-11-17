@@ -27,6 +27,7 @@
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/guest_memory.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
+#include "video_core/texture_cache/eviction_age.h"
 #include "video_core/texture_cache/image_view_base.h"
 #include "video_core/texture_cache/samples_helper.h"
 #include "video_core/texture_cache/texture_cache_base.h"
@@ -273,13 +274,26 @@ void TextureCache<P>::RunGarbageCollector() {
     const auto Configure = [&](bool allow_aggressive) {
         high_priority_mode = total_used_memory >= expected_memory;
         aggressive_mode = allow_aggressive && total_used_memory >= critical_memory;
-        ticks_to_destroy = aggressive_mode ? 10ULL : high_priority_mode ? 25ULL : 50ULL;
-        // EDEN_NX2_TC_MIN_AGE=<frames>: never evict images used more recently (thrash tests).
+        const u64 mode_age = aggressive_mode ? 10ULL : high_priority_mode ? 25ULL : 50ULL;
+        // EDEN_NX2_TC_MIN_AGE=<frames>: keep images used more recently while there is room.
         static const u64 min_age = [] {
             const char* value = std::getenv("EDEN_NX2_TC_MIN_AGE");
             return value != nullptr ? std::strtoull(value, nullptr, 10) : 0ULL;
         }();
-        ticks_to_destroy = (std::max)(ticks_to_destroy, min_age);
+        // Switch 2 titles: images used in the last MinEvictionAge frames stay until usage reaches
+        // retention_limit (the critical line without a budget). EDEN_NX2_TC_KEEP_RECENT=0: the
+        // mode's age only.
+        static const bool keep_recent = [] {
+            const char* value = std::getenv("EDEN_NX2_TC_KEEP_RECENT");
+            return value == nullptr || value[0] != '0';
+        }();
+        const u64 limit = !keep_recent || !native_thresholds_applied ? 0
+                          : retention_limit != 0                      ? retention_limit
+                                                                      : critical_memory;
+        ticks_to_destroy = EvictionAge(mode_age, min_age, total_used_memory, limit);
+        if (limit == 0) {
+            ticks_to_destroy = (std::max)(ticks_to_destroy, min_age);
+        }
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
     const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode,
@@ -327,10 +341,14 @@ void TextureCache<P>::RunGarbageCollector() {
         return false;
     };
     Configure(false);
-    lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
+    if (frame_tick >= ticks_to_destroy) {
+        lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
+    }
     if (total_used_memory >= critical_memory) {
         Configure(true);
-        lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
+        if (frame_tick >= ticks_to_destroy) {
+            lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
+        }
     } else if (stale_costly_ticks != 0 && total_used_memory >= expected_memory &&
                frame_tick > stale_costly_ticks) {
         Configure(false);
@@ -408,7 +426,8 @@ void TextureCache<P>::TickFrame() {
                     // still VRAM: keep it (rises at once, falls slowly, capped) under the budget
                     // as well, so no manual thresholds are needed.
                     const u64 slack_cap = (std::min)(budget / 5, 3_GiB);
-                    const u64 slack = (std::min)(runtime.GetDeviceMemorySlack(), slack_cap);
+                    const u64 raw_slack = runtime.GetDeviceMemorySlack();
+                    const u64 slack = (std::min)(raw_slack, slack_cap);
                     memory_slack_estimate = (std::max)(
                         slack, memory_slack_estimate - (std::min)(memory_slack_estimate, 64_MiB));
                     // The hidden space only shows up after the collector has evicted, so the first
@@ -417,6 +436,14 @@ void TextureCache<P>::TickFrame() {
                     const u64 reserve = (std::max)(memory_slack_estimate, budget / 8);
                     critical_memory = (std::max)(budget - margin - reserve, budget / 2);
                     expected_memory = (std::max)(critical_memory - 2 * margin, budget / 3);
+                    // Recently used images stay while the heap itself (usage plus the block slack
+                    // measured now, uncapped) is a margin under the budget: the heavy part of a
+                    // Mario Kart World race sits at the critical line, where the collector deleted
+                    // images unused for 10 frames and made them again. The critical line keeps
+                    // its reserve for slack not yet measured; this limit has the slack itself.
+                    const u64 room = budget - margin;
+                    retention_limit =
+                        (std::max)(room > raw_slack ? room - raw_slack : 0, critical_memory);
                     // Log the first values and real changes (the budget moves by a few MiB all
                     // the time).
                     const u64 change = critical_memory > old_critical
