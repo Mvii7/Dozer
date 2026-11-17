@@ -3492,14 +3492,16 @@ private:
     }
 
     // EDEN_NX2_VDEC_DUMP=<dir>: save the luma of every 120th decoded frame, a quarter of its size,
-    // as nx2-vdec-<frame>.pgm (to check what the decoder wrote, apart from how the game shows it).
+    // as nx2-vdec-<frame>.pgm, plus the full-size luma (-y.pgm) and the NV12 chroma (-uv.pgm, U
+    // left of V) (to check what the decoder wrote, apart from how the game shows it).
     void DumpFrame(const std::vector<u8>& bytes, const Nx2DecoderImageLayout& layout, u32 width,
                    u32 height) {
         static const char* const directory = std::getenv("EDEN_NX2_VDEC_DUMP");
         if (directory == nullptr || (m_frames_out % 120) != 0) {
             return;
         }
-        const u32 bpp = layout.format == Tegra::Host1x::Nx2PictureFormat::Nv12 ? 1 : 4;
+        const bool nv12 = layout.format == Tegra::Host1x::Nx2PictureFormat::Nv12;
+        const u32 bpp = nv12 ? 1 : 4;
         const u32 w = width / 4;
         const u32 h = height / 4;
         const std::string path = fmt::format("{}/nx2-vdec-{:05}.pgm", directory, m_frames_out + 1);
@@ -3508,6 +3510,34 @@ private:
             for (u32 y = 0; y < h; ++y) {
                 for (u32 x = 0; x < w; ++x) {
                     std::fputc(bytes[y * 4 * layout.pitch + x * 4 * bpp], file);
+                }
+            }
+            std::fclose(file);
+        }
+        if (!nv12) {
+            return;
+        }
+        // Full-size luma, and the chroma plane with U on the left half and V on the right, so
+        // blocks too small or too colourful for the quarter-size luma above still show.
+        const std::string base = fmt::format("{}/nx2-vdec-{:05}", directory, m_frames_out + 1);
+        if (std::FILE* file = std::fopen((base + "-y.pgm").c_str(), "wb")) {
+            std::fprintf(file, "P5 %u %u 255\n", width, height);
+            for (u32 y = 0; y < height; ++y) {
+                std::fwrite(bytes.data() + y * layout.pitch, 1, width, file);
+            }
+            std::fclose(file);
+        }
+        if (std::FILE* file = std::fopen((base + "-uv.pgm").c_str(), "wb")) {
+            const u32 cw = width / 2;
+            const u32 ch = height / 2;
+            std::fprintf(file, "P5 %u %u 255\n", cw * 2, ch);
+            for (u32 y = 0; y < ch; ++y) {
+                const u8* row = bytes.data() + layout.chroma_offset + y * layout.pitch;
+                for (u32 x = 0; x < cw; ++x) {
+                    std::fputc(row[x * 2], file);
+                }
+                for (u32 x = 0; x < cw; ++x) {
+                    std::fputc(row[x * 2 + 1], file);
                 }
             }
             std::fclose(file);

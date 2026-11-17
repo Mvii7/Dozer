@@ -127,6 +127,8 @@ public:
         return light_epoch.load(std::memory_order_seq_cst);
     }
     VideoCore::RasterizerDownloadArea GetFlushArea(DAddr addr, u64 size) override;
+    /// Whether an image was ever registered on these pages (EDEN_NX2_TEX_PAGE_FILTER).
+    [[nodiscard]] bool MayHoldImages(DAddr addr, u64 size) const;
     void InvalidateRegion(DAddr addr, u64 size,
                           VideoCommon::CacheType which = VideoCommon::CacheType::All) override;
     void InnerInvalidation(std::span<const std::pair<DAddr, std::size_t>> sequences) override;

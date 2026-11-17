@@ -6,6 +6,7 @@
 
 #ifdef _WIN32
 
+#include <cstdlib>
 #include <iterator>
 #include "common/container/unordered_map.h"
 #include <boost/icl/separate_interval_set.hpp>
@@ -219,12 +220,27 @@ public:
         }
         const size_t virtual_end = virtual_offset + length;
 
+        // Nearly every call protects a range inside one mapped view, which VirtualProtect does
+        // whole without the lock. It refuses a range that reaches a placeholder or a second view
+        // (one Map or Unmap is making or taking apart, or a range across views): those take the
+        // lock below. Map and Unmap hold the lock across their kernel calls, which slow down when
+        // a game maps memory in bulk: write-trap protections then queued behind them.
+        // EDEN_NX2_PROTECT_NOLOCK=0 always takes the lock.
+        static const bool try_unlocked = [] {
+            const char* value = std::getenv("EDEN_NX2_PROTECT_NOLOCK");
+            return value == nullptr || value[0] != '0';
+        }();
+        DWORD old_flags{};
+        if (try_unlocked &&
+            VirtualProtect(virtual_base + virtual_offset, length, new_flags, &old_flags)) {
+            return;
+        }
+
         std::scoped_lock lock{placeholder_mutex};
         auto [it, end] = placeholders.equal_range({virtual_offset, virtual_end});
         while (it != end) {
             const size_t offset = (std::max)(it->lower(), virtual_offset);
             const size_t protect_length = (std::min)(it->upper(), virtual_end) - offset;
-            DWORD old_flags{};
             if (!VirtualProtect(virtual_base + offset, protect_length, new_flags, &old_flags)) {
                 LOG_CRITICAL(HW_Memory, "Failed to change virtual memory protect rules");
             }

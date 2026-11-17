@@ -27,6 +27,7 @@
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/guest_memory.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
+#include "video_core/texture_cache/eviction_age.h"
 #include "video_core/texture_cache/image_view_base.h"
 #include "video_core/texture_cache/samples_helper.h"
 #include "video_core/texture_cache/texture_cache_base.h"
@@ -273,13 +274,22 @@ void TextureCache<P>::RunGarbageCollector() {
     const auto Configure = [&](bool allow_aggressive) {
         high_priority_mode = total_used_memory >= expected_memory;
         aggressive_mode = allow_aggressive && total_used_memory >= critical_memory;
-        ticks_to_destroy = aggressive_mode ? 10ULL : high_priority_mode ? 25ULL : 50ULL;
-        // EDEN_NX2_TC_MIN_AGE=<frames>: never evict images used more recently (thrash tests).
+        const u64 mode_age = aggressive_mode ? 10ULL : high_priority_mode ? 25ULL : 50ULL;
+        // EDEN_NX2_TC_MIN_AGE=<frames>: keep images used more recently while there is room.
         static const u64 min_age = [] {
             const char* value = std::getenv("EDEN_NX2_TC_MIN_AGE");
             return value != nullptr ? std::strtoull(value, nullptr, 10) : 0ULL;
         }();
-        ticks_to_destroy = (std::max)(ticks_to_destroy, min_age);
+        // Switch 2 titles: images used in the last MinEvictionAge frames stay until usage reaches
+        // retention_limit (the critical line without a budget). EDEN_NX2_TC_KEEP_RECENT=0: the
+        // mode's age only.
+        const u64 limit = !KeepRecentEnabled() || !native_thresholds_applied ? 0
+                          : retention_limit != 0 ? retention_limit
+                                                 : critical_memory;
+        ticks_to_destroy = EvictionAge(mode_age, min_age, total_used_memory, limit);
+        if (limit == 0) {
+            ticks_to_destroy = (std::max)(ticks_to_destroy, min_age);
+        }
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
     const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode,
@@ -297,8 +307,13 @@ void TextureCache<P>::RunGarbageCollector() {
             return false;
         }
         const bool must_download = IsDownloadable(image) && False(image.flags & ImageFlagBits::BadOverlap);
+        // Evicting a GPU-modified image waits for the GPU (Finish): only once the heap itself
+        // runs short (retention_limit), not at the critical line, whose reserve leaves VRAM free.
+        const bool heap_has_room =
+            KeepRecentEnabled() && retention_limit != 0 && total_used_memory < retention_limit;
         if ((!aggressive_mode && !allow_costly && True(image.flags & ImageFlagBits::CostlyLoad)) ||
-            (!aggressive_mode && must_download) || (must_download && downloads_left == 0)) {
+            ((!aggressive_mode || heap_has_room) && must_download) ||
+            (must_download && downloads_left == 0)) {
             return false;
         }
         if (must_download) {
@@ -327,10 +342,14 @@ void TextureCache<P>::RunGarbageCollector() {
         return false;
     };
     Configure(false);
-    lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
+    if (frame_tick >= ticks_to_destroy) {
+        lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
+    }
     if (total_used_memory >= critical_memory) {
         Configure(true);
-        lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
+        if (frame_tick >= ticks_to_destroy) {
+            lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
+        }
     } else if (stale_costly_ticks != 0 && total_used_memory >= expected_memory &&
                frame_tick > stale_costly_ticks) {
         Configure(false);
@@ -408,7 +427,8 @@ void TextureCache<P>::TickFrame() {
                     // still VRAM: keep it (rises at once, falls slowly, capped) under the budget
                     // as well, so no manual thresholds are needed.
                     const u64 slack_cap = (std::min)(budget / 5, 3_GiB);
-                    const u64 slack = (std::min)(runtime.GetDeviceMemorySlack(), slack_cap);
+                    const u64 raw_slack = runtime.GetDeviceMemorySlack();
+                    const u64 slack = (std::min)(raw_slack, slack_cap);
                     memory_slack_estimate = (std::max)(
                         slack, memory_slack_estimate - (std::min)(memory_slack_estimate, 64_MiB));
                     // The hidden space only shows up after the collector has evicted, so the first
@@ -417,6 +437,14 @@ void TextureCache<P>::TickFrame() {
                     const u64 reserve = (std::max)(memory_slack_estimate, budget / 8);
                     critical_memory = (std::max)(budget - margin - reserve, budget / 2);
                     expected_memory = (std::max)(critical_memory - 2 * margin, budget / 3);
+                    // Recently used images stay while the heap itself (usage plus the block slack
+                    // measured now, uncapped) is a margin under the budget: the heavy part of a
+                    // Mario Kart World race sits at the critical line, where the collector deleted
+                    // images unused for 10 frames and made them again. The critical line keeps
+                    // its reserve for slack not yet measured; this limit has the slack itself.
+                    const u64 room = budget - margin;
+                    retention_limit =
+                        (std::max)(room > raw_slack ? room - raw_slack : 0, critical_memory);
                     // Log the first values and real changes (the budget moves by a few MiB all
                     // the time).
                     const u64 change = critical_memory > old_critical
@@ -3175,6 +3203,7 @@ void TextureCache<P>::RegisterImage(ImageId image_id) {
     if (False(image.flags & ImageFlagBits::Sparse)) {
         auto map_id =
             slot_map_views.insert(image.gpu_addr, image.cpu_addr, image.guest_size_bytes, image_id);
+        page_filter.Mark(image.cpu_addr, image.guest_size_bytes);
         ForEachCPUPage(image.cpu_addr, image.guest_size_bytes,
                        [this, map_id](u64 page) { page_table[page].push_back(map_id); });
         image.map_view_id = map_id;
@@ -3184,6 +3213,7 @@ void TextureCache<P>::RegisterImage(ImageId image_id) {
     ForEachSparseSegment(
         image, [this, image_id, &sparse_maps](GPUVAddr gpu_addr, DAddr cpu_addr, size_t size) {
             auto map_id = slot_map_views.insert(gpu_addr, cpu_addr, size, image_id);
+            page_filter.Mark(cpu_addr, size);
             ForEachCPUPage(cpu_addr, size,
                            [this, map_id](u64 page) { page_table[page].push_back(map_id); });
             sparse_maps.push_back(map_id);
@@ -3303,8 +3333,10 @@ template <class P>
 void TextureCache<P>::TrackImage(ImageBase& image, ImageId image_id) {
     ASSERT(False(image.flags & ImageFlagBits::Tracked));
     image.flags |= ImageFlagBits::Tracked;
+    // Marked before the pages trap: a new image is tracked (and uploaded) before RegisterImage.
     if (False(image.flags & ImageFlagBits::Sparse)) {
         if (image.cpu_addr < ~(1ULL << 40)) {
+            page_filter.Mark(image.cpu_addr, image.guest_size_bytes);
             device_memory.UpdatePagesCachedCount(image.cpu_addr, image.guest_size_bytes, 1);
         }
         return;
@@ -3317,12 +3349,14 @@ void TextureCache<P>::TrackImage(ImageBase& image, ImageId image_id) {
             const auto& map = slot_map_views[map_view_id];
             const DAddr cpu_addr = map.cpu_addr;
             const std::size_t size = map.size;
+            page_filter.Mark(cpu_addr, size);
             device_memory.UpdatePagesCachedCount(cpu_addr, size, 1);
         }
         return;
     }
     ForEachSparseSegment(image,
                          [this]([[maybe_unused]] GPUVAddr gpu_addr, DAddr cpu_addr, size_t size) {
+                             page_filter.Mark(cpu_addr, size);
                              device_memory.UpdatePagesCachedCount(cpu_addr, size, 1);
                          });
 }
