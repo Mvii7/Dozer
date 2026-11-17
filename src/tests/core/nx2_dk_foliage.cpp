@@ -249,3 +249,15 @@ TEST_CASE("Nx2DkFoliage: data that is not an archive is left alone", "[core]") {
     std::vector<u8> empty;
     REQUIRE_FALSE(PatchSystemSettings(empty, settings));
 }
+
+TEST_CASE("Nx2DkFoliage: effects off", "[core]") {
+    Settings settings;
+    settings.effects_off = true;
+    REQUIRE(settings.Active());
+    auto effects = Sarc(Byml({{"EmitCountPerFrameMax", 0xD1, 156}}));
+    REQUIRE(PatchEffectSettings(effects, settings));
+    REQUIRE(Read32(effects, 0x60 + Read32(effects, 12 + 0x60) + 4 + 4) == 1);
+    auto units = Sarc(Byml({{"MaxActiveEffectNum", 0xD1, 8}}));
+    REQUIRE(PatchSettingUnits(units, settings));
+    REQUIRE(Read32(units, 0x60 + Read32(units, 12 + 0x60) + 4 + 4) == 1);
+}

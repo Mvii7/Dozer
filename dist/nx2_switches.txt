@@ -356,6 +356,8 @@
 # EFFECT_EMIT_CAP / EFFECT_PARTICLE_CAP / EFFECT_ALIVE_CAP / EFFECT_MATERIAL_CAP=<5-100>: in % of
 # the game's: effects started per frame (156), particles per emitter (512), effects alive per
 # emission rule (64) and terrain material effects active at once. Same mechanism as FOLIAGE_*.
+# EFFECTS_OFF=1: all effect caps at 1 (no effects). Same mechanism as FOLIAGE_*.
+#EDEN_NX2_DKQ_EFFECTS_OFF=1
 #EDEN_NX2_DKQ_EFFECT_EMIT_CAP=100
 #EDEN_NX2_DKQ_EFFECT_PARTICLE_CAP=100
 #EDEN_NX2_DKQ_EFFECT_ALIVE_CAP=100
