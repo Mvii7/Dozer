@@ -243,6 +243,8 @@ private:
     static constexpr size_t RingMask = RingWords - 1;
     static constexpr u32 MaxMultiWords = 8192;
     static constexpr size_t PublishEvery = 256;
+    /// Words a back waiting for work gets without waiting for publish_every (Commit).
+    static constexpr size_t PublishAfterWait = 8;
     static constexpr u32 MaxPending = 64; ///< Macro writes in one Batch entry at most
 
 public:
@@ -270,6 +272,14 @@ private:
         if (batch_writes) {
             Count(words);
         } else if (write_position - published_local >= publish_every) {
+            Publish();
+            return;
+        }
+        // The back waits for work at the last position published (back_idle_at): it gets these
+        // words after a few, not after publish_every. Acquires that no longer drain left it
+        // spinning until then (Lichii #949, from 62db242b34).
+        if (write_position - published_local >= PublishAfterWait &&
+            back_idle_at.load(std::memory_order_relaxed) == published_local) {
             Publish();
         }
     }
@@ -370,6 +380,8 @@ private:
     alignas(64) std::atomic<u64> consumed{};
     alignas(64) std::atomic<bool> back_waiting{};
     std::atomic<u32> wake{};
+    /// The back's read position when it last ran out of work, stored before it waits.
+    alignas(128) std::atomic<u64> back_idle_at{~u64{0}};
     std::jthread back_thread;
 };
 
