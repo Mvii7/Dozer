@@ -69,6 +69,16 @@ public:
         return upload_start;
     }
 
+    /// Entries written since Acquire: the index the next one gets.
+    size_t UpdateCount() const noexcept {
+        return upload_start ? static_cast<size_t>(payload_cursor - upload_start) : 0;
+    }
+
+    /// Points a sampled image entry of this draw at another view, e.g. a snapshot of it.
+    void ReplaceSampledImage(size_t entry, VkImageView image_view) {
+        upload_start[entry].image.imageView = image_view;
+    }
+
     /// Where the next entry goes (EDEN_NX2_DESC_REUSE keeps what a stage wrote).
     const DescriptorUpdateEntry* Cursor() const noexcept {
         return payload_cursor;
@@ -141,7 +151,7 @@ private:
     size_t frame_index{0};
     DescriptorUpdateEntry* payload_cursor = nullptr;
     DescriptorUpdateEntry* payload_start = nullptr;
-    const DescriptorUpdateEntry* upload_start = nullptr;
+    DescriptorUpdateEntry* upload_start = nullptr;
     std::vector<DescriptorUpdateEntry> payload;
 };
 

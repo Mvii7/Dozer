@@ -260,6 +260,10 @@ public:
         return uniform_stage_reuses;
     }
 
+    /// EDEN_NX2_UBO_KEEP, after a bind that read guest memory: what KeptUniform compares with later.
+    void NoteUniformKeep(size_t stage, u32 index, DAddr device_addr, u32 size, u64 sync_serial,
+                         u64 writes);
+
     [[nodiscard]] VkDeviceSize SparseAlignmentFor(bool sparse_compatible) const noexcept {
         if (!sparse_compatible || !multi_range_buffers.use_sparse) {
             return 0;
@@ -553,6 +557,12 @@ private:
     struct StageUniform {
         u64 serial{}; ///< 0: none
         u32 slot{};   ///< Index in uniform_slices
+        // EDEN_NX2_UBO_KEEP: the range the last bind read, the sync serial and the buffer
+        // cache's write count before it read (0: no keep).
+        u32 keep_size{};
+        DAddr keep_addr{};
+        u64 keep_sync{};
+        u64 keep_writes{};
     };
     static constexpr size_t UNIFORM_STAGES = 5;
     static constexpr size_t UNIFORM_STAGE_SLOTS = 18;
@@ -560,6 +570,20 @@ private:
     u64 uniform_serial{};
     u64 uniform_stage_reuses{};
 
+public:
+    /// EDEN_NX2_UBO_KEEP: the slice this stage slot's last bind used, when that bind read
+    /// [device_addr, device_addr + size) while the sync serial was `sync_serial` and the slice
+    /// still holds what it streamed then in this tick. Null otherwise (and while staged).
+    [[nodiscard]] const UniformSlice* KeptUniform(size_t stage, u32 index, DAddr device_addr,
+                                                  u32 size, u64 sync_serial) const;
+    /// The buffer cache's write count when the slot's last bind read guest memory.
+    [[nodiscard]] u64 KeptUniformWrites(size_t stage, u32 index) const {
+        return stage_uniforms[stage][index].keep_writes;
+    }
+    /// Binds a KeptUniform slice again; `writes` is the write count it is now known to hold for.
+    void BindKeptUniform(size_t stage, u32 index, const UniformSlice& slice, u32 size, u64 writes);
+
+private:
     /// A slice streamed in this tick whose bytes start with `bytes` (`size` of them), to bind
     /// instead of streaming a new one, or null. `slice` is the range's slot in uniform_slices.
     [[nodiscard]] const UniformSlice* FindUniformSlice(size_t stage, u32 index,

@@ -192,19 +192,69 @@ void BlockOfCode::DisableWriting() {
 
 void BlockOfCode::ClearCache() {
     ASSERT(prelude_complete);
+    ASSERT(!in_far_code);
     SetCodePtr(code_begin);
+    far_code_ptr = far_code_begin;
+}
+
+void BlockOfCode::EnableFarCode([[maybe_unused]] size_t far_size) {
+#ifndef DYNARMIC_ENABLE_NO_EXECUTE_SUPPORT
+    ASSERT(!prelude_complete);
+    if (far_size == 0 || far_size >= maxSize_ / 2) {
+        return;
+    }
+    far_code_begin = &top_[(maxSize_ - far_size) & ~size_t(4095)];
+    far_code_ptr = far_code_begin;
+#endif
+}
+
+void BlockOfCode::SwitchToFarCode() {
+    ASSERT(far_code_begin && !in_far_code);
+    near_code_ptr = getCurr<const u8*>();
+    in_far_code = true;
+    SetCodePtr(far_code_ptr);
+}
+
+void BlockOfCode::SwitchToNearCode() {
+    ASSERT(in_far_code);
+    far_code_ptr = getCurr<const u8*>();
+    in_far_code = false;
+    SetCodePtr(near_code_ptr);
 }
 
 size_t BlockOfCode::SpaceRemaining() const {
     ASSERT(prelude_complete);
-    const u8* current_ptr = getCurr<const u8*>();
-    if (current_ptr >= &top_[maxSize_])
+    const u8* current_ptr = in_far_code ? near_code_ptr : getCurr<const u8*>();
+    const u8* const near_end = far_code_begin ? far_code_begin : &top_[maxSize_];
+    if (current_ptr >= near_end)
         return 0;
-    return &top_[maxSize_] - current_ptr;
+    size_t remaining = near_end - current_ptr;
+    if (far_code_begin) {
+        const u8* const far_ptr = in_far_code ? getCurr<const u8*>() : far_code_ptr;
+        remaining = far_ptr >= &top_[maxSize_] ? 0 : (std::min<size_t>)(remaining, &top_[maxSize_] - far_ptr);
+    }
+    return remaining;
 }
 
 void BlockOfCode::EnsureMemoryCommitted([[maybe_unused]] size_t codesize) {
 #ifdef _WIN32
+    if (far_code_begin) {
+        // The far region has its own commit front.
+        const size_t far_begin = far_code_begin - top_;
+        const size_t far_need = (in_far_code ? size_ : size_t(far_code_ptr - top_)) + codesize;
+        if (far_committed_end < far_need) {
+            far_committed_end = (std::min<size_t>)(maxSize_, (std::max)(far_committed_end, far_begin) + codesize);
+            far_committed_end = (std::max)(far_committed_end, far_need);
+#    ifdef DYNARMIC_ENABLE_NO_EXECUTE_SUPPORT
+            VirtualAlloc(top_ + far_begin, far_committed_end - far_begin, MEM_COMMIT, PAGE_READWRITE);
+#    else
+            VirtualAlloc(top_ + far_begin, far_committed_end - far_begin, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+#    endif
+        }
+        if (in_far_code) {
+            return;
+        }
+    }
     if (committed_size < size_ + codesize) {
         committed_size = std::min<size_t>(maxSize_, committed_size + codesize);
 #    ifdef DYNARMIC_ENABLE_NO_EXECUTE_SUPPORT
@@ -290,10 +340,17 @@ void BlockOfCode::GenRunCode(std::function<void(BlockOfCode&)> rcp) {
     SwitchMxcsrOnEntry();
     jmp(ABI_PARAM2);
 
-    // Dispatcher loop
+    // Dispatcher loop. With host_stack_base_offset, guest call frames may be on the stack here:
+    // every entry drops them before the StackLayout below is addressed through rsp.
+    const auto reset_host_stack = [this] {
+        if (cb.host_stack_base_offset) {
+            mov(rsp, qword[ABI_JIT_PTR + *cb.host_stack_base_offset]);
+        }
+    };
 
     align();
     return_from_run_code[0] = getCurr<const void*>();
+    reset_host_stack();
 
     cmp(dword[ABI_JIT_PTR + jsi.offsetof_halt_reason], 0);
     jne(return_to_caller);
@@ -306,6 +363,7 @@ void BlockOfCode::GenRunCode(std::function<void(BlockOfCode&)> rcp) {
 
     align();
     return_from_run_code[MXCSR_ALREADY_EXITED] = getCurr<const void*>();
+    reset_host_stack();
 
     cmp(dword[ABI_JIT_PTR + jsi.offsetof_halt_reason], 0);
     jne(return_to_caller_mxcsr_already_exited);
@@ -320,12 +378,14 @@ void BlockOfCode::GenRunCode(std::function<void(BlockOfCode&)> rcp) {
     align();
     return_from_run_code[FORCE_RETURN] = getCurr<const void*>();
     L(return_to_caller);
+    reset_host_stack();
 
     SwitchMxcsrOnExit();
     // fallthrough
 
     return_from_run_code[MXCSR_ALREADY_EXITED | FORCE_RETURN] = getCurr<const void*>();
     L(return_to_caller_mxcsr_already_exited);
+    reset_host_stack();
 
     if (cb.enable_cycle_counting) {
         cb.AddTicks.EmitCall(*this, [this](RegList param) {
