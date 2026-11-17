@@ -2812,8 +2812,29 @@ void RasterizerVulkan::AccelerateInlineToMemory(GPUVAddr address, size_t copy_si
     const bool defer = InlineDeferEnabled();
     // One cache at a time: holding both while waiting for either (std::lock) waited longer, the
     // fencing thread and CPU write traps holding one of them most of the time.
-    bool uploaded;
-    {
+    // InlineMemory uploads only into GPU-written buffer data, and every range the buffer cache
+    // records as GPU-written marks its pages in Tegra::g_nx2_gpu_written_pages (never cleared).
+    // A deferred write to pages without a mark changes nothing under the lock, and the uniform
+    // log hears of it at the next FlushCaching. EDEN_NX2_INLINE_NOLOCK=0: always locked.
+    static const bool nolock_enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_INLINE_NOLOCK");
+        return value == nullptr || value[0] != '0';
+    }();
+    const auto may_be_gpu_written = [&] {
+        const DAddr page_end = Common::AlignUp(*cpu_addr + copy_size, Core::DEVICE_PAGESIZE);
+        for (DAddr page = Common::AlignDown(*cpu_addr, Core::DEVICE_PAGESIZE); page < page_end;
+             page += DAddr{1} << Tegra::Nx2WrittenPageBits) {
+            if (Tegra::Nx2IsGpuWritten(page)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const bool lock_free = nolock_enabled && defer && copy_size != 0 &&
+                           Tegra::g_nx2_ampere.load(std::memory_order_relaxed) &&
+                           !may_be_gpu_written();
+    bool uploaded = false;
+    if (!lock_free) {
         CheckBufferLockOffB("RasterizerVulkan::AccelerateInlineToMemory");
         std::scoped_lock lock{buffer_cache.mutex};
         uploaded = buffer_cache.InlineMemory(*cpu_addr, copy_size, memory);
