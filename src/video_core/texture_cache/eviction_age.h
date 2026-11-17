@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdlib>
 
 #include "common/common_types.h"
 
@@ -13,6 +14,16 @@ namespace VideoCommon {
 /// Mario Kart World's races keep far more images in use than the collector's floor: deleting the
 /// ones unused for 50 frames made dozens again every frame, uploads included.
 constexpr u64 MinEvictionAge = 150;
+
+/// EDEN_NX2_TC_KEEP_RECENT=0: the collector's mode ages only, and GPU-modified images are evicted
+/// from the critical line on, as before.
+[[nodiscard]] inline bool KeepRecentEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_TC_KEEP_RECENT");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
 
 /// Frames since its last use before the collector may delete an image. `mode_age` is the age the
 /// collector's mode asks for; it applies as is only when memory is short: no limit is known (0)

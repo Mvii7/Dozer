@@ -283,13 +283,9 @@ void TextureCache<P>::RunGarbageCollector() {
         // Switch 2 titles: images used in the last MinEvictionAge frames stay until usage reaches
         // retention_limit (the critical line without a budget). EDEN_NX2_TC_KEEP_RECENT=0: the
         // mode's age only.
-        static const bool keep_recent = [] {
-            const char* value = std::getenv("EDEN_NX2_TC_KEEP_RECENT");
-            return value == nullptr || value[0] != '0';
-        }();
-        const u64 limit = !keep_recent || !native_thresholds_applied ? 0
-                          : retention_limit != 0                      ? retention_limit
-                                                                      : critical_memory;
+        const u64 limit = !KeepRecentEnabled() || !native_thresholds_applied ? 0
+                          : retention_limit != 0 ? retention_limit
+                                                 : critical_memory;
         ticks_to_destroy = EvictionAge(mode_age, min_age, total_used_memory, limit);
         if (limit == 0) {
             ticks_to_destroy = (std::max)(ticks_to_destroy, min_age);
@@ -311,8 +307,13 @@ void TextureCache<P>::RunGarbageCollector() {
             return false;
         }
         const bool must_download = IsDownloadable(image) && False(image.flags & ImageFlagBits::BadOverlap);
+        // Evicting a GPU-modified image waits for the GPU (Finish): only once the heap itself
+        // runs short (retention_limit), not at the critical line, whose reserve leaves VRAM free.
+        const bool heap_has_room =
+            KeepRecentEnabled() && retention_limit != 0 && total_used_memory < retention_limit;
         if ((!aggressive_mode && !allow_costly && True(image.flags & ImageFlagBits::CostlyLoad)) ||
-            (!aggressive_mode && must_download) || (must_download && downloads_left == 0)) {
+            ((!aggressive_mode || heap_has_room) && must_download) ||
+            (must_download && downloads_left == 0)) {
             return false;
         }
         if (must_download) {
