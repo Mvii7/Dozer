@@ -16,11 +16,11 @@ namespace {
 using namespace Loader::Nx2DkQuality;
 
 constexpr u32 Filler = 0x12345678;
-// A text segment of 0x2ef0 bytes in 0x3000: the free space starts at word 0xbbc, the terrain
-// LOD routines at 0xbbc + CaveOffset.
-constexpr u32 TextSize = 0x2ef0;
+// A text segment of 0x2ec0 bytes in 0x3000: the free space starts at word 0xbb0, the terrain
+// LOD routines at 0xbb0 + CaveOffset.
+constexpr u32 TextSize = 0x2ec0;
 constexpr u32 AlignedSize = 0x3000;
-constexpr size_t Cave = 0xbbc + CaveOffset;
+constexpr size_t Cave = 0xbb0 + CaveOffset;
 constexpr size_t MinNear = 0x100, MaxFar = 0x120, MaxNear = 0x140, MinFar = 0x160;
 constexpr size_t GpuGetter = 0x200, FrameGetter = 0x210, BlurScaleGetter = 0x220;
 constexpr size_t BlurSamplesGetter = 0x230, CubeMapGetter = 0x240;
@@ -203,7 +203,7 @@ TEST_CASE("Nx2DkQuality: the toggles and the occlusion thresholds", "[core]") {
     Values values{};
     values[GgxFilterOff] = 1;
     values[CubeMapOcclusionOff] = 1;
-    values[OcclusionDepth] = 200;   // 100.0
+    values[OcclusionDepth] = 200;   // x2.0
     values[OcclusionRadius] = 50;   // 25.0
     values[OcclusionPolygon] = 150; // 1500
     const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
@@ -215,8 +215,13 @@ TEST_CASE("Nx2DkQuality: the toggles and the occlusion thresholds", "[core]") {
         expected[at] = 0x52800000; // movz w0, #0
         expected[at + 1] = Ret;
     }
-    expected[DepthGetter] = 0x52A85908;  // movz w8, #0x42c8, lsl #16 (100.0)
-    expected[DepthGetter + 1] = 0x1E270100;
+    const size_t depth = Cave + DepthRoutine;
+    expected[DepthGetter + 1] = 0x14000000U | static_cast<u32>(depth - (DepthGetter + 1));
+    expected[depth] = LdrS(0, 8, ValueOffset);
+    expected[depth + 1] = 0x1C000061; // ldr s1, #12
+    expected[depth + 2] = 0x1E210800; // fmul s0, s0, s1
+    expected[depth + 3] = Ret;
+    expected[depth + 4] = 0x40000000; // 2.0
     expected[RadiusGetter] = 0x52A83908; // movz w8, #0x41c8, lsl #16 (25.0)
     expected[RadiusGetter + 1] = 0x1E270100;
     expected[PolygonGetter] = 0x5280BB80; // movz w0, #1500

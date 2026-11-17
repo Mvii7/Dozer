@@ -294,7 +294,9 @@ constexpr size_t FarRoutine = MeshRoutine + MeshRoutineWords; ///< three, after 
 constexpr size_t FarRoutineWords = 5;
 constexpr size_t DebrisRoutine = FarRoutine + 3 * FarRoutineWords; ///< after the far ones
 constexpr size_t DebrisRoutineWords = 4;
-constexpr size_t CaveWords = DebrisRoutine + DebrisRoutineWords;
+constexpr size_t DepthRoutine = DebrisRoutine + DebrisRoutineWords; ///< after the debris one
+constexpr size_t DepthRoutineWords = 5;
+constexpr size_t CaveWords = DepthRoutine + DepthRoutineWords;
 
 /// The upper half of a float, rounded: the constants are put in with one `movz wN, #x, lsl #16`.
 constexpr u32 FloatHigh(float value) {
@@ -361,7 +363,6 @@ constexpr u32 OcclusionRadiusParam = 0x528;   // OcclusionQueryThresholdRadius
 constexpr u32 OcclusionPolygonParam = 0x530;  // OcclusionQueryThresholdPolygon
 
 // The game's values of the occlusion rows, from its ProjectGraphicsParam (Default).
-constexpr float GameOcclusionDepth = 50.0f;
 constexpr float GameOcclusionRadius = 50.0f;
 constexpr int GameOcclusionPolygon = 1000;
 
@@ -502,8 +503,6 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
     false_getter(GgxFilterOff, GgxFilterParam);
     false_getter(CubeMapOcclusionOff, CubeMapOcclusionParam);
     false_getter(ShadowMaskOff, ShadowMaskParam);
-    float_getter(OcclusionDepth, OcclusionDepthParam,
-                 GameOcclusionDepth * percent(set(OcclusionDepth)));
     float_getter(OcclusionRadius, OcclusionRadiusParam,
                  GameOcclusionRadius * percent(set(OcclusionRadius)));
     float_getter(GpuTarget, GpuTargetParam, static_cast<float>(set(GpuTarget)));
@@ -677,6 +676,31 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
         if (find({{0, 0x3941F3E8U}, {1, 0xF94017E6U}, {2, 0x7100011FU}, {3, 0x1A9F17E8U}}, at)) {
             put(at[0], Movz(8, 1));
             result[VoxelBorderMeshOff] = State::Applied;
+        }
+    }
+
+    // OcclusionQueryThresholdDepth differs between the graphics variants (90 in the stages, 50
+    // elsewhere), so it is scaled rather than replaced: the getter's load becomes a jump to
+    //   ldr s0, [x8, #0x64]; ldr s1, <scale>; fmul s0, s0, s1; ret; <scale>
+    if (const int depth = set(OcclusionDepth); depth != 0) {
+        constexpr u32 LdrS1Literal = 0x1C000061U; // ldr s1, #12: the word after the ret
+        constexpr u32 FmulS0S0S1 = 0x1E210800U;
+        std::array<size_t, 1> at{};
+        if (CaveFree(DepthRoutine, DepthRoutineWords) &&
+            find({{0, LdrX(8, 0, OcclusionDepthParam)}, {1, LdrS(0, 8, ValueOffset)}, {2, Ret}},
+                 at)) {
+            const size_t routine = cave + DepthRoutine;
+            const size_t from = at[0] + 1;
+            put(routine, LdrS(0, 8, ValueOffset));
+            put(routine + 1, LdrS1Literal);
+            put(routine + 2, FmulS0S0S1);
+            put(routine + 3, Ret);
+            u32 scale;
+            const float factor = percent(depth);
+            std::memcpy(&scale, &factor, sizeof(scale));
+            put(routine + 4, scale);
+            put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
+            result[OcclusionDepth] = State::Applied;
         }
     }
 

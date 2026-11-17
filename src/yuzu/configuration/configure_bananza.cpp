@@ -186,7 +186,8 @@ void ConfigureBananza::RetranslateUI() {
         tr("Skips the occlusion check the reflection cube maps make. For testing.")};
     texts[Quality::OcclusionDepth] = {
         tr("Occlusion query depth"),
-        tr("Scales the depth threshold of the game's occlusion queries (its own is 50). What "
+        tr("Scales the depth threshold of the game's occlusion queries (its own is 90 in the "
+           "stages, 50 elsewhere). What "
            "higher or lower does is not known yet: for testing.")};
     texts[Quality::OcclusionRadius] = {
         tr("Occlusion query radius"),
