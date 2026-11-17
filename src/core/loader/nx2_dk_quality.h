@@ -81,6 +81,7 @@ enum Id : size_t {
     VoxelSurfaceBuffer, ///< buffer of the voxel surface effects, %
     VoxelSurfaceEffectOff, ///< voxel surface effects off
     DepthCollisionEffectOff, ///< depth collision effects off
+    DebrisOff,         ///< every voxel material's FragmentType forced to DisableForce
     Count,
 };
 
@@ -154,6 +155,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"voxel_surface_buffer", "EDEN_NX2_DKQ_VOXEL_SURFACE_BUFFER", 1, 100, 100},
     {"voxel_surface_effect_off", "EDEN_NX2_DKQ_VOXEL_SURFACE_EFFECT_OFF", 1, 1, 0},
     {"depth_collision_effect_off", "EDEN_NX2_DKQ_DEPTH_COLLISION_EFFECT_OFF", 1, 1, 0},
+    {"debris_off", "EDEN_NX2_DKQ_DEBRIS_OFF", 1, 1, 0},
 }};
 
 /// One number per knob; 0 leaves the game's own.
@@ -290,7 +292,9 @@ constexpr size_t MeshRoutine = 4 * CaveRoutineWords; ///< after the terrain LOD 
 constexpr size_t MeshRoutineWords = 4;
 constexpr size_t FarRoutine = MeshRoutine + MeshRoutineWords; ///< three, after the mesh one
 constexpr size_t FarRoutineWords = 5;
-constexpr size_t CaveWords = FarRoutine + 3 * FarRoutineWords;
+constexpr size_t DebrisRoutine = FarRoutine + 3 * FarRoutineWords; ///< after the far ones
+constexpr size_t DebrisRoutineWords = 4;
+constexpr size_t CaveWords = DebrisRoutine + DebrisRoutineWords;
 
 /// The upper half of a float, rounded: the constants are put in with one `movz wN, #x, lsl #16`.
 constexpr u32 FloatHigh(float value) {
@@ -366,9 +370,10 @@ constexpr int GameOcclusionPolygon = 1000;
 inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const Values& values) {
     Result result{};
     bool any = false;
-    // The foliage rows are game data (nx2_dk_foliage.h), not instructions: not marked here
-    for (size_t i = 0; i < FoliageCap; ++i) { // the rows from FoliageCap on are game data
-        if (Sanitize(values[i], Knobs[i]) != 0) {
+    // The rows from FoliageCap on are game data (nx2_dk_foliage.h), not instructions: not
+    // marked here, except Debris off, which is
+    for (size_t i = 0; i < Count; ++i) {
+        if ((i < FoliageCap || i == DebrisOff) && Sanitize(values[i], Knobs[i]) != 0) {
             result[i] = State::Missed;
             any = true;
         }
@@ -672,6 +677,29 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
         if (find({{0, 0x3941F3E8U}, {1, 0xF94017E6U}, {2, 0x7100011FU}, {3, 0x1A9F17E8U}}, at)) {
             put(at[0], Movz(8, 1));
             result[VoxelBorderMeshOff] = State::Applied;
+        }
+    }
+
+    // A voxel material type's FragmentType (NoOverwrite 0, EnableForce 1, DisableForce 2) is a
+    // word at +0xa0 of the material, which the loader binds as its 16th field (index 0xf):
+    //   mov w8, #0xf; 13 words; add x8, x20, #0xc0 (the next field)
+    // The add becomes a jump to a routine that stores DisableForce first (x9 is set next):
+    //   movz w9, #2; str w9, [x20, #0xa0]; add x8, x20, #0xc0; b back
+    if (set(DebrisOff) != 0) {
+        constexpr u32 MovW8Field = 0x528001E8U, AddX8X20Next = 0x91030288U;
+        constexpr u32 StrW9X20Fragment = 0xB900A289U;
+        std::array<size_t, 1> at{};
+        if (CaveFree(DebrisRoutine, DebrisRoutineWords) &&
+            find({{0, MovW8Field}, {14, AddX8X20Next}}, at)) {
+            const size_t routine = cave + DebrisRoutine;
+            const size_t from = at[0] + 14;
+            put(routine, Movz(9, 2));
+            put(routine + 1, StrW9X20Fragment);
+            put(routine + 2, AddX8X20Next);
+            put(routine + 3,
+                0x14000000U | (static_cast<u32>((from + 1) - (routine + 3)) & 0x3FFFFFFU));
+            put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
+            result[DebrisOff] = State::Applied;
         }
     }
     return result;

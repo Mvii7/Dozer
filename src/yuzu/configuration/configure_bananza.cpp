@@ -319,6 +319,11 @@ void ConfigureBananza::RetranslateUI() {
         tr("Depth collision effects off"),
         tr("Turns the effects that collide with the scene's depth (particles that bounce off "
            "terrain) off. Needs a restart.")};
+    texts[Quality::DebrisOff] = {
+        tr("Debris off"),
+        tr("Gives every terrain material the setting some of them (trees, iron mesh) already "
+           "have: no fragments when it breaks. Changed in the game's code as it loads. It may "
+           "also change how terrain breaks apart or which chunks can be picked up. For testing.")};
     texts[Quality::VoxelBorderMeshOff] = {
         tr("Terrain border mesh off"),
         tr("Builds no border mesh between neighbouring terrain chunks. Cracks may show. For "

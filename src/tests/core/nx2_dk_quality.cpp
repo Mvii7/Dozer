@@ -30,6 +30,7 @@ constexpr size_t DepthGetter = 0x290, RadiusGetter = 0x2a0, PolygonGetter = 0x2b
 constexpr size_t MeshStore = 0x500;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
 constexpr size_t Voxel = 0x400;
+constexpr size_t DebrisSite = 0x780;
 constexpr size_t BorderSite = 0x740, ShadowMaskGetter = 0x760,
     FlagSite = 0x800;
 
@@ -76,6 +77,8 @@ struct Text {
         std::copy(std::begin(first), std::end(first), &words[FarA]);
         std::copy(std::begin(second), std::end(second), &words[FarB]);
         std::copy(std::begin(third), std::end(third), &words[FarC]);
+        words[DebrisSite] = 0x528001E8;      // mov w8, #0xf
+        words[DebrisSite + 14] = 0x91030288; // add x8, x20, #0xc0
         words[MeshStore] = 0xB90097E8;     // str w8, [sp, #0x94]
         words[MeshStore + 1] = 0xF9403260; // ldr x0, [x19, #0x60]
         const u32 border[]{0x3941F3E8, 0xF94017E6, 0x7100011F, 0x1A9F17E8};
@@ -243,6 +246,21 @@ TEST_CASE("Nx2DkQuality: the mesh simplification type", "[core]") {
     expected[routine + 2] = 0xF9403260; // ldr x0, [x19, #0x60]
     expected[routine + 3] =
         0x14000000U | (static_cast<u32>((MeshStore + 2) - (routine + 3)) & 0x3FFFFFFU);
+    REQUIRE(text.words == expected);
+}
+
+TEST_CASE("Nx2DkQuality: debris off", "[core]") {
+    Text text;
+    std::vector<u32> expected = text.words;
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(DebrisOff, 1));
+    REQUIRE(result[DebrisOff] == State::Applied);
+    const size_t routine = Cave + DebrisRoutine;
+    const size_t from = DebrisSite + 14;
+    expected[from] = 0x14000000U | static_cast<u32>(routine - from);
+    expected[routine] = 0x52800049;     // movz w9, #2
+    expected[routine + 1] = 0xB900A289; // str w9, [x20, #0xa0]
+    expected[routine + 2] = 0x91030288; // add x8, x20, #0xc0
+    expected[routine + 3] = 0x14000000U | (static_cast<u32>((from + 1) - (routine + 3)) & 0x3FFFFFFU);
     REQUIRE(text.words == expected);
 }
 
