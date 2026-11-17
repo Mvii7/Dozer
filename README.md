@@ -254,7 +254,7 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Foliage LOD bias | 100% | scales when each foliage model switches to a simpler mesh, 10-1000%; which direction is coarser is not known yet (for testing) |
 | Foliage placement density | 100% | scales the chance and rate of the foliage placed while playing (foliage in the stage's data is only cut by the cap) |
 | Effects started per frame / Particles per emitter | 156 / 512 | scales the most effects the game starts in a frame and the most particles in one emitter (dust, debris, sparks); in the game's effect settings files as they are read |
-| Effects off | off | turns the effects off: effects per frame, particles per emitter, effects alive and material effects all set to 1; something that expects an effect may break |
+| Effect starts / Emitter particles / Alive effects / Terrain material effects off | off | one box per effect cap; ticked sets that cap to 1 (the game's: 156 / 512 / 64 / its own); something that expects an effect may break |
 | Effects alive per rule / Terrain material effects | 100% | scales how many effects the emission rules keep alive and how many terrain material effects (dust, smoke, snow) are active at once |
 | Shadow masks off | on | turns off the game's shadow masks (volume shadows); shadows may go missing (for testing) |
 | Occlusion query depth / radius / polygons | 100% | scales the thresholds of the game's occlusion queries (effect not known; for testing) |

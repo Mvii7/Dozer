@@ -250,9 +250,10 @@ TEST_CASE("Nx2DkFoliage: data that is not an archive is left alone", "[core]") {
     REQUIRE_FALSE(PatchSystemSettings(empty, settings));
 }
 
-TEST_CASE("Nx2DkFoliage: effects off", "[core]") {
+TEST_CASE("Nx2DkFoliage: effect caps off", "[core]") {
     Settings settings;
-    settings.effects_off = true;
+    settings.emit_off = true;
+    settings.material_off = true;
     REQUIRE(settings.Active());
     auto effects = Sarc(Byml({{"EmitCountPerFrameMax", 0xD1, 156}}));
     REQUIRE(PatchEffectSettings(effects, settings));

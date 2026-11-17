@@ -289,12 +289,20 @@ void ConfigureBananza::RetranslateUI() {
         tr("Terrain material effects"),
         tr("Scales how many terrain material effects (dust, smoke, snow) are active at once, in "
            "the effect settings and in each material's own limit.")};
-    texts[Quality::EffectsOff] = {
-        tr("Effects off"),
-        tr("Turns the game's effects (particles, dust, smoke, debris) off: effects started per "
-           "frame, particles per emitter, effects alive and material effects all set to 1. Done "
-           "in the game's settings files as they are read, so it needs a restart. Something that "
-           "expects an effect may break.")};
+    texts[Quality::EffectEmitOff] = {
+        tr("Effect starts off"),
+        tr("Lets the game start one effect (particles, dust, debris) per frame at most. Needs a "
+           "restart. Something that expects an effect may break.")};
+    texts[Quality::EffectParticleOff] = {
+        tr("Emitter particles off"),
+        tr("Lets one emitter have one particle at most. Needs a restart.")};
+    texts[Quality::EffectAliveOff] = {
+        tr("Alive effects off"),
+        tr("Lets each emission rule keep one effect alive at most. Needs a restart.")};
+    texts[Quality::EffectMaterialOff] = {
+        tr("Terrain material effects off"),
+        tr("Lets one terrain material effect (dust, smoke, snow) be active at most. Needs a "
+           "restart.")};
     texts[Quality::VoxelBorderMeshOff] = {
         tr("Terrain border mesh off"),
         tr("Builds no border mesh between neighbouring terrain chunks. Cracks may show. For "

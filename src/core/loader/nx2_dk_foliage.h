@@ -32,11 +32,15 @@ struct Settings {
     int particles = 0;    ///< % of the particles in one emitter
     int alive = 0;        ///< % of the effects alive per effect rule
     int material = 0;     ///< % of the material effects
-    bool effects_off = false; ///< every effect cap at 1
+    bool emit_off = false;     ///< each effect cap at 1
+    bool particles_off = false;
+    bool alive_off = false;
+    bool material_off = false;
 
     [[nodiscard]] bool Active() const {
         return off || cap != 0 || frustum_off || density != 0 || far_clip != 0 || lod != 0 || emit != 0 || particles != 0 ||
-               alive != 0 || material != 0 || effects_off;
+               alive != 0 || material != 0 || emit_off ||
+               particles_off || alive_off || material_off;
     }
 };
 
@@ -52,7 +56,9 @@ inline Settings FromEnvironment() {
             ReadEnv(Id::FoliageFarClip),
             ReadEnv(Id::FoliageLod),     ReadEnv(Id::EffectEmitCap),
             ReadEnv(Id::EffectParticleCap), ReadEnv(Id::EffectAliveCap),
-            ReadEnv(Id::EffectMaterialCap), ReadEnv(Id::EffectsOff) != 0};
+            ReadEnv(Id::EffectMaterialCap), ReadEnv(Id::EffectEmitOff) != 0,
+            ReadEnv(Id::EffectParticleOff) != 0, ReadEnv(Id::EffectAliveOff) != 0,
+            ReadEnv(Id::EffectMaterialOff) != 0};
 }
 
 constexpr std::string_view SystemSettingsPath = "ClusteredRendering/SystemSettings.alsarc.zs";
@@ -294,21 +300,24 @@ inline bool PatchEffectSettings(std::span<u8> archive, const Settings& settings)
     Detail::ForEachSarcFile(in, [&](size_t base) {
         Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
             int percent = 0;
+            bool off = false;
             if (key == "EmitCountPerFrameMax") {
                 percent = settings.emit;
+                off = settings.emit_off;
             } else if (key == "OneEmitterMaxParticleNum") {
                 percent = settings.particles;
+                off = settings.particles_off;
             } else if (key == "MaxAliveEffectsNum") {
                 percent = settings.alive;
+                off = settings.alive_off;
             } else if (key == "MaxMatEffActiveUsersNumPerSlot") {
                 percent = settings.material;
+                off = settings.material_off;
             }
-            const bool cap = key == "EmitCountPerFrameMax" || key == "OneEmitterMaxParticleNum" ||
-                             key == "MaxAliveEffectsNum" || key == "MaxMatEffActiveUsersNumPerSlot";
             if (!(type == Detail::TypeInt || type == Detail::TypeUInt)) {
                 return;
             }
-            if (settings.effects_off && cap) {
+            if (off) {
                 // One at most (not 0, which a buffer size might not allow)
                 Detail::Put(in, at, 1);
                 changed = true;
@@ -323,7 +332,7 @@ inline bool PatchEffectSettings(std::span<u8> archive, const Settings& settings)
 
 /// Scales each MaxActiveEffectNum of a decompressed MaterialEffect/SettingUnit archive in place.
 inline bool PatchSettingUnits(std::span<u8> archive, const Settings& settings) {
-    if (settings.material == 0 && !settings.effects_off) {
+    if (settings.material == 0 && !settings.material_off) {
         return false;
     }
     Detail::Reader in{archive};
@@ -333,7 +342,7 @@ inline bool PatchSettingUnits(std::span<u8> archive, const Settings& settings) {
             if (key == "MaxActiveEffectNum" &&
                 (type == Detail::TypeInt || type == Detail::TypeUInt)) {
                 Detail::Put(in, at,
-                            settings.effects_off
+                            settings.material_off
                                 ? 1
                                 : std::max<u32>(in.U32(at) *
                                                     static_cast<u32>(settings.material) / 100, 1));

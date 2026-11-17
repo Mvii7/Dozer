@@ -73,7 +73,10 @@ enum Id : size_t {
     EffectParticleCap, ///< OneEmitterMaxParticleNum, % of the game's
     EffectAliveCap,    ///< the MaxAliveEffectsNum of the effect rules, % of the game's
     EffectMaterialCap, ///< MaxMatEffActiveUsersNumPerSlot and each MaxActiveEffectNum, %
-    EffectsOff,        ///< all effect caps at 1
+    EffectEmitOff,     ///< effects started per frame at 1
+    EffectParticleOff, ///< particles per emitter at 1
+    EffectAliveOff,    ///< effects alive per rule at 1
+    EffectMaterialOff, ///< terrain material effects at 1
     Count,
 };
 
@@ -139,7 +142,10 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"effect_particle_cap", "EDEN_NX2_DKQ_EFFECT_PARTICLE_CAP", 5, 100, 100},
     {"effect_alive_cap", "EDEN_NX2_DKQ_EFFECT_ALIVE_CAP", 5, 100, 100},
     {"effect_material_cap", "EDEN_NX2_DKQ_EFFECT_MATERIAL_CAP", 5, 100, 100},
-    {"effects_off", "EDEN_NX2_DKQ_EFFECTS_OFF", 1, 1, 0},
+    {"effect_emit_off", "EDEN_NX2_DKQ_EFFECT_EMIT_OFF", 1, 1, 0},
+    {"effect_particle_off", "EDEN_NX2_DKQ_EFFECT_PARTICLE_OFF", 1, 1, 0},
+    {"effect_alive_off", "EDEN_NX2_DKQ_EFFECT_ALIVE_OFF", 1, 1, 0},
+    {"effect_material_off", "EDEN_NX2_DKQ_EFFECT_MATERIAL_OFF", 1, 1, 0},
 }};
 
 /// One number per knob; 0 leaves the game's own.
