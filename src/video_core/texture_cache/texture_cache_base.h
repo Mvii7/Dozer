@@ -220,6 +220,21 @@ public:
     /// Get the imageview from the graphics descriptor table in the specified index
     [[nodiscard]] ImageView& GetImageView(u32 index) noexcept;
 
+    [[nodiscard]] Runtime& GetRuntime() noexcept {
+        return runtime;
+    }
+
+    /// The views the draw's color targets render into; null for slots it does not use.
+    [[nodiscard]] std::array<ImageViewId, NUM_RT> ActiveColorTargets() const noexcept {
+        std::array<ImageViewId, NUM_RT> ids{};
+        for (size_t i = 0; i < NUM_RT; ++i) {
+            if ((rt_active_mask & (1u << i)) != 0) {
+                ids[i] = render_targets.color_buffer_ids[i];
+            }
+        }
+        return ids;
+    }
+
     /// Mark an image as modified from the GPU
     void MarkModification(ImageId id) noexcept;
 
