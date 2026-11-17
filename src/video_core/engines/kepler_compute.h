@@ -260,6 +260,9 @@ private:
     MacroEngine& FrontMacroEngine(FrontState& state);
     std::span<u32> FrontMacroPositions(FrontState& state);
     void FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split, FrontState& state);
+    /// The release SET_REPORT_SEMAPHORE_D (`control`) makes on the back
+    /// (GpuSplit::NoteSemaphoreWrite).
+    void FrontNoteReport(VideoCommon::GpuSplit& split, const FrontState& state, u32 control);
     std::unique_ptr<FrontState> front;
     bool front_macros{}; ///< The front owns the macro code and bindings (the back skips them)
 

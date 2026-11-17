@@ -174,6 +174,9 @@ void GpuSplit::Stop() {
     pending_count = 0;
     unbatched_position = 0;
     unbatched_published = 0;
+    semaphore_writes.clear();
+    semaphore_writes_limit = 1024;
+    unknown_write_position = 0;
     back_engine = nullptr;
     front_macros = false;
     published.store(0, std::memory_order_relaxed);
@@ -256,6 +259,29 @@ bool GpuSplit::Drain() {
             std::this_thread::yield();
         }
     }
+}
+
+void GpuSplit::NoteSemaphoreWrite(u64 device_address, u32 payload, bool known) {
+    if (semaphore_writes.size() >= semaphore_writes_limit) {
+        // The words of releases the back ran hold their values in memory.
+        const u64 done = consumed.load(std::memory_order_acquire);
+        std::erase_if(semaphore_writes,
+                      [done](const auto& entry) { return entry.second.position <= done; });
+        semaphore_writes_limit = (std::max)(size_t{1024}, semaphore_writes.size() * 2);
+    }
+    // After the macro writes held (EDEN_NX2_WRITE_BATCH): the release may be among them.
+    semaphore_writes.insert_or_assign(device_address & ~u64{3},
+                                      SemaphoreWrite{WritePosition(), payload, known});
+}
+
+std::optional<GpuSplit::QueuedSemaphoreWrite> GpuSplit::QueuedSemaphoreWriteAt(
+    u64 device_address) const {
+    const auto it = semaphore_writes.find(device_address & ~u64{3});
+    if (it == semaphore_writes.end() ||
+        it->second.position <= consumed.load(std::memory_order_acquire)) {
+        return std::nullopt;
+    }
+    return QueuedSemaphoreWrite{it->second.payload, it->second.known};
 }
 
 void GpuSplit::SwitchEngine(Tegra::Engines::EngineInterface* engine) {

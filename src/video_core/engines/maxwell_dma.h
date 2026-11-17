@@ -113,6 +113,9 @@ public:
         PackedGPUVAddr address;
         u32 payload;
     };
+    /// The methods of Regs::semaphore (address high and low, payload) and Regs::launch_dma.
+    static constexpr u32 SemaphoreMethod = 0x240 / sizeof(u32);
+    static constexpr u32 LaunchDmaMethod = 0x300 / sizeof(u32);
     static_assert(sizeof(Semaphore) == 12);
 
     struct RenderEnable {

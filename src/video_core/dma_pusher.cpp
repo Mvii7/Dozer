@@ -18,6 +18,7 @@
 #include "video_core/control/channel_state.h"
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/engines/maxwell_3d.h"
+#include "video_core/engines/maxwell_dma.h"
 #include "video_core/gpu.h"
 #include "video_core/gpu_split.h"
 #include "video_core/guest_memory.h"
@@ -621,6 +622,7 @@ void DmaPusher::CallMethod(u32 argument) {
             }
             split.Method(subchannel, dma_state.method, argument, dma_state.is_last_call,
                          WantsSegment() ? &segment : nullptr);
+            NoteBackSemaphore(subchannel_type[dma_state.subchannel], dma_state.method, argument);
             DiagNoteEngine(memory_manager, subchannel, subchannel_type[dma_state.subchannel],
                            dma_state.method, &argument, 1);
             return;
@@ -680,6 +682,11 @@ void DmaPusher::CallMultiMethod(const u32* base_start, u32 num_methods) {
             }
             split.MultiMethod(subchannel, dma_state.method, base_start, num_methods,
                               dma_state.method_count, WantsSegment() ? &segment : nullptr);
+            for (u32 i = 0; i < num_methods; ++i) {
+                const u32 step = dma_state.non_incrementing ? 0 : dma_increment_once ? (i != 0) : i;
+                NoteBackSemaphore(subchannel_type[dma_state.subchannel], dma_state.method + step,
+                                  base_start[i]);
+            }
             DiagNoteEngine(memory_manager, subchannel, subchannel_type[dma_state.subchannel],
                            dma_state.method, base_start, num_methods);
             return;
@@ -711,6 +718,53 @@ void DmaPusher::FlushParameterWindow(GPUVAddr address, size_t size) {
     const GPUVAddr begin = address & ~(window - 1);
     const GPUVAddr end = (address + size + window - 1) & ~(window - 1);
     memory_manager.FlushRegion(begin, end - begin, VideoCommon::CacheType::BufferCache);
+}
+
+void DmaPusher::NoteBackSemaphore(Engines::EngineTypes type, u32 method, u32 argument) {
+    using Engines::MaxwellDMA;
+    auto& split = VideoCommon::GpuSplit::Get();
+    switch (type) {
+    case Engines::EngineTypes::Maxwell3D:
+        if (method == offsetof(Engines::Maxwell3D::Regs, report_semaphore.query) / sizeof(u32) ||
+            method >= MacroRegistersStart) {
+            split.NoteUnknownSemaphoreWrite();
+        }
+        return;
+    case Engines::EngineTypes::KeplerCompute:
+        if (method == 0x6c3 || method >= 0xe00) {
+            split.NoteUnknownSemaphoreWrite();
+        }
+        return;
+    case Engines::EngineTypes::MaxwellDMA:
+        break;
+    default:
+        return;
+    }
+    if (method >= MaxwellDMA::SemaphoreMethod && method < MaxwellDMA::SemaphoreMethod + 3) {
+        dma_semaphore[method - MaxwellDMA::SemaphoreMethod] = argument;
+        return;
+    }
+    if (method != MaxwellDMA::LaunchDmaMethod) {
+        return;
+    }
+    // As MaxwellDMA::ReleaseSemaphore writes it.
+    using SemaphoreType = MaxwellDMA::LaunchDMA::SemaphoreType;
+    const auto semaphore = std::bit_cast<MaxwellDMA::LaunchDMA>(argument).semaphore_type.Value();
+    if (semaphore != SemaphoreType::RELEASE_ONE_WORD_SEMAPHORE &&
+        semaphore != SemaphoreType::RELEASE_FOUR_WORD_SEMAPHORE) {
+        return;
+    }
+    const GPUVAddr address = MaxwellDMA::PackedGPUVAddr{dma_semaphore[0], dma_semaphore[1]};
+    const auto device = memory_manager.GpuToCpuAddress(address);
+    if (!device) {
+        split.NoteUnknownSemaphoreWrite();
+        return;
+    }
+    split.NoteSemaphoreWrite(*device, dma_semaphore[2], true);
+    if (semaphore == SemaphoreType::RELEASE_FOUR_WORD_SEMAPHORE) {
+        // 64 bits (a timestamp follows).
+        split.NoteSemaphoreWrite(*device + 4, 0, true);
+    }
 }
 
 bool DmaPusher::IsGpuWrittenRange(GPUVAddr address, size_t size) const {

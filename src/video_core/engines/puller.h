@@ -78,6 +78,8 @@ public:
         u32 value;
         u32 operation;
         std::chrono::steady_clock::time_point since;
+        /// When a poll that kept waiting last drained the split (CanResumeAcquire)
+        std::chrono::steady_clock::time_point last_drain;
         bool reported;
 
         [[nodiscard]] bool Matches(u32 current) const;
