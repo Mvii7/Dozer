@@ -11,6 +11,7 @@
 
 #include "common/assert.h"
 #include "common/logging.h"
+#include "common/nx2_sync_serial.h"
 #include "common/settings.h"
 #include "core/core.h"
 #include "video_core/nx2_profile.h"
@@ -412,6 +413,7 @@ bool Puller::ResumeAcquire(DmaPusher& dma_pusher) {
     }
     pending_acquire.reset();
     Nx2SemaphoreWaiters::Get().Remove(this);
+    Common::Nx2SyncSerial::Bump();
     return true;
 }
 
@@ -476,7 +478,6 @@ void Puller::ProcessFenceActionMethod(DmaPusher& dma_pusher) {
         // UNIMPLEMENTED_MSG("Channel Scheduling pending.");
         // WaitFence(regs.fence_action.syncpoint_id, regs.fence_value);
         OnBack([rasterizer = dma_pusher.rasterizer] { rasterizer->ReleaseFences(); });
-        VideoCommon::GpuSplit::Get().NoteSync();
         if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
             VideoCommon::Nx2FrontDiag::NoteWork(VideoCommon::Nx2FrontDiag::WorkKind::Fences);
         }
@@ -550,7 +551,6 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             CountPeek(&PeekStats::skipped);
             PeekMet(dma_pusher, peek, acquire.value);
             PeekSkipped();
-            VideoCommon::GpuSplit::Get().NoteSync();
             return;
         }
         DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerAcquire);
@@ -558,14 +558,18 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
         PeekAfter(dma_pusher, peek, acquire.address, acquire.operation, acquire.value, current);
         if (acquire.Matches(current)) {
             PeekMet(dma_pusher, peek, acquire.value);
-            VideoCommon::GpuSplit::Get().NoteSync();
             return;
         }
         // Registered before the fences run, so a release among them that meets the value counts
         // even if a later one overwrites it.
+        // The word in memory is watched for the guest CPU's stores (Nx2SemaphoreWaiters::WordStored).
         auto& waiters = Nx2SemaphoreWaiters::Get();
         if (const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address)) {
-            waiters.Add(this, *device, acquire.value, acquire.operation);
+            u32* word = reinterpret_cast<u32*>(dma_pusher.memory_manager.GetPointer(acquire.address));
+            if (reinterpret_cast<uintptr_t>(word) % alignof(u32) != 0) {
+                word = nullptr;
+            }
+            waiters.Add(this, *device, acquire.value, acquire.operation, word);
         }
         dma_pusher.rasterizer->ReleaseFences();
         if (!waiters.Latched(this) && !acquire.Matches(ReadSemaphoreWord(dma_pusher, acquire.address))) {
@@ -575,7 +579,6 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             waiters.Remove(this);
             PeekMet(dma_pusher, peek, acquire.value);
         }
-        VideoCommon::GpuSplit::Get().NoteSync();
     } else {
         DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerAcquire);
         do {
@@ -720,6 +723,7 @@ void Puller::CallPullerMethod(DmaPusher& dma_pusher, const MethodCall& method_ca
     }
     regs.reg_array[method_call.method] = method_call.argument;
     const auto method = static_cast<BufferMethods>(method_call.method);
+    Common::Nx2SyncSerial::Bump();
 
     switch (method) {
     case BufferMethods::BindObject: {
@@ -741,7 +745,6 @@ void Puller::CallPullerMethod(DmaPusher& dma_pusher, const MethodCall& method_ca
         break;
     case BufferMethods::WaitForIdle:
         OnBack([rasterizer = dma_pusher.rasterizer] { rasterizer->WaitForIdle(); });
-        VideoCommon::GpuSplit::Get().NoteSync();
         break;
     case BufferMethods::SemaphoreOperation: {
         ProcessSemaphoreTriggerMethod(dma_pusher);
@@ -805,6 +808,8 @@ void Puller::CallPullerMethod(DmaPusher& dma_pusher, const MethodCall& method_ca
         }
         break;
     }
+    // Again once the method is done: an acquire may have waited for the guest CPU.
+    Common::Nx2SyncSerial::Bump();
 }
 
 /// Calls a GPU engine method.

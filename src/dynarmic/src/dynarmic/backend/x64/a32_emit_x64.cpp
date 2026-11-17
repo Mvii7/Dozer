@@ -103,7 +103,7 @@ A32EmitX64::BlockDescriptor A32EmitX64::Emit(IR::Block& block) {
     }
 
     code.EnableWriting();
-    new (&this->reg_alloc) RegAlloc([this] {
+    this->reg_alloc.Reset([this] {
         std::bitset<32> gprs{any_gpr};
         if (conf.fastmem_pointer)
             gprs.reset(size_t(HostLoc::R13));
@@ -201,6 +201,7 @@ void A32EmitX64::ClearCache() {
     block_ranges.ClearCache();
     ClearFastDispatchTable();
     fastmem_patch_info.clear();
+    transient_faults.clear();
 }
 
 void A32EmitX64::InvalidateCacheRanges(const boost::icl::interval_set<u32>& ranges) {

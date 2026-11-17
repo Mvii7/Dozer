@@ -70,6 +70,8 @@ public:
 
     u64 GetDeviceMemoryBudget() const;
 
+    u64 GetDeviceMemorySlack() const;
+
     bool CanReportMemoryUsage() const;
 
     void LogMemoryStatistics() const;
@@ -159,6 +161,11 @@ public:
 
     void BarrierFeedbackLoop();
 
+    /// A copy of the color image `sampled` and `attachment` both view, for a draw that samples
+    /// what it renders into. A null handle where it cannot be copied: the draw then samples the
+    /// attachment itself.
+    VkImageView ResolveColorFeedback(const ImageView& sampled, const ImageView& attachment);
+
     bool IsFormatDitherable(VideoCore::Surface::PixelFormat format);
     bool IsFormatScalable(VideoCore::Surface::PixelFormat format);
 
@@ -178,13 +185,19 @@ public:
     void TranscodeAstcToBcn(Image& image, const StagingBufferRef& map,
                             std::span<const VideoCommon::SwizzleParameters> swizzles);
 
-    /// Temporary decode images, freed once the GPU is past `tick`.
-    struct PendingTranscode {
-        u64 tick;
+    /// RGBA8 decode images, one per shape, reused by every transcode of that shape (the decode
+    /// pass's first barrier waits for the previous encode's reads). Freed after 300 frames unused.
+    struct TranscodeScratch {
+        u32 width;
+        u32 height;
+        u32 levels;
+        u32 layers;
         vk::Image image;
         std::vector<vk::ImageView> views;
+        u64 tick;
+        u32 unused_frames;
     };
-    std::deque<PendingTranscode> pending_transcodes;
+    std::vector<TranscodeScratch> transcode_scratch;
 
     std::optional<BlockLinearUnswizzle3DPass> bl3d_unswizzle_pass;
     const Settings::ResolutionScalingInfo& resolution;
@@ -214,6 +227,17 @@ public:
     };
 
     std::vector<MsaaScratchImage> msaa_scratch_images;
+
+    struct ColorFeedbackSnapshot {
+        vk::Image image;
+        vk::ImageView view;
+        VideoCommon::Extent3D size;
+        VkComponentMapping swizzle;
+        u64 tick{};
+        u32 unused_frames{};
+        bool used_this_frame{};
+    };
+    std::vector<ColorFeedbackSnapshot> color_feedback_snapshots;
     ::Common::unordered_map<VkImage, ResolveShadow> resolve_shadows;
     std::vector<std::pair<u64, ResolveShadow>> pending_resolve_shadows;
 };
@@ -529,6 +553,10 @@ public:
         return image_handle;
     }
 
+    [[nodiscard]] const Image* BackingImage() const noexcept {
+        return slot_images && image_id ? &(*slot_images)[image_id] : nullptr;
+    }
+
     [[nodiscard]] VkImageView RenderTarget() const noexcept {
         return render_target;
     }
@@ -644,6 +672,7 @@ private:
         bool drop_reduction;
         bool drop_custom_border;
         bool srgb_border;
+        bool drop_compare;
         std::array<VkComponentSwizzle, 4> swizzle;
 
         bool operator==(const VariantKey&) const noexcept = default;

@@ -18,8 +18,13 @@ add_executable(tests
     common/scratch_buffer.cpp
     common/undefined_fix.cpp
     common/unique_function.cpp
+    common/zstd_compression.cpp
     core/core_timing.cpp
+    core/ldn.cpp
     core/internal_network/network.cpp
+    core/internal_network/socket_proxy.cpp
+    core/nup_validation.cpp
+    core/nup_zstd_read.cpp
     core/nx2_dk_dyn_pace.cpp
     core/nx2_frame_stats.cpp
     core/nx2_dk_dynamic_fps.cpp
@@ -30,7 +35,10 @@ add_executable(tests
     core/nx2_present_rate.cpp
     core/nx2_vi2_reply.cpp
     core/nx2_vi2_events.cpp
+    core/nx_archive.cpp
     core/read_traps.cpp
+    core/system_test_context.h
+    frontend_common/nx_archive.cpp
     video_core/memory_tracker.cpp
     video_core/native_qmd.cpp
     video_core/ampere_returns.cpp
@@ -49,6 +57,8 @@ add_executable(tests
     video_core/nx2_root.cpp
     video_core/nx2_desc_secondary.cpp
     video_core/frame_gen_pacer.cpp
+    video_core/hdr_output.cpp
+    common/display_hdr.cpp
     video_core/nx2_fg_timing.cpp
     video_core/nx2_stage_bind.cpp
     video_core/nx2_stage_contract.cpp
@@ -57,14 +67,23 @@ add_executable(tests
     video_core/native_macro_fifo.cpp
     video_core/nx2_write_history.cpp
     input_common/calibration_configuration_job.cpp
+    input_common/rumble_mapping.cpp
     yuzu_cmd/nx2_auto_script.cpp
     ../yuzu_cmd/nx2_auto_script.cpp
 )
 
 create_target_directory_groups(tests)
 
-target_link_libraries(tests PRIVATE common core input_common video_core)
+target_link_libraries(tests PRIVATE common core frontend_common input_common video_core)
 target_link_libraries(tests PRIVATE ${PLATFORM_LIBRARIES} Catch2::Catch2WithMain Threads::Threads)
+
+if (TARGET dynarmic::dynarmic)
+    target_sources(tests PRIVATE core/jit_codegen_options.cpp)
+    target_link_libraries(tests PRIVATE dynarmic::dynarmic)
+endif()
+
+target_compile_definitions(tests PRIVATE
+    YUZU_NX_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/core/nx_fixtures")
 
 add_test(NAME tests COMMAND tests)
 

@@ -305,9 +305,6 @@ bool DmaPusher::Step() {
             command_resume_offset +=
                 ProcessCommands(commands.subspan(command_resume_offset), command_resume_offset);
         } else {
-            if (header.sync) {
-                VideoCommon::GpuSplit::Get().NoteSync();
-            }
             if (!indirect_record) {
                 FlushGpuWrittenCommands(dma_state.dma_get, size_t{header.size} * sizeof(u32));
             }
@@ -381,6 +378,33 @@ size_t DmaPusher::ProcessCommands(std::span<const CommandHeader> commands, size_
             dma_state.is_last_call = true;
             index += max_write;
         } else if (dma_state.method_count) {
+            // An increasing run of 3D state methods goes to the split front in one call.
+            if (!dma_state.non_incrementing && !dma_increment_once) {
+                if (auto* const maxwell3d = FrontRunTarget()) {
+                    const u32 amount = static_cast<u32>(
+                        std::min<size_t>(dma_state.method_count, commands.size() - index));
+                    if (dma_state.method + amount <= MacroRegistersStart) {
+                        const bool last = amount == dma_state.method_count;
+                        const u32* const words = &commands[index].argument;
+                        const auto run = [&] {
+                            Diag::SetSendKind(Diag::SendKind::Front3D);
+                            maxwell3d->FrontCallRun(system, VideoCommon::GpuSplit::Get(),
+                                                    dma_state.method, words, amount, last);
+                        };
+                        dma_state.dma_word_offset = u64((word_offset + index + amount - 1) * sizeof(u32));
+                        dma_state.is_last_call = last;
+                        if (diag) {
+                            Diag::TimedSend(run);
+                        } else {
+                            run();
+                        }
+                        dma_state.method += amount;
+                        dma_state.method_count -= amount;
+                        index += amount;
+                        continue;
+                    }
+                }
+            }
             auto const command_header = commands[index]; //can copy
             dma_state.dma_word_offset = u64((word_offset + index) * sizeof(u32));
             dma_state.is_last_call = dma_state.method_count <= 1;
@@ -516,31 +540,39 @@ void DmaPusher::WatchArgument(u32 method, u32 argument) const {
     }
 }
 
+// EDEN_NX2_FRONT_RUNS=0: increasing runs of 3D state methods go to the split front word by
+// word, as before (ProcessCommands). Read at the first call, after nx2_switches.txt is loaded.
+static bool FrontRunsEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_FRONT_RUNS");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+Engines::Maxwell3D* DmaPusher::FrontRunTarget() {
+    if (dma_state.method < non_puller_methods || g_semaphore_watch != 0 || !FrontRunsEnabled()) {
+        return nullptr;
+    }
+    auto* const subchannel = subchannels[dma_state.subchannel];
+    if (subchannel == nullptr ||
+        subchannel_type[dma_state.subchannel] != Engines::EngineTypes::Maxwell3D) {
+        return nullptr;
+    }
+    const auto& split = VideoCommon::GpuSplit::Get();
+    if (!split.Active() || !split.FrontMacros()) {
+        return nullptr;
+    }
+    auto* const maxwell3d = static_cast<Engines::Maxwell3D*>(subchannel);
+    return maxwell3d->GetNativeMacroEngine().native_turing ? maxwell3d : nullptr;
+}
+
 bool DmaPusher::WantsSegment() const {
     // Only macro parameters and compute uploads read the engine's current_dma_segment.
     const auto engine = subchannel_type[dma_state.subchannel];
     return engine == Engines::EngineTypes::KeplerCompute ||
            (engine == Engines::EngineTypes::Maxwell3D && dma_state.method >= MacroRegistersStart);
 }
-
-namespace {
-
-bool MemoryWriterEngine(Engines::EngineTypes type) {
-    return type == Engines::EngineTypes::KeplerCompute || type == Engines::EngineTypes::MaxwellDMA ||
-           type == Engines::EngineTypes::KeplerMemory;
-}
-
-struct MemoryWriterNote {
-    VideoCommon::GpuSplit& split;
-    bool note;
-    ~MemoryWriterNote() {
-        if (note) {
-            split.NoteMemoryWriter();
-        }
-    }
-};
-
-} // namespace
 
 void DmaPusher::CallMethod(u32 argument) {
     if (g_semaphore_watch != 0) [[unlikely]] {
@@ -563,11 +595,10 @@ void DmaPusher::CallMethod(u32 argument) {
             ReportUnboundSubchannel();
             return;
         }
-        const auto type = subchannel_type[dma_state.subchannel];
-        MemoryWriterNote writer{split, split.Active() && MemoryWriterEngine(type)};
         if (split.Active()) {
             const GPUVAddr segment = dma_state.dma_get + dma_state.dma_word_offset;
             if (split.FrontMacros()) {
+                const auto type = subchannel_type[dma_state.subchannel];
                 if (type == Engines::EngineTypes::Maxwell3D) {
                     auto* const maxwell3d = static_cast<Engines::Maxwell3D*>(subchannel);
                     if (maxwell3d->GetNativeMacroEngine().native_turing) {
@@ -623,11 +654,10 @@ void DmaPusher::CallMultiMethod(const u32* base_start, u32 num_methods) {
             ReportUnboundSubchannel();
             return;
         }
-        const auto type = subchannel_type[dma_state.subchannel];
-        MemoryWriterNote writer{split, split.Active() && MemoryWriterEngine(type)};
         if (split.Active()) {
             const GPUVAddr segment = dma_state.dma_get + dma_state.dma_word_offset;
             if (split.FrontMacros()) {
+                const auto type = subchannel_type[dma_state.subchannel];
                 if (type == Engines::EngineTypes::Maxwell3D) {
                     auto* const maxwell3d = static_cast<Engines::Maxwell3D*>(subchannel);
                     if (maxwell3d->GetNativeMacroEngine().native_turing) {
@@ -703,21 +733,11 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     if (!IsGpuWrittenRange(address, size)) {
         return;
     }
-    // The caches belong to the split's back. A memory writer queued after the last host sync may
-    // still be filling this list, so that case drains the whole queue. Otherwise wait only until
-    // the back reaches that sync (EDEN_NX2_CMDPAGE_DRAIN=1 keeps the full drain).
+    // The caches belong to the split's back: it first runs what the front queued (the dispatch
+    // that writes these words among it).
     VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::CommandListChecks, 1);
-    auto& split = VideoCommon::GpuSplit::Get();
-    static const bool always_drain = [] {
-        const char* value = std::getenv("EDEN_NX2_CMDPAGE_DRAIN");
-        return value != nullptr && value[0] == '1';
-    }();
-    const bool full_drain = always_drain || !split.Active() || split.MemoryWriterAfterSync();
-    const bool waited = full_drain
-                            ? VideoCommon::Nx2FrontDiag::CountDrain(
-                                  split, VideoCommon::Nx2Profile::DrainSite::PusherCommandList)
-                            : split.WaitForSync();
-    if (waited) {
+    if (VideoCommon::Nx2FrontDiag::CountDrain(
+            VideoCommon::GpuSplit::Get(), VideoCommon::Nx2Profile::DrainSite::PusherCommandList)) {
         VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::CommandListDrainWaits, 1);
     }
     if (memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {

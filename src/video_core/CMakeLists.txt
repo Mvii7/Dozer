@@ -107,6 +107,8 @@ add_library(video_core STATIC
     invalidation_accumulator.h
     memory_manager.cpp
     memory_manager.h
+    mkw_wave_workaround.h
+    page_filter.h
     native_qmd.h
     native_query_trace.h
     nx2.h
@@ -129,6 +131,7 @@ add_library(video_core STATIC
     nx2_stage_ring.h
     nx2_stages.cpp
     nx2_stages.h
+    nx2_uniform_census.h
     present.h
     pte_kind.h
     query_cache/bank_base.h
@@ -158,6 +161,8 @@ add_library(video_core STATIC
     renderer_vulkan/present/fsr3.h
     renderer_vulkan/present/fxaa.cpp
     renderer_vulkan/present/fxaa.h
+    renderer_vulkan/present/hdr_convert.cpp
+    renderer_vulkan/present/hdr_convert.h
     renderer_vulkan/present/layer.cpp
     renderer_vulkan/present/layer.h
     renderer_vulkan/present/present_push_constants.h
@@ -271,6 +276,7 @@ add_library(video_core STATIC
     texture_cache/decode_bc.h
     texture_cache/descriptor_table.h
     texture_cache/formatter.cpp
+    texture_cache/eviction_age.h
     texture_cache/formatter.h
     texture_cache/format_lookup_table.cpp
     texture_cache/format_lookup_table.h

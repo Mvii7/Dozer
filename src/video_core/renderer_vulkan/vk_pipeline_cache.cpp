@@ -350,6 +350,29 @@ void SetTransformFeedback(Shader::RuntimeInfo& info, const ShaderTranslationKey&
     }
 }
 
+// Switch 2 geometry shaders may write all 32 generic outputs next to Position and Layer: 133
+// components where Vulkan devices allow 128 (maxGeometryOutputComponents). AMD's Windows driver
+// closed the emulator compiling such a shader. Drop the outputs the fragment shader never reads;
+// skipped where it can't tell (legacy, indexed, XFB) and for passthrough shaders the host runs
+// natively.
+void PruneUnreadGeometryOutputs(Shader::IR::Program& geometry, const Shader::IR::Program& fragment,
+                                const ShaderTranslationKey& key, bool native_passthrough) {
+    const Shader::Info& fs{fragment.info};
+    Shader::VaryingState& stores{geometry.info.stores};
+    if (fragment.stage != Shader::Stage::Fragment || key.xfb_enabled ||
+        (geometry.is_geometry_passthrough && native_passthrough) || fs.loads_indexed_attributes ||
+        fs.loads.Legacy() || stores.Legacy()) {
+        return;
+    }
+    for (size_t index = 0; index < Shader::IR::NUM_GENERICS; ++index) {
+        if (!fs.loads.Generic(index)) {
+            for (size_t element = 0; element < 4; ++element) {
+                stores.Set(Shader::IR::Attribute::Generic0X + index * 4 + element, false);
+            }
+        }
+    }
+}
+
 Shader::RuntimeInfo MakeRuntimeInfo(std::span<const Shader::IR::Program> programs,
                                     const ShaderTranslationKey& key,
                                     const Shader::IR::Program& program,
@@ -632,6 +655,10 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
             driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY &&
             device.GetDriverVersion() < VK_MAKE_VERSION(512, 672, 0),
         .has_broken_spirv_subgroup_shuffle = driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY,
+        .has_broken_spirv_fragment_shuffle = driver_id == VK_DRIVER_ID_AMD_PROPRIETARY,
+        .zero_undefined_registers = driver_id == VK_DRIVER_ID_AMD_PROPRIETARY ||
+                                    driver_id == VK_DRIVER_ID_AMD_OPEN_SOURCE ||
+                                    driver_id == VK_DRIVER_ID_MESA_RADV,
         .max_subgroup_size = device.GetMaxSubgroupSize(),
         .has_broken_robust =
             device.IsNvidia() && device.GetNvidiaArch() <= NvidiaArchitecture::Arch_Pascal,
@@ -679,7 +706,6 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
 
     dynamic_features = {};
     dynamic_features.driver_id = device.GetDriverID();
-    dynamic_features.driver_version = device.GetDriverVersion();
 
     // User granularity enforced in vulkan_device.cpp switch statement:
     //   Level 0: Core Dynamic States only
@@ -817,6 +843,10 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
         std::unique_ptr<PipelineStatistics> statistics;
     } state;
 
+    // Records written under an older driver differ only in these two words. Clearing them makes
+    // the key match a pipeline built now; a second record of the same key is not built again.
+    ::Common::unordered_set<GraphicsPipelineCacheKey> loaded_graphics_keys;
+
     if (device.IsKhrPipelineExecutablePropertiesEnabled()) {
         state.statistics = std::make_unique<PipelineStatistics>(device);
     }
@@ -842,6 +872,8 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     const auto load_graphics{[&](std::ifstream& file, std::vector<FileEnvironment> envs) {
         GraphicsPipelineCacheKey key;
         file.read(reinterpret_cast<char*>(&key), sizeof(key));
+        key.state.driver_id = 0;
+        key.state.driver_version = 0;
 
         if ((key.state.extended_dynamic_state != 0) !=
                 dynamic_features.has_extended_dynamic_state ||
@@ -868,6 +900,10 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
         const bool key_uses_transform_feedback = key.state.xfb_enabled != 0;
         if (key_uses_transform_feedback && key_requests_provoking_last &&
             !dynamic_features.has_provoking_vertex_tf_preserve) {
+            return;
+        }
+
+        if (!loaded_graphics_keys.insert(key).second) {
             return;
         }
 
@@ -986,9 +1022,6 @@ void ReportNewPipelineKey(const GraphicsPipelineCacheKey& key) {
     }
     if (std::memcmp(&now.dynamic_state, &before.dynamic_state, sizeof(now.dynamic_state)) != 0) {
         diffs += " dynamic_state";
-    }
-    if (now.driver_id != before.driver_id || now.driver_version != before.driver_version) {
-        diffs += " driver";
     }
     const size_t size = now.Size();
     if (diffs.empty() && size > offsetof(FixedPipelineState, attachments)) {
@@ -1253,6 +1286,11 @@ std::shared_ptr<ReusableShaders> PipelineCache::BuildGraphicsShaders(
 
         const auto runtime_info{MakeRuntimeInfo(programs, key, program, previous_stage)};
         ConvertLegacyToGeneric(program, runtime_info);
+        if (index == static_cast<size_t>(Maxwell::ShaderType::Geometry)) {
+            PruneUnreadGeometryOutputs(
+                program, programs[static_cast<size_t>(Maxwell::ShaderType::Pixel)], key,
+                device.IsNvGeometryShaderPassthroughSupported());
+        }
         std::vector<u32> code;
         {
             const PipelineStats::ScopedTimer emit_timer{PipelineStats::Kind::Graphics,
@@ -1791,7 +1829,19 @@ vk::PipelineCache PipelineCache::LoadVulkanPipelineCache(const std::filesystem::
         LOG_INFO(Render_Vulkan,
                  "Loaded Vulkan driver pipeline cache: ", Common::FS::PathToUTF8String(filename));
 
-        return create_pipeline_cache(cache_size, cache_data.data());
+        try {
+            return create_pipeline_cache(cache_size, cache_data.data());
+        } catch (const vk::Exception& e) {
+            // The blob came from another driver or driver version and the driver rejects it:
+            // start empty and drop the stale file so the next run doesn't retry it.
+            LOG_ERROR(Render_Vulkan,
+                      "Driver rejected the Vulkan pipeline cache file ({}), starting with an empty "
+                      "cache and deleting it",
+                      e.what());
+            file.close();
+            Common::FS::RemoveFile(filename);
+            return create_pipeline_cache(0, nullptr);
+        }
 
     } catch (const std::ios_base::failure& e) {
         LOG_ERROR(Common_Filesystem, "{}", e.what());

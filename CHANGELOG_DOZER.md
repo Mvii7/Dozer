@@ -6,8 +6,175 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Unreleased (Dozer)
+## Dozer 0.1.5 (`v0.1.5`)
 
+- One submission per real fence (EDEN_NX2_RX_ONE_SUBMIT) is now on in every game, not only
+  Donkey Kong Bananza; `=0` turns it off, and start-safe.bat turns it off.
+
+- Uniform buffers: a buffer bound to the same stage slot and range as the slot's last bind takes
+  that bind's upload again without reading and comparing guest memory, while no write notice
+  reached the range and nothing let the guest CPU change it since (a command submission, a
+  semaphore or syncpoint, a write around the caches, a memory mapping). After Lichii's uniform
+  keeps. `EDEN_NX2_UBO_KEEP=0` turns it off, `=2` compares anyway and logs any range a keep
+  would have got wrong. A census line, "nx2 uniform census", counts uniform binds, constant
+  buffer and inline writes per draw.
+
+## Dozer 0.1.4 (`v0.1.4`)
+
+- Mario Kart World: software 2D blits (a copy of CPU-written data that the GPU path does not take)
+  read and write only the block rows they touch, copy whole GOBs between tiled surfaces of one
+  format that differ only in block height, copy same-layout surfaces as they are and skip reading
+  a destination they overwrite. Tiled copies of 1 MiB and up go to a worker thread, which queues up
+  to 256 MiB of source snapshots; the memory manager makes reads, writes, flushes and unmaps of an
+  overlapping GPU range wait for them (`EDEN_NX2_ASYNC_BLIT=0` keeps every copy on the GPU thread).
+  Streamed course textures took 10-100 ms each on the GPU thread.
+
+- Network: a joined room can act as the LAN for local wireless games: LDN joins wait for the
+  host's reply, room datagrams go through `ProxySocket::Recv`, ZSTD room packets are decompressed
+  with a size check, and bsd sockets are closed once and survive a concurrent close. Ported from
+  Eglantine-Community/Eglantine#313; not tested here.
+
+- Donkey Kong Bananza: `EDEN_NX2_RX_ONE_SUBMIT=1` is set for it by the Tuning settings and the
+  launchers (start-safe.bat clears it). A real fence no longer submits a second, empty command
+  buffer after its own: about half the game's submissions, no visible change in play.
+
+- Split GPU thread front: an increasing run of 3D state methods goes to the front in one call
+  instead of one call per word (`EDEN_NX2_FRONT_RUNS=0` turns it off).
+
+- Buffer cache: the per-draw uniform, index, vertex and storage paths, buffer lookups and inline
+  writes read the GPU fence setting once a frame instead of on every call, and a uniform bind whose stage slot already held the
+  range with other bytes compares them once instead of twice.
+
+- Opaque ASTC to BC1 (`EDEN_NX2_ASTC_BC1`) is now on by default only when the driver's memory
+  budget is under 12 GiB. Finding the opaque images reads every block of each new ASTC image on the
+  GPU thread: in Mario Kart World, ~180 ms of a frame that brought ~1100 new course textures. With
+  more memory BC3 for all of them fits; `EDEN_NX2_ASTC_BC1=1` turns it on anyway, `=0` off.
+
+- ASTC re-compressed on the GPU (BC1/BC3 with GPU decoding): the RGBA8 image each texture is
+  decoded into, and its view per level, are now kept per shape and reused by the next texture of
+  that shape instead of being made for every texture (freed after 300 frames unused). In Mario
+  Kart World a burst of ~1100 new course textures took ~200 ms of uploads on the GPU thread in one
+  frame, at ~0.18 ms each. Not measured yet.
+
+## Dozer 0.1.3 (`v0.1.3`)
+
+- Per-game tuning: a game's Properties window has a Tuning tab that shows the Tuning tab's preset
+  and boxes as that game runs them. A setting changed for the game gets a cross that resets it to
+  the global one. Donkey Kong Bananza starts with the Performance preset (read traps off) instead
+  of the global one, shown as a changed preset that the cross resets to the global preset; other
+  games use the global settings. Only the changes are kept, in `qt-config.ini` (`[AnkaGames]`). A
+  game whose settings differ from the session's first game asks to restart, as before. The
+  Bananza and Mario Kart World dynamic frame rate boxes move from the global tab to those games'
+  own Tuning tabs (on by default, no cross); a game that had its box off keeps it off.
+
+- Tuning: the first start's preset is now Balanced (read traps on, which Mario Kart World needs)
+  instead of Performance. A `qt-config.ini` that already has a preset keeps it.
+
+- Read traps: a guest read that hits one no longer takes its instruction off fastmem for good.
+  Dynarmic sends that one read down the slow path and keeps the instruction on fastmem, so later
+  reads of pages already flushed stay fast. An instruction that faults more than 1000 times in a
+  second is still recompiled. `EDEN_NX2_TRAP_FASTMEM=0` brings back the old behaviour. The
+  reactive stats line also counts the read fallbacks and the faults kept on fastmem.
+  A buffer page's trap is also armed again by the next GPU write after each read
+  (`EDEN_NX2_TRAP_REARM=0`: only the first). Before, the instructions that left fastmem flushed
+  on their reads; without them, distant terrain in Bananza flickered on data the fences had not
+  copied back yet.
+  A copy back at a fence now disarms the traps of its pages (`EDEN_NX2_TRAP_POP_DISARM=0`: they
+  stay armed until a read), so reads after it no longer fault for nothing, and a trapped read
+  whose GPU writes are already in a committed copy back waits for it instead of a sync flush
+  (`EDEN_NX2_COPYBACK_WAIT=0`: always the sync flush). Disarming re-protects pages in runs.
+
+- Shader cache: a graphics pipeline key no longer includes the Vulkan driver id or version, so a
+  driver update still uses the pipelines in `vulkan.bin` instead of building them all again during
+  play. Older caches are read as they are; the driver words are cleared when a record is loaded, and
+  a pipeline saved under two driver versions is built once. If the driver rejects the device static
+  pipeline cache, that file is dropped and a new one is started.
+
+## Dozer 0.1.2 (`v0.1.2`)
+
+- AMD RDNA2 fixes: shader code the AMD drivers miscompile is avoided (read-before-write registers
+  become zero, `EDEN_NX2_UNDEF_ZERO`; CAS loops, 64/128-bit storage accesses, fragment shuffles
+  and geometry outputs worked around), large sparse images are backed normally on AMD and RADV so
+  Mario Kart World's terrain is no longer dark (`EDEN_NX2_SPARSE_UNBACKED` overrides), and a few
+  AMD-only Vulkan driver workarounds (memory overallocation, pipeline cache rebuild, full
+  pipeline barriers) apply. Other GPUs keep their paths. Tested on an RX 6700 XT.
+
+- Texture cache thresholds keep at least an eighth of the driver budget in reserve for the
+  allocator's unused block space even before any is measured. In an 8-minute Mario Kart World run
+  on a 16 GB card the memory peaked 0.4 GB under the budget with the measured value alone; the
+  reserve keeps the peak 1.5-2 GB under it.
+
+- Texture cache collector, to cut the hitches when a course changes (Mario Kart World): a
+  GPU-modified image is only evicted at the critical line and at most one is downloaded (a full
+  GPU wait) per pass; past the expected line, costly (ASTC) images unused for 600 frames
+  (`EDEN_NX2_TC_STALE_COSTLY=<frames>`, 0 = off) go a few per frame instead of all at once at the
+  critical line. A pass stops after 1.5 ms (`EDEN_NX2_TC_GC_BUDGET_US=<us>`, 0 = no limit; not
+  applied once memory is 1 GiB over the critical line), spreading a burst over frames. The views,
+  framebuffers and image tables of the deleted images are cleared once at the end of a pass
+  instead of once per image, which was most of the time a pass took. Tested on Mario Kart World
+  with a 16 GB card only.
+
+## Dozer 0.1.1 (`v0.1.1`)
+
+- Texture cache thresholds follow the allocator's unused block space as well as the driver
+  budget, so `EDEN_NX2_TC_EXPECTED_MIB` and `EDEN_NX2_TC_CRITICAL_MIB` are no longer needed on a
+  16 GB card to avoid the lag after about 12 minutes of Mario Kart World. The overrides still win.
+
+- One readme: `README.md` is now the full manual (it was `README_DOZER.md`), replacing the upstream
+  `README.md` and the shorter `.github/README.md` that GitHub showed as the front page. It names
+  Mario Kart World as the second tuned game. The release zip, the launchers and the load-error
+  message point to `README.md`.
+
+- ASTC recompression now defaults to BC3 instead of Uncompressed. In Mario Kart World on a 16 GB
+  card, uncompressed ASTC kept device memory at the collector's critical line (12.6-13.7 GiB),
+  evicting and decoding textures again every few seconds; with BC3 the first race stays near
+  9.5 GiB with no evictions (over a full grand prix the cache still fills up to its limit), and
+  Donkey Kong Bananza stays at about 4.6 GiB with no evictions and looks the same to the
+  maintainer. Only configs without a saved value change; set ASTC Recompression
+  Method (advanced graphics settings) to Uncompressed for the best quality.
+
+## Dozer 0.1.0 (`v0.1.0`)
+
+- Mario Kart World dynamic frame rate (`MKW_DYN=1` / `EDEN_NX2_MKW_DYN=1`): its frame mode
+  choice is patched in memory so the game picks 1 or 2 vblanks a frame from its real frame time,
+  with presents paced to every vblank. After the Lichii fork's patch (zortos293/Lichii#1332),
+  which also skips the game's own wait for the second vblank that kept it at 30 fps. Not
+  measured on Dozer yet. Off in dozer-cli, on in the launchers and the Tuning tab. The Tuning
+  tab's "Bananza only" group is now "Specific Games" (Donkey Kong Bananza and Mario Kart World
+  dynamic frame rate): no preset changes them, Safe included, and Bananza's frame pacing box is
+  gone (always set for Bananza).
+- Native HDR output (Graphics > HDR output: Off, Auto (default), On; Vulkan only), ported from
+  Lichii #1326. An HDR10 or scRGB swapchain while it is on; nx2:vi2 104/105 (HDR status, paper
+  white) now answer SDR or HDR with the monitor's peak and SDR white instead of an empty success,
+  and 10-bit and FP16 present images are shown. Anti-aliasing, post-processing, upscaling filters
+  and frame generation are off while HDR is active. Not tried on an HDR display yet. See
+  `docs/user/Graphics.md`.
+- Tuning: the **Recommended** preset is renamed **Balanced** and **Fast** is renamed
+  **Performance**; the launchers are now `start-balanced.bat` and `start-performance.bat`.
+  Performance is the first start's preset. A `qt-config.ini` that never left the old default
+  moves to Performance; a preset chosen by hand is kept.
+- Reads **`.nx`** files (NX archives, the nxformat project of fab918): File > Load File, the game
+  list and `dozer-cli.exe`. An archive holds a game with its updates and DLC, either as extracted
+  trees (made from a NUP or a dump folder) or as decrypted NCAs (made from an NSP or XCI). The
+  newest update in the archive is started, updates can be turned off per game like installed
+  ones, and Dump RomFS works on it. From Lichii (zortos293 and Bruno; the reader in
+  `externals/nxformat` is fab918's, MIT).
+- **Convert to NX...** in the game list's menu (right-click a game): makes an `.nx` from an NSP or
+  XCI (decrypted with your keys while it is read; updates and DLC of the same game in the folder
+  can go in), from a `.nup`, or from a dump folder. **Manage NX Archive** on an `.nx` adds or
+  removes an update or DLC and edits the title, publisher and icon. The original can be moved to
+  the Recycle Bin at the end. This part uses the prebuilt nxformat 1.0.3 library, downloaded and
+  hash-checked at configure time (`CMakeModules/NxFormat.cmake`); a build without it still reads
+  `.nx`. From Lichii.
+- Starting a `.nup` for the first time offers to convert it to NX (usually less stutter, the file
+  may be slightly larger): Convert, Not Now, or Don't Ask Again (`suggestNxForNup` in
+  `qt-config.ini`).
+- NUP reading, from Lichii: compressed parts are decoded only as far as the game reads instead
+  of whole on first use; DLC inside a `.nup` is found; an update installed in Dozer no longer
+  replaces the program of a `.nup` (it carries its own); the name and icon come from the base
+  when the update has none, the en-us name is preferred, and a file without a name shows its
+  file name; a damaged `.zs` texture (no zstd header) is replaced by a neighbouring one with a
+  warning in the log. Still read only.
 - Rumble: HID command 214 (the Switch 2 titles' vibration, sent every frame) is forwarded to the
   controller through the existing vibration path; it was accepted and dropped. From the Selevet
   fork (`49e2ed7`); not tried with a controller yet.
@@ -19,6 +186,12 @@ and `=0` brings back the 2.0.0 code path.
 - The settings tab called *Anka* (Emulation > Configure...) is now called *Tuning*, and its
   dialogs no longer carry the name. The settings, presets and the `[Anka]` group of
   `qt-config.ini` are unchanged, so an existing configuration keeps working.
+- Tuning: a **Read traps** box at the top of All games (on leaves `EDEN_NX2_READ_TRAPS` unset,
+  off sets `0`). Foliage is rendered with it on, at a performance cost, and is not rendered when
+  it and Reactive Flushing are off. **Fast** is the fastest settings, with that box and Reactive
+  Flushing off (`start-fast.bat`). **Recommended + Reactive Flushing** is renamed **Experimental**:
+  Reactive Flushing instead of read traps. Recommended still ticks the box. Unticking it moves
+  the preset to Custom. A config saved before this box keeps its preset.
 
 ## Anka 1.0.1 (`anka-v1.0.1`)
 
@@ -143,8 +316,8 @@ in Donkey Kong Bananza on one PC. About 400 commits, made between 31 October and
 
 - NVN's indexed indirect draw records are drawn on the host GPU (`vkCmdDrawIndexedIndirect`)
   instead of being read back on the CPU each frame (`HLE_INDIRECT`, on).
-- Consecutive terrain indirect draws can merge into one multi-draw on the split back
-  (`INDIRECT_BATCH=1`, off: merged, Bananza's terrain drew garbage polygons and lost chunks);
+- Consecutive terrain indirect draws merge into one multi-draw on the split back
+  (`INDIRECT_BATCH`, on; `=0` is one host draw per call);
   the indirect draw reset's uploads are batched, sorted and written in
   runs (`RESET_BATCH`, `RESET_SORT`, `RESET_RUNS`, `RESET_LAST`, on).
 - GPU-written macro parameters are flushed with the 256 KiB window around them, and no second

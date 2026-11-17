@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -16,10 +17,12 @@
 #include "common/assert.h"
 #include "common/nx2_reactive.h"
 #include "common/settings.h"
+#include "common/nx2_sync_serial.h"
 #include "common/settings_enums.h"
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/frontend/emu_window.h"
+#include "core/gpu_dirty_memory_manager.h"
 #include "core/frontend/graphics_context.h"
 #include "core/hle/service/nvdrv/nvdata.h"
 #include "core/perf_stats.h"
@@ -120,6 +123,19 @@ struct GPU::Impl {
 
     /// Synchronizes CPU writes with Host GPU memory.
     void InvalidateGPUCache() {
+        // ~900 calls a frame, most with nothing collected: gather (a lock per core's manager)
+        // only when a manager shows a write. One collected after this check is gathered by the
+        // next call, as one collected just after the gather would be. EDEN_NX2_GATHER_SKIP=0:
+        // always gather.
+        static const bool skip_empty = [] {
+            const char* value = std::getenv("EDEN_NX2_GATHER_SKIP");
+            return value == nullptr || value[0] != '0';
+        }();
+        if (skip_empty &&
+            std::ranges::none_of(system.GetGPUDirtyMemoryManager(),
+                                 &Core::GPUDirtyMemoryManager::MayHavePending)) {
+            return;
+        }
         std::function<void(PAddr, size_t)> callback_writes([this](PAddr address, size_t size) {
             renderer->ReadRasterizer()->OnCachedWrite(address, size);
         });
@@ -287,6 +303,7 @@ struct GPU::Impl {
 
     /// Push GPU command entries to be processed
     void PushGPUEntries(s32 channel, Tegra::CommandList&& entries) {
+        Common::Nx2SyncSerial::Bump();
         gpu_thread.SubmitList(channel, std::move(entries), is_async);
     }
 

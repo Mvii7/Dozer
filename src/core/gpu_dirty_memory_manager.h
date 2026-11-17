@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <bit>
 #include <functional>
@@ -24,27 +25,23 @@ public:
     ~GPUDirtyMemoryManager() = default;
 
     void Collect(PAddr address, size_t size) {
-        TransformAddress t = BuildTransform(address, size);
-        TransformAddress tmp, original;
-        do {
-            tmp = current.load(std::memory_order_acquire);
-            original = tmp;
-            if (tmp.address != t.address) {
-                if (IsValid(tmp.address)) {
-                    std::scoped_lock lk(guard);
-                    back_buffer.emplace_back(tmp);
-                    current.exchange(t, std::memory_order_relaxed);
-                    return;
-                }
-                tmp.address = t.address;
-                tmp.mask = 0;
-            }
-            if ((tmp.mask | t.mask) == tmp.mask) {
-                return;
-            }
-            tmp.mask |= t.mask;
-        } while (!current.compare_exchange_weak(original, tmp, std::memory_order_release,
-                                                std::memory_order_relaxed));
+        // A transform covers one page: a write past its page goes in a page at a time. Its mask
+        // was otherwise built with shifts of 32 or more, which could leave it empty and lose the
+        // write (with an older one left in back_buffer and `current` showing nothing).
+        while (size != 0) {
+            const size_t in_page = (std::min)(size, page_size - (address & page_mask));
+            CollectInPage(address, in_page);
+            address += in_page;
+            size -= in_page;
+        }
+    }
+
+    /// False when Gather would find nothing. Every Collect that adds a write leaves its transform
+    /// in `current` (by compare-exchange, or by exchange after pushing the one before to
+    /// back_buffer under `guard`), and only Gather, which takes back_buffer too, empties `current`
+    /// again. Without the lock: a Collect it misses is one the caller may order after itself.
+    [[nodiscard]] bool MayHavePending() const {
+        return current.load(std::memory_order_acquire).mask != 0;
     }
 
     void Gather(std::function<void(PAddr, size_t)>& callback) {
@@ -79,6 +76,31 @@ private:
         u32 address;
         u32 mask;
     };
+
+    /// [address, address + size) lies in one page and size is not 0, so the mask has bits.
+    void CollectInPage(PAddr address, size_t size) {
+        TransformAddress t = BuildTransform(address, size);
+        TransformAddress tmp, original;
+        do {
+            tmp = current.load(std::memory_order_acquire);
+            original = tmp;
+            if (tmp.address != t.address) {
+                if (IsValid(tmp.address)) {
+                    std::scoped_lock lk(guard);
+                    back_buffer.emplace_back(tmp);
+                    current.exchange(t, std::memory_order_relaxed);
+                    return;
+                }
+                tmp.address = t.address;
+                tmp.mask = 0;
+            }
+            if ((tmp.mask | t.mask) == tmp.mask) {
+                return;
+            }
+            tmp.mask |= t.mask;
+        } while (!current.compare_exchange_weak(original, tmp, std::memory_order_release,
+                                                std::memory_order_relaxed));
+    }
 
     constexpr static size_t page_bits = DEVICE_PAGEBITS - 1;
     constexpr static size_t page_size = 1ULL << page_bits;

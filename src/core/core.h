@@ -127,7 +127,7 @@ extern std::atomic<u32> g_nx2_session;
 /// loaded (core/loader/nx2_dk_dynamic_fps.h); vi2 then reports VRR and paces every vblank.
 extern std::atomic<bool> g_nx2_dk_dyn_applied;
 /// EDEN_NX2_MKW_DYN: Mario Kart World's dynamic frame rate patch went into its main module
-/// (core/loader/nx2_mkw_dynamic_fps.h); vi2 then presents every vblank.
+/// (core/loader/nx2_mkw_dynamic_fps.h); vi2 then paces every vblank.
 extern std::atomic<bool> g_nx2_mkw_dyn_applied;
 
 class CpuManager;

@@ -14,48 +14,91 @@
 
 // Anka's settings in the Qt program (anka.exe): the EDEN_NX2_* switches of the launchers
 // (dist/dozer/start-*.bat), as a preset and on / off settings kept in the [Anka] group of
-// qt-config.ini, the Recommended preset until changed. The program sets the variables in its own
+// qt-config.ini, the Balanced preset until changed. The program sets the variables in its own
 // environment before a game boots (yuzu/nx2perf_session.h); anka-cli and the launchers don't read
 // these settings.
 //
 // Every switch is read once per process, most of them into a function's static the first time
 // a game reaches it (EDEN_NX2_BACK_STAGES, ACQUIRE_PEEK, PRESENT_INTERVAL_WORD, MODE_PACE,
-// PACE_SPIN_US, DK_DYN, MKW_DYN, OSD); JIT_SAME, FRONT_MACRO_LEAN and FG_TIMED are read again at each boot.
+// PACE_SPIN_US, DK_DYN, OSD, READ_TRAPS); JIT_SAME, FRONT_MACRO_LEAN and FG_TIMED are read again
+// at each boot.
 // So the variables are set once, at the first boot, and a later boot that would need others (a
 // changed setting, or Bananza after another game and back) restarts the program for that game.
 namespace Core::Nx2PerfSettings {
 
-/// The launchers' three setups, and Custom: a box changed by hand.
+/// The launchers' setups, and Custom: a box changed by hand. The stored numbers stay as they
+/// were (Performance is 4) so an existing qt-config.ini keeps its preset. The tab calls Reactive
+/// "Experimental".
 enum class Preset : u8 {
-    Recommended = 0, ///< start-recommended.bat: all on, Reactive Flushing off
-    Reactive = 1,    ///< start-reactive-experimental.bat: all on, Reactive Flushing on, RX_RT_FIT=3
-    Safe = 2,        ///< start-safe.bat: all off, and the shortcuts Anka keeps on set to 0
+    Balanced = 0,    ///< start-balanced.bat: all on, read traps on, Reactive Flushing off
+    Reactive = 1,    ///< start-reactive-experimental.bat: read traps off, Reactive Flushing on, RX_RT_FIT=3
+    Safe = 2,        ///< start-safe.bat: all off, and the shortcuts Dozer keeps on set to 0
     Custom = 3,      ///< the boxes as set, nothing else
+    Performance = 4, ///< start-performance.bat: Balanced with read traps off
 };
 
+/// Combo order in the Tuning tab. Not the stored numbers.
+inline constexpr std::array<Preset, 5> PresetOrder{
+    Preset::Performance, Preset::Balanced, Preset::Reactive, Preset::Safe, Preset::Custom,
+};
+
+/// The combo index of a preset (Custom when it is not one of these).
+constexpr int IndexOf(Preset preset) {
+    for (int i = 0; i < static_cast<int>(PresetOrder.size()); ++i) {
+        if (PresetOrder[static_cast<std::size_t>(i)] == preset) {
+            return i;
+        }
+    }
+    return static_cast<int>(PresetOrder.size()) - 1;
+}
+
 struct Switches {
+    bool read_traps = false;       ///< on leaves EDEN_NX2_READ_TRAPS unset; off sets it to 0
     bool split_gpu_thread = true;  ///< EDEN_NX2_BACK_STAGES=1 + EDEN_NX2_BACK_CUTS=a
     bool acquire_peek = true;      ///< EDEN_NX2_ACQUIRE_PEEK=1
     bool jit_same = true;          ///< EDEN_NX2_JIT_SAME=1
     bool front_macro_lean = true;  ///< EDEN_NX2_FRONT_MACRO_LEAN=1
     bool fg_timed = true;          ///< EDEN_NX2_FG_TIMED=1
     bool osd = true;               ///< EDEN_NX2_OSD=1
+    // Game-specific: no preset sets or clears these (the Safe preset leaves them as they are).
     bool dk_dyn = true;            ///< EDEN_NX2_DK_DYN=1, Bananza only
-    bool dk_pacing = true;         ///< PRESENT_INTERVAL_WORD + MODE_PACE + PACE_SPIN_US, Bananza only
     bool mkw_dyn = true;           ///< EDEN_NX2_MKW_DYN=1, Mario Kart World only
-    Preset preset = Preset::Recommended;
+    Preset preset = Preset::Performance;
 
     bool operator==(const Switches&) const = default;
 };
 
-/// What the recommended launcher sets (and the first start's settings).
-constexpr Switches Recommended() {
+/// What the performance launcher sets. A file that stores no choice (`preset\default`) still means
+/// this, as it did before Balanced became the first start's preset (FirstStart).
+constexpr Switches Performance() {
     return Switches{};
+}
+
+/// What the balanced launcher sets: Performance with read traps on.
+constexpr Switches Balanced() {
+    Switches switches{};
+    switches.read_traps = true;
+    switches.preset = Preset::Balanced;
+    return switches;
+}
+
+/// The settings of a first start (no [Anka] group yet): the balanced launcher's.
+constexpr Switches FirstStart() {
+    return Balanced();
 }
 
 /// start-safe.bat's setup: none of the switches, and the per-draw shortcuts off.
 constexpr Switches AllOff() {
-    return Switches{false, false, false, false, false, false, false, false, false, Preset::Safe};
+    return Switches{
+        .read_traps = false,
+        .split_gpu_thread = false,
+        .acquire_peek = false,
+        .jit_same = false,
+        .front_macro_lean = false,
+        .fg_timed = false,
+        .osd = false,
+        .preset = Preset::Safe,
+    };
 }
 
 /// The keys of the [Anka] group, one per setting (the preset has its own, "preset").
@@ -63,25 +106,129 @@ struct Key {
     std::string_view name;
     bool Switches::*field;
 };
-inline constexpr std::array<Key, 9> Keys{{
+inline constexpr std::array<Key, 7> Keys{{
+    {"read_traps", &Switches::read_traps},
     {"split_gpu_thread", &Switches::split_gpu_thread},
     {"acquire_peek", &Switches::acquire_peek},
     {"jit_same", &Switches::jit_same},
     {"front_macro_lean", &Switches::front_macro_lean},
     {"fg_timed", &Switches::fg_timed},
     {"osd", &Switches::osd},
-    {"bananza_dynamic_fps", &Switches::dk_dyn},
-    {"bananza_frame_pacing", &Switches::dk_pacing},
-    {"mkw_dynamic_fps", &Switches::mkw_dyn},
 }};
 
-/// The boxes of a preset (Custom: `current` as it is), with the preset set.
+/// The game-specific keys: stored like the others, but outside the presets.
+inline constexpr std::array<Key, 2> GameKeys{{
+    {"bananza_dynamic_fps", &Switches::dk_dyn},
+    {"mariokart_dynamic_fps", &Switches::mkw_dyn},
+}};
+
+inline constexpr std::size_t KeyCount = Keys.size() + GameKeys.size();
+
+/// The key at `index`: Keys, then GameKeys.
+constexpr const Key& KeyAt(std::size_t index) {
+    return index < Keys.size() ? Keys[index] : GameKeys[index - Keys.size()];
+}
+
+/// One game's own choices over what it would run with: a preset, and a box per KeyAt() slot, each
+/// or none (it follows the global one). A game with a preset of its own (GamePreset) follows the
+/// global preset instead when `global_preset` is set.
+struct Overrides {
+    std::optional<Preset> preset;
+    bool global_preset = false;
+    std::array<std::optional<bool>, KeyCount> boxes{};
+
+    constexpr bool Empty() const {
+        if (preset || global_preset) {
+            return false;
+        }
+        for (const auto& box : boxes) {
+            if (box) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool operator==(const Overrides&) const = default;
+};
+
+/// `switches` with the overrides' boxes over them (the preset stays).
+constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) {
+    for (std::size_t i = 0; i < KeyCount; ++i) {
+        if (overrides.boxes[i]) {
+            switches.*KeyAt(i).field = *overrides.boxes[i];
+        }
+    }
+    return switches;
+}
+
+/// What a game's "preset" is stored as when it follows the global preset.
+inline constexpr int FollowGlobalPreset = -2;
+
+/// Reads a game's overrides through `read(key)`: -1 for no override, 0 off, 1 on; "preset" is
+/// a preset number, FollowGlobalPreset, or -1 (Custom, or anything else, is none).
+template <typename Read>
+Overrides LoadOverrides(Read&& read) {
+    Overrides overrides;
+    const int preset = read("preset");
+    overrides.global_preset = preset == FollowGlobalPreset;
+    if (preset != static_cast<int>(Preset::Custom) && preset >= 0 &&
+        preset <= static_cast<int>(Preset::Performance)) {
+        overrides.preset = static_cast<Preset>(preset);
+    }
+    for (std::size_t i = 0; i < KeyCount; ++i) {
+        const int value = read(KeyAt(i).name);
+        if (value == 0 || value == 1) {
+            overrides.boxes[i] = value == 1;
+        }
+    }
+    return overrides;
+}
+
+/// Writes a game's overrides through `write(key, value)`, with the values `LoadOverrides` reads.
+template <typename Write>
+void SaveOverrides(const Overrides& overrides, Write&& write) {
+    int preset = overrides.preset ? static_cast<int>(*overrides.preset) : -1;
+    if (overrides.global_preset) {
+        preset = FollowGlobalPreset;
+    }
+    write("preset", preset);
+    for (std::size_t i = 0; i < KeyCount; ++i) {
+        const auto& box = overrides.boxes[i];
+        write(KeyAt(i).name, box ? static_cast<int>(*box) : -1);
+    }
+}
+
+/// A stored preset number. Anything else is Custom (a file edited by hand).
+constexpr Preset PresetFromInt(int value) {
+    switch (value) {
+    case static_cast<int>(Preset::Balanced):
+    case static_cast<int>(Preset::Reactive):
+    case static_cast<int>(Preset::Safe):
+    case static_cast<int>(Preset::Custom):
+    case static_cast<int>(Preset::Performance):
+        return static_cast<Preset>(value);
+    default:
+        return Preset::Custom;
+    }
+}
+
+/// The boxes of a preset (Custom: `current` as it is), with the preset set. The game-specific
+/// boxes are always `current`'s.
+/// Performance and Experimental (Reactive) are Balanced's boxes with read traps off.
 constexpr Switches FromPreset(Preset preset, const Switches& current) {
-    Switches switches = preset == Preset::Safe ? AllOff() : Recommended();
     if (preset == Preset::Custom) {
-        switches = current;
+        Switches switches = current;
+        switches.preset = Preset::Custom;
+        return switches;
+    }
+    Switches switches = preset == Preset::Safe ? AllOff() : Balanced();
+    if (preset == Preset::Performance || preset == Preset::Reactive) {
+        switches.read_traps = false;
     }
     switches.preset = preset;
+    switches.dk_dyn = current.dk_dyn;
+    switches.mkw_dyn = current.mkw_dyn;
     return switches;
 }
 
@@ -182,7 +329,8 @@ constexpr std::optional<bool> BarrierFeedbackLoops(Preset preset) {
 /// (the launchers' safe one leaves the .ini as it is).
 constexpr std::optional<bool> ReactiveFlushing(Preset preset) {
     switch (preset) {
-    case Preset::Recommended:
+    case Preset::Balanced:
+    case Preset::Performance:
         return false;
     case Preset::Reactive:
         return true;
@@ -192,18 +340,26 @@ constexpr std::optional<bool> ReactiveFlushing(Preset preset) {
 }
 
 /// Reads every setting through `read(key, default)` and the preset through
-/// `read_preset(key, default)`; missing keys give the first start's (Recommended). Boxes that are
+/// `read_preset(key, default)`; missing keys give the first start's (Performance). Boxes that are
 /// not their preset's (the file edited by hand) make it Custom.
 template <typename Read, typename ReadPreset>
 Switches Load(Read&& read, ReadPreset&& read_preset) {
+    const Preset preset =
+        PresetFromInt(read_preset("preset", static_cast<int>(Preset::Performance)));
+    // read_traps was added after the other boxes. A file without the key keeps the preset's
+    // own value (Balanced on, Performance / Experimental / Safe off, Custom on) instead of being
+    // read as Custom.
+    const bool read_traps_fallback = FromPreset(preset, Balanced()).read_traps;
     Switches switches{};
     for (const Key& key : Keys) {
-        switches.*key.field = read(key.name, Recommended().*key.field);
+        const bool fallback =
+            key.name == "read_traps" ? read_traps_fallback : Balanced().*key.field;
+        switches.*key.field = read(key.name, fallback);
     }
-    const int preset = read_preset("preset", static_cast<int>(Preset::Recommended));
-    switches.preset = preset >= 0 && preset <= static_cast<int>(Preset::Custom)
-                          ? static_cast<Preset>(preset)
-                          : Preset::Custom;
+    for (const Key& key : GameKeys) {
+        switches.*key.field = read(key.name, Balanced().*key.field);
+    }
+    switches.preset = preset;
     return AfterBoxChange(switches);
 }
 
@@ -212,21 +368,57 @@ Switches Load(Read&& read, ReadPreset&& read_preset) {
 template <typename Write, typename WritePreset>
 void Save(const Switches& switches, Write&& write, WritePreset&& write_preset) {
     for (const Key& key : Keys) {
-        write(key.name, switches.*key.field, Recommended().*key.field);
+        write(key.name, switches.*key.field, Balanced().*key.field);
+    }
+    for (const Key& key : GameKeys) {
+        write(key.name, switches.*key.field, Balanced().*key.field);
     }
     write_preset("preset", static_cast<int>(switches.preset),
-                 static_cast<int>(Preset::Recommended));
+                 static_cast<int>(Preset::Performance));
 }
 
-/// The settings for Donkey Kong Bananza only take its title: the program id EDEN_NX2_DK_DYN's
-/// patch checks (Loader::Nx2DkDynamicFps::ApplyIfEnabled).
-constexpr bool IsBananza(u64 program_id) {
-    return program_id == Loader::Nx2DkDynamicFps::ProgramId;
+/// The games with settings of their own. Each takes its title only: the program id its patch
+/// checks (Loader::Nx2DkDynamicFps::ApplyIfEnabled, Loader::Nx2MkwDynamicFps::ApplyIfEnabled).
+enum class Game : u8 {
+    Other,
+    Bananza,
+    MarioKartWorld,
+};
+
+constexpr Game GameOf(u64 program_id) {
+    if (program_id == Loader::Nx2DkDynamicFps::ProgramId) {
+        return Game::Bananza;
+    }
+    if (program_id == Loader::Nx2MkwDynamicFps::ProgramId) {
+        return Game::MarioKartWorld;
+    }
+    return Game::Other;
 }
 
-/// Mario Kart World's own switch (Loader::Nx2MkwDynamicFps::ProgramId).
-constexpr bool IsMkw(u64 program_id) {
-    return program_id == Loader::Nx2MkwDynamicFps::ProgramId;
+/// The preset a game starts from instead of the global one: Bananza Performance (read traps off).
+/// Other games: none, they follow the global preset (Balanced from the first start).
+constexpr std::optional<Preset> GamePreset(Game game) {
+    return game == Game::Bananza ? std::optional{Preset::Performance} : std::nullopt;
+}
+
+/// The preset a game runs with: its own choice, else its starting one (unless it follows the
+/// global preset), else the global one.
+constexpr Preset PresetFor(Preset global, Game game, const Overrides& own) {
+    if (own.preset) {
+        return *own.preset;
+    }
+    const auto start = GamePreset(game);
+    return start && !own.global_preset ? *start : global;
+}
+
+/// The settings a game runs with: its preset's, then its own boxes.
+constexpr Switches ForGame(const Switches& global, Game game, const Overrides& own) {
+    Switches switches = global;
+    const Preset preset = PresetFor(global.preset, game, own);
+    if (preset != global.preset) {
+        switches = FromPreset(preset, global);
+    }
+    return WithOverrides(switches, own);
 }
 
 struct Var {
@@ -238,7 +430,7 @@ struct Var {
 
 /// The per-draw shortcuts this fork keeps on by default; the Safe preset turns them off (=0), as
 /// start-safe.bat does.
-inline constexpr std::array<std::string_view, 61> SafeOff{
+inline constexpr std::array<std::string_view, 64> SafeOff{
     "EDEN_NX2_LIGHT_DRAW",       "EDEN_NX2_LIGHT_UNIFORM",     "EDEN_NX2_LIGHT_UNIFORM_VALUES",
     "EDEN_NX2_LIGHT_STORAGE",    "EDEN_NX2_UNIFORM_SYNC_SKIP", "EDEN_NX2_STORAGE_KEEP",
     "EDEN_NX2_UBO_REUSE",        "EDEN_NX2_UBO_DIRECT",        "EDEN_NX2_UBO_STAGE",
@@ -259,18 +451,19 @@ inline constexpr std::array<std::string_view, 61> SafeOff{
     "EDEN_NX2_INDIRECT_BATCH",   "EDEN_NX2_LAYOUT_MEMO",       "EDEN_NX2_SAME_SKIP",
     "EDEN_NX2_HSETP2_REG",       "EDEN_NX2_DIRTY_THUNK_SKIP",  "EDEN_NX2_FAST_PRIORITY_SCAN",
     "EDEN_NX2_PBFLUSH_WINDOW_KIB", "EDEN_NX2_UPSCALE_SCAN",    "EDEN_NX2_UPSCALE_LEARN",
-    "EDEN_NX2_UPSCALE_HEADER",
+    "EDEN_NX2_UPSCALE_HEADER",   "EDEN_NX2_FRONT_RUNS",        "EDEN_NX2_UBO_KEEP",
+    "EDEN_NX2_RX_ONE_SUBMIT",
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
-inline constexpr std::array<std::string_view, 13> Names{
+inline constexpr std::array<std::string_view, 14> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
     "EDEN_NX2_OSD",           "EDEN_NX2_DK_DYN",
-    "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_PRESENT_INTERVAL_WORD", "EDEN_NX2_MODE_PACE",
-    "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_RX_RT_FIT",
+    "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
+    "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -284,9 +477,10 @@ void ForEachName(F&& f) {
     }
 }
 
-/// The variables the settings ask for when the game is (or is not) Bananza, the same values as
-/// the launcher of the preset. The Bananza ones never for another game.
-inline std::vector<Var> Wanted(const Switches& switches, bool bananza, bool mkw = false) {
+/// The variables the settings ask for in `game`, the same values as the launcher of the preset.
+/// A game's own never reach another game. Bananza's frame pacing is always set: the patch sets it
+/// aside while it applies, and it is what steers the game when the patch is off or does not match.
+inline std::vector<Var> Wanted(const Switches& switches, Game game) {
     std::vector<Var> vars;
     if (switches.split_gpu_thread) {
         vars.push_back({"EDEN_NX2_BACK_STAGES", "1"});
@@ -307,16 +501,20 @@ inline std::vector<Var> Wanted(const Switches& switches, bool bananza, bool mkw 
     if (switches.osd) {
         vars.push_back({"EDEN_NX2_OSD", "1"});
     }
-    if (bananza && switches.dk_dyn) {
-        vars.push_back({"EDEN_NX2_DK_DYN", "1"});
-    }
-    if (bananza && switches.dk_pacing) {
+    if (game == Game::Bananza) {
+        if (switches.dk_dyn) {
+            vars.push_back({"EDEN_NX2_DK_DYN", "1"});
+        }
         vars.push_back({"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"});
         vars.push_back({"EDEN_NX2_MODE_PACE", "2"});
         vars.push_back({"EDEN_NX2_PACE_SPIN_US", "1500"});
     }
-    if (mkw && switches.mkw_dyn) {
+    if (game == Game::MarioKartWorld && switches.mkw_dyn) {
         vars.push_back({"EDEN_NX2_MKW_DYN", "1"});
+    }
+    // On by default (unset). Off is the only value the program sets.
+    if (!switches.read_traps) {
+        vars.push_back({"EDEN_NX2_READ_TRAPS", "0"});
     }
     if (switches.preset == Preset::Reactive) {
         vars.push_back({"EDEN_NX2_RX_RT_FIT", "3"});
@@ -333,10 +531,9 @@ inline std::vector<Var> Wanted(const Switches& switches, bool bananza, bool mkw 
 /// started (a launcher, the user, or nx2_switches.txt set them: theirs wins, set or not by us).
 /// `set_outside(name)` tells whether a name was there.
 template <typename SetOutside>
-std::vector<Var> Plan(const Switches& switches, bool bananza, SetOutside&& set_outside,
-                   bool mkw = false) {
+std::vector<Var> Plan(const Switches& switches, Game game, SetOutside&& set_outside) {
     std::vector<Var> plan;
-    for (const Var& var : Wanted(switches, bananza, mkw)) {
+    for (const Var& var : Wanted(switches, game)) {
         if (!set_outside(var.name)) {
             plan.push_back(var);
         }

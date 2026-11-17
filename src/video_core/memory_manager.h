@@ -9,6 +9,7 @@
 #include <array>
 #include <atomic>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -201,7 +202,38 @@ public:
     const u8* GetSpan(const GPUVAddr src_addr, const std::size_t size) const;
     u8* GetSpan(const GPUVAddr src_addr, const std::size_t size);
 
+    /// Host memory backing part of a GPU range.
+    struct HostSegment {
+        u8* pointer;
+        std::size_t size;
+    };
+
+    /// The host memory a GPU range is backed by, in order, adjacent pages merged. False, with
+    /// `segments` cleared, when part of the range has none.
+    bool GetHostSegments(GPUVAddr gpu_addr, std::size_t size, std::vector<HostSegment>& segments);
+
+    /// A write another thread makes to [gpu_addr, +size) until `done` is set (the 2D software
+    /// blitter's copies): reads, writes and mapping changes of an overlapping range wait for it.
+    void AddPendingWrite(GPUVAddr gpu_addr, std::size_t size,
+                         std::shared_ptr<std::atomic<bool>> done);
+
 private:
+    void WaitPendingWrites(GPUVAddr gpu_addr, std::size_t size) const {
+        if (pending_write_count.load(std::memory_order_acquire) != 0) [[unlikely]] {
+            WaitPendingWritesSlow(gpu_addr, size);
+        }
+    }
+    void WaitPendingWritesSlow(GPUVAddr gpu_addr, std::size_t size) const;
+
+    struct PendingWrite {
+        GPUVAddr begin;
+        GPUVAddr end;
+        std::shared_ptr<std::atomic<bool>> done;
+    };
+    mutable std::mutex pending_write_mutex;
+    mutable std::vector<PendingWrite> pending_writes;
+    mutable std::atomic<u32> pending_write_count{};
+
     template <typename FuncMapped, typename FuncReserved, typename FuncUnmapped>
     inline void MemoryOperation(GPUVAddr gpu_src_addr, std::size_t size, bool is_big_page, FuncMapped&& func_mapped, FuncReserved&& func_reserved, FuncUnmapped&& func_unmapped) const;
 

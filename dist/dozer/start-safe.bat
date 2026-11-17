@@ -3,7 +3,7 @@ setlocal DisableDelayedExpansion
 rem Dozer - SAFE: the shortcuts Dozer keeps on by default set to 0, its opt-in switches cleared.
 rem Dozer launcher for dozer-cli.exe (Dozer's program without menus).
 rem Put this file next to dozer-cli.exe.
-rem Start: put your game (.nsp .xci .nsz .xcz .nup) in the Games folder next to this file and double-click
+rem Start: put your game (.nsp .xci .nsz .xcz .nup .nx) in the Games folder next to this file and double-click
 rem this file; or drag a game file onto it; or write the game's path in GAME below.
 rem First start: when the user folder has no config\sdl2-config.ini yet, it is made as a copy of
 rem config\qt-config.ini (the controller and settings of the menu program, dozer.exe). An existing
@@ -47,9 +47,11 @@ set EDEN_NX2_PRESENT_INTERVAL=
 set EDEN_NX2_PRESENT_INTERVAL_WORD=
 set EDEN_NX2_MODE_PACE=
 set EDEN_NX2_PACE_SPIN_US=
+set EDEN_NX2_RX_ONE_SUBMIT=
 set EDEN_NX2_MODE_GOV=
 set EDEN_NX2_DK_DYN=
 set EDEN_NX2_DK_DYN_MIN_FPS=
+set EDEN_NX2_MKW_DYN=
 set EDEN_NX2_FG_TIMED=
 set EDEN_NX2_OSD=
 set EDEN_NX2_BACK_CPU=
@@ -73,7 +75,7 @@ set EDEN_NX2_FG_DIAG=
 set EDEN_NX2_RX_RT_FIT=
 set EDEN_NX2_FLUSH_FIRST_READ=
 set EDEN_NX2_READ_LATCH_AGE=
-set EDEN_NX2_RX_ONE_SUBMIT=
+set EDEN_NX2_RX_ONE_SUBMIT=0
 set EDEN_NX2_RX_COALESCE=
 set EDEN_NX2_RX_PITCH_FORCED=
 set EDEN_NX2_RX_MASKED_TARGETS=
@@ -81,6 +83,8 @@ set EDEN_NX2_REACTIVE_STATS=
 set EDEN_NX2_RX_NO_COPYBACK=
 set EDEN_NX2_RX_NO_RT_LATCH=
 set EDEN_NX2_RX_COALESCE_LOOSE=
+rem Read traps are on unless this is 0. Safe turns them off.
+set EDEN_NX2_READ_TRAPS=0
 rem Shortcuts that are on by default: off (=0, the code path of 2.0.0).
 set EDEN_NX2_LIGHT_DRAW=0
 set EDEN_NX2_LIGHT_UNIFORM=0
@@ -143,6 +147,8 @@ set EDEN_NX2_PBFLUSH_WINDOW_KIB=0
 set EDEN_NX2_UPSCALE_SCAN=0
 set EDEN_NX2_UPSCALE_LEARN=0
 set EDEN_NX2_UPSCALE_HEADER=0
+set EDEN_NX2_FRONT_RUNS=0
+set EDEN_NX2_UBO_KEEP=0
 if defined CONFIG goto withconfig
 "%HERE%dozer-cli.exe" %FULLSCREEN% -g "%GAME%"
 goto ran
@@ -155,7 +161,7 @@ if not "%errorlevel%"=="0" pause
 goto end
 :nogame
 echo.
-echo  No game found. Put your game file (.nsp .xci .nsz .xcz .nup) in the Games folder next to
+echo  No game found. Put your game file (.nsp .xci .nsz .xcz .nup .nx) in the Games folder next to
 echo  this file, or drag it onto this .bat.
 echo.
 pause
@@ -178,7 +184,7 @@ pause
 exit /b 1
 :noexe
 echo.
-echo  dozer-cli.exe is not next to this .bat. Put both in the Dozer folder (README_DOZER.md).
+echo  dozer-cli.exe is not next to this .bat. Put both in the Dozer folder (README.md).
 echo.
 pause
 exit /b 1
@@ -187,7 +193,7 @@ rem ---- the game list: the Games folder next to this file, subfolders too -----
 :findgames
 set "NGAMES=0"
 if not exist "%HERE%Games\" exit /b 0
-for /r "%HERE%Games" %%F in (*.nsp *.xci *.nsz *.xcz *.nup) do (
+for /r "%HERE%Games" %%F in (*.nsp *.xci *.nsz *.xcz *.nup *.nx) do (
   set "F=%%~fF"
   call :addgame
 )
@@ -200,7 +206,7 @@ exit /b 0
 echo.
 echo  Games in the Games folder:
 set "I=0"
-for /r "%HERE%Games" %%F in (*.nsp *.xci *.nsz *.xcz *.nup) do (
+for /r "%HERE%Games" %%F in (*.nsp *.xci *.nsz *.xcz *.nup *.nx) do (
   set "F=%%~nxF"
   call :showgame
 )
@@ -214,7 +220,7 @@ set "PICK="
 for /l %%I in (1,1,%NGAMES%) do if "%SEL%"=="%%I" set "PICK=%%I"
 if not defined PICK goto ask
 set "I=0"
-for /r "%HERE%Games" %%F in (*.nsp *.xci *.nsz *.xcz *.nup) do (
+for /r "%HERE%Games" %%F in (*.nsp *.xci *.nsz *.xcz *.nup *.nx) do (
   set "F=%%~fF"
   call :pickgame
 )

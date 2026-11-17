@@ -42,6 +42,8 @@ add_library(
     demangle.h
     device_power_state.cpp
     device_power_state.h
+    display_hdr.cpp
+    display_hdr.h
     div_ceil.h
     dynamic_library.cpp
     dynamic_library.h
@@ -82,6 +84,7 @@ add_library(
     multi_level_page_table.cpp
     multi_level_page_table.h
     nx2_rtss_osd.h
+    nx2_sync_serial.h
     overflow.h
     page_table.cpp
     page_table.h
@@ -158,7 +161,7 @@ set_source_files_properties(zbic_compression.cpp PROPERTIES
 if(WIN32)
     target_sources(common PRIVATE windows/timer_resolution.cpp
         windows/timer_resolution.h)
-    target_link_libraries(common PRIVATE ntdll)
+    target_link_libraries(common PRIVATE dxgi ntdll)
 endif()
 
 if(NOT WIN32)

@@ -31,6 +31,7 @@
 #include "video_core/nx2_mode_diag.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/nx2_stages.h"
+#include "video_core/nx2_uniform_census.h"
 #include "video_core/rasterizer_interface.h"
 #include "shader_recompiler/ir_opt/nx2_root.h"
 #include "video_core/textures/texture.h"
@@ -1208,6 +1209,8 @@ MAXWELL3D_FORCE_INLINE void Maxwell3D::NoteLightWrite(GPUVAddr address, u32 size
 MAXWELL3D_FORCE_INLINE void Maxwell3D::CbWriteImpl(GPUVAddr address, const u32* start_base,
                                                    u32 amount) {
     const size_t copy_size = amount * sizeof(u32);
+    VideoCommon::Nx2UniformCensus::Add(VideoCommon::Nx2UniformCensus::CbWrites, 1);
+    VideoCommon::Nx2UniformCensus::Add(VideoCommon::Nx2UniformCensus::CbWriteBytes, copy_size);
     bool skip_write = false;
     if (LightTrackingEnabled()) {
         const u64 same_writes = light.same_writes;
@@ -1504,14 +1507,13 @@ bool HleIndirectEnabled() {
     return enabled;
 }
 
-// EDEN_NX2_INDIRECT_BATCH=1: calls of NVN's indexed indirect draw macro whose records follow each
-// other in memory share one host draw (and one draw setup on the back). Off by default: one host
-// draw per call. Merged, Bananza's terrain drew garbage polygons and lost chunks after minutes
-// of play, and the merge saved little on a Ryzen 7 5700X3D with an RTX 5070 Ti.
+// EDEN_NX2_INDIRECT_BATCH=0: one host draw per call of NVN's indexed indirect draw macro. On by
+// default, calls whose records follow each other in memory share one host draw (and one draw
+// setup on the back).
 bool IndirectBatchEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("EDEN_NX2_INDIRECT_BATCH");
-        return value != nullptr && value[0] == '1';
+        return value == nullptr || value[0] != '0';
     }();
     return enabled;
 }
@@ -1848,6 +1850,14 @@ void Maxwell3D::FrontCallMethod(Core::System& system, VideoCommon::GpuSplit& spl
         return;
     }
     FrontWrite(split, fs, method, argument, is_last_call, false);
+}
+
+void Maxwell3D::FrontCallRun(Core::System& system, VideoCommon::GpuSplit& split, u32 method,
+                             const u32* words, u32 amount, bool last) {
+    auto& fs = Front(system, split);
+    for (u32 i = 0; i < amount; ++i) {
+        FrontWrite(split, fs, method + i, words[i], last && i + 1 == amount, false);
+    }
 }
 
 void Maxwell3D::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit& split,

@@ -3,98 +3,124 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <optional>
 #include <span>
 #include <string_view>
 
 #include "common/common_types.h"
 
-// EDEN_NX2_MKW_DYN=1: Mario Kart World's dynamic frame rate, from Eglantine/Lichii (the dynamic
-// mode only). The main module is patched as it loads. vi2 then presents every vblank, or the
-// game still sleeps in two-vblank steps (Core::g_nx2_mkw_dyn_applied).
+// EDEN_NX2_MKW_DYN=1 (off by default): Mario Kart World's dynamic frame rate patch, after the
+// Lichii fork's (zortos293/Lichii#1332, with SerkiGohan's vblank wait fix). It rewrites the game's
+// main module as it loads; unset or any other value leaves the module untouched. Applied, it
+// sets Core::g_nx2_mkw_dyn_applied, which nx2_gsv.h reads: presents are paced to every vblank.
+//
+// The game picks a 1- or 2-vblank frame mode in its main loop and keeps a time account (frame
+// cost - interval * 16.67 ms), advancing 1 or 2 steps a frame. It stays in real time while the
+// cost it reads is the real frame time, so three words change:
+//   mode:       ldr w8, [x19, #0x210]  ->  mov w8, #0 (the game chooses the mode itself)
+//   frame time: ldr xN, [x19, #0x128]  ->  ldr xN, [x19, #0xe8] (the whole frame, not the CPU's)
+//   vblank wait: b.lo -> b: the vsync function waits until 0.99 * interval / 60 s after the
+//     frame start, which made every 2-step frame read as 33 ms and kept the game at 30 fps.
+// Sites are found by their instruction sequences, not by address; nothing is changed unless each
+// matches exactly once.
 namespace Loader::Nx2MkwDynamicFps {
 
 constexpr u64 ProgramId = 0x0400C3F00006E000ULL;
 
+/// EDEN_NX2_MKW_DYN's value: only "1..." turns the patch on.
 constexpr bool Enabled(const char* value) {
     return value != nullptr && value[0] == '1';
 }
 
-constexpr u32 ModeLoad = 0xB9421268;      // ldr w8, [x19, #0x210]
-constexpr u32 ModeCompare = 0x6B01013F;   // cmp w9, w1
-constexpr u32 ModeBranch = 0x54000001;    // b.ne, any imm19
-constexpr u32 ModeBranchMask = 0xFF00001F;
-constexpr u32 ModeTest = 0x35000008;      // cbnz w8, any imm19
-constexpr u32 ModeTestMask = 0xFF00001F;
-constexpr u32 ModeSixty = 0x52A84E08;     // mov w8, #60.0
-constexpr u32 ModeDynamic = 0x52800008;   // mov w8, #0
-constexpr u32 FrameTimeLoad = 0xF9409660; // ldr xN, [x19, #0x128]
-constexpr u32 FrameTimeMask = 0xFFFFFFE0;
-constexpr u32 WholeFrameTime = 0xF9407660; // ldr xN, [x19, #0xe8]
+constexpr u32 ModeLoad = 0xB9421268;         // ldr w8, [x19, #0x210]
+constexpr u32 ModeSet = 0x52800008;          // mov w8, #0
+constexpr u32 FrameCpuTime = 0xF9409660;     // ldr xN, [x19, #0x128], Rt in bits 0-4
+constexpr u32 FrameWholeTime = 0xF9407660;   // ldr xN, [x19, #0xe8]
+constexpr u32 Mov60 = 0x52A84E08;            // mov w8, #60.0f
+constexpr u32 WaitLoadInterval = 0xB9408A68; // ldr w8, [x19, #0x88]
+constexpr u32 WaitCompare = 0x7100091F;      // cmp w8, #2
 
 struct Result {
     bool applied{};
     size_t mode{};
     size_t frame_time{};
+    size_t vblank_wait{};
+    size_t mode_matches{};
+    size_t frame_time_matches{};
+    size_t vblank_wait_matches{};
 };
 
-inline std::optional<Result> Apply(std::span<u8> text) {
-    Result result;
-    if (text.size() < 16 || text.size() % sizeof(u32) != 0) {
+/// `text` starts at the text segment; `text_size` is its size in the NSO header.
+inline Result Apply(std::span<u8> text, u32 text_size) {
+    Result result{};
+    if (text.size() < text_size) {
         return result;
     }
-    const size_t count = text.size() / sizeof(u32);
-    auto* const words = reinterpret_cast<u32*>(text.data());
-    size_t mode = 0;
-    int mode_matches = 0;
+    u8* const code = text.data();
+    const size_t count = text_size / sizeof(u32);
+    const auto word = [code](size_t index) {
+        u32 value;
+        std::memcpy(&value, code + index * sizeof(u32), sizeof(value));
+        return value;
+    };
+    const auto put = [code](size_t index, u32 value) {
+        std::memcpy(code + index * sizeof(u32), &value, sizeof(value));
+    };
     for (size_t i = 2; i + 8 < count; ++i) {
-        if (words[i] != ModeLoad || words[i - 2] != ModeCompare ||
-            (words[i - 1] & ModeBranchMask) != ModeBranch ||
-            (words[i + 1] & ModeTestMask) != ModeTest) {
+        if (word(i) != ModeLoad || word(i - 2) != 0x6B01013F || // cmp w9, w1
+            (word(i - 1) & 0xFF00001F) != 0x54000001 ||         // b.ne
+            (word(i + 1) & 0xFF00001F) != 0x35000008) {         // cbnz w8
             continue;
         }
-        bool sixty = false;
         for (size_t j = i + 2; j < i + 8; ++j) {
-            sixty = sixty || words[j] == ModeSixty;
+            if (word(j) == Mov60) {
+                result.mode = i;
+                ++result.mode_matches;
+                break;
+            }
         }
-        if (!sixty) {
-            continue;
-        }
-        mode = i;
-        ++mode_matches;
     }
-    if (mode_matches != 1) {
+    if (result.mode_matches == 1) {
+        const size_t end = (std::min)(result.mode + 32, count);
+        for (size_t i = result.mode + 1; i < end; ++i) {
+            if ((word(i) & 0xFFFFFFE0) == FrameCpuTime) {
+                result.frame_time = i;
+                ++result.frame_time_matches;
+            }
+        }
+    }
+    for (size_t i = 0; i + 4 < count; ++i) {
+        if (word(i) == WaitLoadInterval && word(i + 1) == WaitCompare &&
+            (word(i + 2) & 0xFF00001F) == 0x54000003 && word(i + 4) == Mov60) { // b.lo
+            result.vblank_wait = i + 2;
+            ++result.vblank_wait_matches;
+        }
+    }
+    if (result.mode_matches != 1 || result.frame_time_matches != 1 ||
+        result.vblank_wait_matches != 1) {
         return result;
     }
-    size_t frame_time = 0;
-    int frame_matches = 0;
-    const size_t end = mode + 1 + 32 < count ? mode + 1 + 32 : count;
-    for (size_t j = mode + 1; j < end; ++j) {
-        if ((words[j] & FrameTimeMask) == FrameTimeLoad) {
-            frame_time = j;
-            ++frame_matches;
-        }
-    }
-    if (frame_matches != 1) {
-        return result;
-    }
-    const u32 frame_word = words[frame_time];
-    words[mode] = ModeDynamic;
-    words[frame_time] = WholeFrameTime | (frame_word & 0x1F);
+    put(result.mode, ModeSet);
+    put(result.frame_time, FrameWholeTime | (word(result.frame_time) & 0x1F));
+    // b.lo's imm19 (bits 5-23, in words) is the unconditional branch's imm26.
+    const s32 offset = static_cast<s32>(word(result.vblank_wait) << 8) >> 13;
+    put(result.vblank_wait, 0x14000000U | (static_cast<u32>(offset) & 0x03FFFFFFU));
     result.applied = true;
-    result.mode = mode;
-    result.frame_time = frame_time;
     return result;
 }
 
-/// Nullopt unless the switch is on and this is Mario Kart World's main module.
+/// The loader's entry: nullopt (the module untouched) unless EDEN_NX2_MKW_DYN is on and this is
+/// Mario Kart World's main module.
 inline std::optional<Result> ApplyIfEnabled(const char* switch_value, u64 program_id,
-                                            std::string_view module_name, std::span<u8> text) {
+                                            std::string_view module_name, std::span<u8> text,
+                                            u32 text_size) {
     if (!Enabled(switch_value) || module_name != "main" || program_id != ProgramId) {
         return std::nullopt;
     }
-    return Apply(text);
+    return Apply(text, text_size);
 }
 
 } // namespace Loader::Nx2MkwDynamicFps

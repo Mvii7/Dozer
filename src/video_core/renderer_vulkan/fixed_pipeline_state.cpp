@@ -15,6 +15,7 @@
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/renderer_vulkan/fixed_pipeline_state.h"
 #include "video_core/renderer_vulkan/vk_state_tracker.h"
+#include "video_core/vulkan_common/vulkan.h"
 
 namespace Vulkan {
 namespace {
@@ -105,8 +106,8 @@ void FixedPipelineState::Refresh(Tegra::Engines::Maxwell3D& maxwell3d, DynamicFe
     const Maxwell& regs = maxwell3d.regs;
     const auto topology_ = maxwell3d.draw_manager.draw_state.topology;
 
-    driver_id = features.driver_id;
-    driver_version = features.driver_version;
+    driver_id = 0;
+    driver_version = 0;
 
     raw1 = 0;
     extended_dynamic_state.Assign(features.has_extended_dynamic_state ? 1 : 0);
@@ -248,7 +249,12 @@ void FixedPipelineState::Refresh(Tegra::Engines::Maxwell3D& maxwell3d, DynamicFe
         dynamic_state.Refresh2(regs, topology_, extended_dynamic_state_2);
     }
     if (!extended_dynamic_state_3_blend) {
-        if (maxwell3d.dirty.flags[Dirty::Blending]) {
+        // Always rebuilt on AMD: a blend register written without raising Dirty::Blending left a
+        // stale state in the key on GPUs without dynamic blend state.
+        const bool is_amd = features.driver_id == VK_DRIVER_ID_AMD_PROPRIETARY ||
+                            features.driver_id == VK_DRIVER_ID_AMD_OPEN_SOURCE ||
+                            features.driver_id == VK_DRIVER_ID_MESA_RADV;
+        if (is_amd || maxwell3d.dirty.flags[Dirty::Blending]) {
             maxwell3d.dirty.flags[Dirty::Blending] = false;
             for (size_t index = 0; index < attachments.size(); ++index) {
                 attachments[index].Refresh(regs, index);
