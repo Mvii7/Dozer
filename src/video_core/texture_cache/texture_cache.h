@@ -557,6 +557,26 @@ typename P::ImageView& TextureCache<P>::GetImageView(ImageViewId id) noexcept {
 }
 
 template <class P>
+bool TextureCache<P>::ColorTargetWrittenBeforeThisFrame(u32 index) {
+    const auto& regs = maxwell3d->regs;
+    const auto& rt = regs.rt[index];
+    const GPUVAddr gpu_addr = rt.Address();
+    if (gpu_addr == 0 || rt.format == Tegra::RenderTargetFormat::NONE) {
+        return false;
+    }
+    const ImageInfo info(rt, regs.anti_alias_samples_mode);
+    if (info.format == PixelFormat::Invalid || info.size.width == 0 || info.size.height == 0) {
+        return false;
+    }
+    const ImageId image_id = FindImage(info, gpu_addr, RelaxedOptions{});
+    if (!image_id) {
+        return false;
+    }
+    const ImageBase& image = slot_images[image_id];
+    return image.first_gpu_write_frame != 0 && image.first_gpu_write_frame <= frame_tick;
+}
+
+template <class P>
 bool TextureCache<P>::HoldsGpuData(ImageViewId id) const noexcept {
     const ImageId image_id = slot_image_views[id].image_id;
     if (!image_id || image_id == NULL_IMAGE_ID) {

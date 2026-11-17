@@ -238,6 +238,10 @@ public:
     /// Mark an image as modified from the GPU
     void MarkModification(ImageId id) noexcept;
 
+    /// Whether color target `index`'s image was first written by the GPU in an earlier frame.
+    /// The caller holds the mutex.
+    [[nodiscard]] bool ColorTargetWrittenBeforeThisFrame(u32 index);
+
     /// Whether the view's image holds GPU writes from an earlier frame (a null view has nothing to
     /// hold).
     [[nodiscard]] bool HoldsGpuData(ImageViewId id) const noexcept;

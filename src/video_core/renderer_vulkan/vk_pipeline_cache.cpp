@@ -803,7 +803,8 @@ PipelineCache::~PipelineCache() {
     }
 }
 
-GraphicsPipeline* PipelineCache::CurrentGraphicsPipeline() {
+GraphicsPipeline* PipelineCache::CurrentGraphicsPipeline(bool texture_cache_locked_) {
+    texture_cache_locked = texture_cache_locked_;
     if (num_translated.load(std::memory_order_acquire) != 0) {
         AdoptTranslatedGraphicsPipelines();
     }
@@ -1125,13 +1126,16 @@ GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) {
         if (!CanSkipNativeDraw()) {
             return pipeline;
         }
-        if (native_draw_wait_left.count() <= 0) {
-            return nullptr;
+        if (native_draw_wait_left.count() > 0) {
+            const auto begin = std::chrono::steady_clock::now();
+            const bool built = pipeline->WaitBuilt(native_draw_wait_left);
+            ChargeNativeDrawWait(std::chrono::steady_clock::now() - begin);
+            if (built) {
+                return pipeline;
+            }
         }
-        const auto begin = std::chrono::steady_clock::now();
-        const bool built = pipeline->WaitBuilt(native_draw_wait_left);
-        ChargeNativeDrawWait(std::chrono::steady_clock::now() - begin);
-        return built ? pipeline : nullptr;
+        NoteNativeSkip(true);
+        return nullptr;
     }
     }
     return pipeline;
@@ -1146,23 +1150,57 @@ bool PipelineCache::WaitForUnbuiltDispatch(ComputePipeline& pipeline) {
     case NativeDrawWait::Bounded:
         break;
     }
-    if (native_draw_wait_left.count() <= 0) {
-        return false;
+    if (native_draw_wait_left.count() > 0) {
+        const auto begin = std::chrono::steady_clock::now();
+        const bool built = pipeline.WaitBuilt(native_draw_wait_left);
+        ChargeNativeDrawWait(std::chrono::steady_clock::now() - begin);
+        if (built) {
+            return true;
+        }
     }
-    const auto begin = std::chrono::steady_clock::now();
-    const bool built = pipeline.WaitBuilt(native_draw_wait_left);
-    ChargeNativeDrawWait(std::chrono::steady_clock::now() - begin);
-    return built;
+    NoteNativeSkip(false);
+    return false;
+}
+
+void PipelineCache::NoteNativeSkip(bool draw) noexcept {
+    u64& count = draw ? skipped_native_draws : skipped_native_dispatches;
+    if ((count++ & 255) == 0) {
+        LOG_INFO(Render_Vulkan,
+                 "Pipelines still compiling: {} native draw lookups and {} dispatches skipped",
+                 skipped_native_draws, skipped_native_dispatches);
+    }
 }
 
 void PipelineCache::ChargeNativeDrawWait(std::chrono::steady_clock::duration waited) noexcept {
     native_draw_wait_left -= std::chrono::duration_cast<std::chrono::microseconds>(waited);
 }
 
-bool PipelineCache::CanSkipNativeDraw() const noexcept {
-    // Depth-tested draws are scene geometry, redrawn every frame. Draws without one can build a
-    // texture used later (or only once), which a skip would leave stale.
-    return maxwell3d->regs.zeta_enable != 0 && maxwell3d->regs.depth_test_enable != 0;
+bool PipelineCache::CanSkipNativeDraw() {
+    // Depth-tested draws into color targets drawn in earlier frames are scene geometry, redrawn
+    // every frame. Others can build a texture used later: Mario Kart World bakes its terrain once
+    // with depth-tested draws (Lichii b7980efd7), so a target first written this frame waits.
+    const auto& regs = maxwell3d->regs;
+    if (regs.zeta_enable == 0 || regs.depth_test_enable == 0) {
+        return false;
+    }
+    const u32 count = std::min<u32>(regs.rt_control.count, Maxwell::NumRenderTargets);
+    std::unique_lock lock{texture_cache.mutex, std::defer_lock};
+    bool writes_color = false;
+    for (u32 i = 0; i < count; ++i) {
+        const u32 rt_index = regs.rt_control.Map(i);
+        if (regs.rt[rt_index].format == Tegra::RenderTargetFormat::NONE ||
+            regs.color_mask[regs.color_mask_common ? 0 : rt_index].raw == 0) {
+            continue;
+        }
+        if (!texture_cache_locked && !lock.owns_lock()) {
+            lock.lock();
+        }
+        if (!texture_cache.ColorTargetWrittenBeforeThisFrame(rt_index)) {
+            return false;
+        }
+        writes_color = true;
+    }
+    return writes_color;
 }
 
 bool PipelineCache::CanSkipDraw() const noexcept {

@@ -118,7 +118,8 @@ public:
                            TextureCache& texture_cache, VideoCore::ShaderNotify& shader_notify_);
     ~PipelineCache();
 
-    [[nodiscard]] GraphicsPipeline* CurrentGraphicsPipeline();
+    /// texture_cache_locked: the caller holds texture_cache.mutex.
+    [[nodiscard]] GraphicsPipeline* CurrentGraphicsPipeline(bool texture_cache_locked = false);
 
     [[nodiscard]] ComputePipeline* CurrentComputePipeline(u64* native_key = nullptr);
 
@@ -148,9 +149,11 @@ private:
     [[nodiscard]] bool CanSkipDraw() const noexcept;
 
     /// The stricter test for native draws once they have waited their budget.
-    [[nodiscard]] bool CanSkipNativeDraw() const noexcept;
+    [[nodiscard]] bool CanSkipNativeDraw();
 
     void ChargeNativeDrawWait(std::chrono::steady_clock::duration waited) noexcept;
+
+    void NoteNativeSkip(bool draw) noexcept;
 
     /// Builds the pipeline of graphics_key, which is not in graphics_cache. Returns false when it
     /// was left translating on a worker thread (the draw is skipped), true when graphics_cache
@@ -250,6 +253,10 @@ private:
     std::chrono::microseconds native_draw_wait_budget{};
     /// What is left of native_draw_wait_budget this frame (GPU thread only).
     std::chrono::microseconds native_draw_wait_left{};
+    /// Set by CurrentGraphicsPipeline for the lookup it makes.
+    bool texture_cache_locked{};
+    u64 skipped_native_draws{};
+    u64 skipped_native_dispatches{};
     size_t num_translation_threads{};
 
     GraphicsPipelineCacheKey graphics_key{};
