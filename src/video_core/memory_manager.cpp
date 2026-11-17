@@ -12,7 +12,6 @@
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/logging.h"
-#include "common/nx2_sync_serial.h"
 #include "core/core.h"
 #include "core/hle/kernel/k_page_table.h"
 #include "core/hle/kernel/k_process.h"
@@ -29,19 +28,6 @@
 #include "video_core/texture_cache/util.h"
 
 namespace Tegra {
-
-namespace {
-/// EDEN_NX2_UBO_KEEP: a write around the caches bumps the sync serial again once it landed
-/// (MarkUntracked's bump comes before it).
-struct BumpSyncSerialAfter {
-    bool bump = true;
-    ~BumpSyncSerialAfter() {
-        if (bump) {
-            Common::Nx2SyncSerial::Bump();
-        }
-    }
-};
-} // Anonymous namespace
 namespace {
 // EDEN_NX2_STAGE_CHECK: the paths below reach the rasterizer's caches (through the proxy from A,
 // nx2_stage_proxy.h), which belong to the stages below A. From A they must run inside a join
@@ -414,7 +400,6 @@ void MemoryManager::Write(GPUVAddr addr, T data) {
     WaitPendingWrites(addr, sizeof(T));
     // Semaphore and report words: no cache is told.
     MarkUntracked(addr, sizeof(T));
-    const BumpSyncSerialAfter bump_after{};
     if (auto page_pointer{GetPointer(addr)}; page_pointer) {
         // NOTE: Avoid adding any extra logic to this fast-path block
         std::memcpy(page_pointer, &data, sizeof(T));
@@ -700,7 +685,6 @@ void MemoryManager::WriteBlockUnsafe(GPUVAddr gpu_dest_addr, const void* src_buf
     if (!caches_told) {
         MarkUntracked(gpu_dest_addr, size);
     }
-    const BumpSyncSerialAfter bump_after{!caches_told};
     if (WriteSmall(gpu_dest_addr, src_buffer, size)) {
         return;
     }

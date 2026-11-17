@@ -101,14 +101,6 @@ inline int Nx2GpuWrittenFilter() {
 /// EDEN_NX2_UNIFORM_SYNC_SKIP: EDEN_NX2_LIGHT_SYNC_SKIP for the uniform way's light draws too
 /// (GraphicsPipeline::ConfigureUniforms; same anchor chain, frame and epoch guard). =0 as before;
 /// =2 synchronizes the streams it would skip and logs any that uploaded.
-/// EDEN_NX2_UBO_KEEP: a uniform buffer bound to the same stage slot and range as the slot's last
-/// bind takes that bind's slice again without reading guest memory while nothing could have
-/// changed the range (Common::Nx2SyncSerial, BufferCache::uniform_write_log). =0 as before; =2
-/// reads and compares anyway, binds as before and logs any range that changed.
-inline int Nx2UniformKeep() {
-    static std::atomic<s8> mode{-1};
-    return ReadNx2Mode(mode, "EDEN_NX2_UBO_KEEP");
-}
 inline int Nx2UniformSyncSkip() {
     static std::atomic<s8> mode{-1};
     return ReadNx2Mode(mode, "EDEN_NX2_UNIFORM_SYNC_SKIP");
@@ -579,37 +571,6 @@ public:
     bool plain_light_draw = false;
     /// EDEN_NX2_UNIFORM_SYNC_SKIP: the same, set by GraphicsPipeline::ConfigureUniforms.
     bool uniform_light_draw = false;
-
-    /// EDEN_NX2_UBO_KEEP: the last ranges of guest memory written with a notice to this cache
-    /// (constant buffer and inline data, DMA, CPU writes the caches watch), in order.
-    struct UniformWriteLog {
-        static constexpr u64 SIZE = 128;
-        std::array<std::pair<DAddr, DAddr>, SIZE> ranges{};
-        u64 count = 0;
-    } uniform_write_log;
-    u64 uniform_keeps = 0;           ///< Binds EDEN_NX2_UBO_KEEP made without reading
-    u64 uniform_keep_checks = 0;     ///< =2: keeps compared with guest memory instead
-    u64 uniform_keep_mismatches = 0; ///< =2: of them, ranges that had changed
-    void NoteUniformWrite(DAddr device_addr, u64 size) {
-        UniformWriteLog& log = uniform_write_log;
-        log.ranges[log.count % UniformWriteLog::SIZE] = {device_addr, device_addr + size};
-        ++log.count;
-    }
-    /// Whether a write noted since the log counted `since` may have reached the range.
-    [[nodiscard]] bool UniformWrittenSince(u64 since, DAddr device_addr, u64 size) const {
-        const UniformWriteLog& log = uniform_write_log;
-        if (log.count - since > UniformWriteLog::SIZE) {
-            return true;
-        }
-        const DAddr end = device_addr + size;
-        for (u64 i = since; i < log.count; ++i) {
-            const auto& [begin, write_end] = log.ranges[i % UniformWriteLog::SIZE];
-            if (begin < end && device_addr < write_end) {
-                return true;
-            }
-        }
-        return false;
-    }
     /// EDEN_NX2_VERTEX_CLEAN=2: streams whose flag UpdateVertexBuffer cleared as disabled.
     u32 vertex_clean_mask = 0;
 

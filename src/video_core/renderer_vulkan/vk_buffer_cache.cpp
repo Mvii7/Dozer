@@ -602,43 +602,6 @@ void BufferCacheRuntime::NoteStageUniform(size_t stage, u32 index, const Uniform
     }
 }
 
-const BufferCacheRuntime::UniformSlice* BufferCacheRuntime::KeptUniform(size_t stage, u32 index,
-                                                                         DAddr device_addr,
-                                                                         u32 size,
-                                                                         u64 sync_serial) const {
-    if (staged || size == 0 || stage >= UNIFORM_STAGES || index >= UNIFORM_STAGE_SLOTS) {
-        return nullptr;
-    }
-    const StageUniform& last = stage_uniforms[stage][index];
-    if (last.serial == 0 || last.keep_sync != sync_serial || last.keep_addr != device_addr ||
-        last.keep_size != size) {
-        return nullptr;
-    }
-    const UniformSlice& slice = uniform_slices[last.slot];
-    if (slice.serial != last.serial || slice.tick != scheduler.CurrentTick() || slice.size < size) {
-        return nullptr;
-    }
-    return &slice;
-}
-
-void BufferCacheRuntime::BindKeptUniform(size_t stage, u32 index, const UniformSlice& slice,
-                                         u32 size, u64 writes) {
-    guest_descriptor_queue.AddBuffer(slice.buffer, slice.buffer_address, slice.offset, size);
-    stage_uniforms[stage][index].keep_writes = writes;
-}
-
-void BufferCacheRuntime::NoteUniformKeep(size_t stage, u32 index, DAddr device_addr, u32 size,
-                                         u64 sync_serial, u64 writes) {
-    if (staged || stage >= UNIFORM_STAGES || index >= UNIFORM_STAGE_SLOTS) {
-        return;
-    }
-    StageUniform& last = stage_uniforms[stage][index];
-    last.keep_size = size;
-    last.keep_addr = device_addr;
-    last.keep_sync = sync_serial;
-    last.keep_writes = writes;
-}
-
 bool BufferCacheRuntime::BindMappedUniformBufferReuse(size_t stage, u32 index, DAddr device_addr,
                                                       u32 size) {
     if (staged) [[unlikely]] {

@@ -159,12 +159,6 @@
 #EDEN_NX2_UBO_DIRECT=0
 #EDEN_NX2_UBO_STAGE=0
 #EDEN_NX2_UBO_BIND_SKIP=0
-# UBO_KEEP: a uniform buffer bound to the same slot and range as last time is bound again without
-# reading guest memory while no write notice reached the range and nothing let the guest CPU
-# change it (a submission, a semaphore or syncpoint, a write around the caches, a mapping).
-# =2 compares anyway and logs "EDEN_NX2_UBO_KEEP: ... changed" for any range a keep would have
-# got wrong; the "Uniform buffer reuse" line counts kept, checked and changed binds.
-#EDEN_NX2_UBO_KEEP=0
 #EDEN_NX2_SSBO_FAST=0
 #EDEN_NX2_SSBO_MEMO=0
 #EDEN_NX2_SYNC_SETS=0
