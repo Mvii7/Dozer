@@ -176,6 +176,11 @@ void ConfigureBananza::RetranslateUI() {
         tr("Scales the screen sizes at which models with thresholds of their own (Donkey Kong: "
            "0.57 and 0.42 of the screen; other characters) switch to simpler meshes. Higher: "
            "simpler meshes sooner, cheaper but coarser.")};
+    texts[Quality::ActorDrawDistance] = {
+        tr("Actor draw distance"),
+        tr("Scales how far away actors (objects, enemies, scenery pieces: over 2000 of them use "
+           "it) stop being drawn, from the game's own distances (50 to 1200 by actor, 200 by "
+           "default). Lower: they are clipped closer to you. Actors marked never to clip stay.")};
     texts[Quality::MeshSimplify] = {
         tr("Terrain mesh simplification"),
         tr("How the game simplifies the destructible terrain's meshes: 1 Normal (the game's "

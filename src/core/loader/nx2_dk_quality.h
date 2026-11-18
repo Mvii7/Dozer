@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -42,6 +43,7 @@ enum Id : size_t {
     ColorDecalMax,     ///< ColorDecalMaxNum
     MeshSimplify,      ///< terrain MeshSimplifyType: 1 Normal, 2 High, 3 SuperHigh, 4 NoSimplify, 5 Low
     CharacterLod,      ///< each model's own LodThreshold0-2 (characters), % of the game's
+    ActorDrawDistance, ///< the actors' far clip distances (FarClipLevel), % of the game's
     GgxFilterOff,      ///< IsUseGGXFilter forced off (reflection cube map filtering)
     CubeMapOcclusionOff, ///< IsUseCubeMapOcclusionCheck forced off
     OcclusionDepth,    ///< OcclusionQueryThresholdDepth, % of the game's
@@ -117,6 +119,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"color_decal_max", "EDEN_NX2_DKQ_COLOR_DECAL_MAX", 1, 660, 660},
     {"mesh_simplify", "EDEN_NX2_DKQ_MESH_SIMPLIFY", 1, 5, 1},
     {"character_lod", "EDEN_NX2_DKQ_CHARACTER_LOD", 25, 400, 100},
+    {"actor_draw_distance", "EDEN_NX2_DKQ_ACTOR_DRAW_DISTANCE", 10, 100, 100},
     {"ggx_filter_off", "EDEN_NX2_DKQ_GGX_FILTER_OFF", 1, 1, 0},
     {"cubemap_occlusion_off", "EDEN_NX2_DKQ_CUBEMAP_OCCLUSION_OFF", 1, 1, 0},
     {"occlusion_depth", "EDEN_NX2_DKQ_OCCLUSION_DEPTH", 10, 400, 100},
@@ -746,6 +749,33 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
             }
             result[CharacterLod] = State::Applied;
+        }
+    }
+
+    // An actor's ClippingParam names a FarClipLevel (NonClip, Default, EasyClipLv1-3,
+    // HardClipLv1-5); the distance of each level is a table of the read-only data:
+    //   -1 (never clipped), 200, 50, 100, 150, 300, 450, 700, 900, 1200
+    // Each distance but NonClip's is scaled in place.
+    if (const int distance = set(ActorDrawDistance); distance != 0) {
+        constexpr std::array<float, 10> Table{-1.0f, 200.0f, 50.0f,  100.0f, 150.0f,
+                                              300.0f, 450.0f, 700.0f, 900.0f, 1200.0f};
+        std::array<u8, sizeof(Table)> bytes{};
+        std::memcpy(bytes.data(), Table.data(), bytes.size());
+        size_t found = 0, at = 0;
+        for (auto it = std::search(text.begin(), text.end(), bytes.begin(), bytes.end());
+             it != text.end() && found < 2;
+             it = std::search(it + 4, text.end(), bytes.begin(), bytes.end())) {
+            if ((it - text.begin()) % 4 == 0) {
+                at = static_cast<size_t>(it - text.begin());
+                ++found;
+            }
+        }
+        if (found == 1) {
+            for (size_t i = 1; i < Table.size(); ++i) {
+                const float scaled = Table[i] * percent(distance);
+                std::memcpy(text.data() + at + i * sizeof(float), &scaled, sizeof(scaled));
+            }
+            result[ActorDrawDistance] = State::Applied;
         }
     }
 

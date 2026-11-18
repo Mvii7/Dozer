@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <iterator>
 #include <span>
 #include <string_view>
@@ -276,6 +277,30 @@ TEST_CASE("Nx2DkQuality: the character LOD thresholds", "[core]") {
         expected[routine + 4] = 0x40000000; // 2.0
     }
     REQUIRE(text.words == expected);
+}
+
+TEST_CASE("Nx2DkQuality: the actors' far clip distances", "[core]") {
+    // The table is in the read-only data after the text segment
+    Text text;
+    const std::array<float, 10> table{-1.0f, 200.0f, 50.0f,  100.0f, 150.0f,
+                                      300.0f, 450.0f, 700.0f, 900.0f, 1200.0f};
+    std::vector<u32> image = text.words;
+    image.resize(image.size() + 0x40, 0);
+    const size_t at = text.words.size() + 0x10;
+    std::memcpy(&image[at], table.data(), sizeof(table));
+    std::span<u8> bytes{reinterpret_cast<u8*>(image.data()), image.size() * 4};
+    const Result result = Apply(bytes, TextSize, AlignedSize, Only(ActorDrawDistance, 50));
+    REQUIRE(result[ActorDrawDistance] == State::Applied);
+    std::array<float, 10> now{};
+    std::memcpy(now.data(), &image[at], sizeof(now));
+    REQUIRE(now[0] == -1.0f); // never clipped stays so
+    REQUIRE(now[1] == 100.0f);
+    REQUIRE(now[2] == 25.0f);
+    REQUIRE(now[9] == 600.0f);
+    // Without the table (or with two) it is not applied
+    Text plain;
+    REQUIRE(Apply(plain.Bytes(), TextSize, AlignedSize, Only(ActorDrawDistance, 50))[ActorDrawDistance] ==
+            State::Missed);
 }
 
 TEST_CASE("Nx2DkQuality: debris off", "[core]") {
