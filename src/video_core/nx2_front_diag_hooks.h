@@ -75,10 +75,10 @@ inline int ReadPeekMode() {
             return 0;
         }
         const char* const value = std::getenv("EDEN_NX2_DMA_READ_PEEK");
-        if (value == nullptr || (value[0] != '1' && value[0] != '2')) {
-            return 0;
+        if (value == nullptr) {
+            return 1;
         }
-        return value[0] == '2' ? 2 : 1;
+        return value[0] == '2' ? 2 : value[0] == '0' ? 0 : 1;
     }();
     return mode;
 }

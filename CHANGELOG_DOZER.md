@@ -17,11 +17,11 @@ and `=0` brings back the 2.0.0 code path.
   4 KiB page instead of a tree, so each change costs its pages instead of a tree walk (about 10%
   of the memory stage went to the tree). `EDEN_NX2_PAGE_RANGES=0` brings back the tree;
   start-safe.bat does.
-- Split GPU thread (opt-in, `EDEN_NX2_DMA_READ_PEEK=1` with `EDEN_NX2_ACQUIRE_PEEK=1`): an MME
-  DMA read no longer drains the back when no write the front sent and the back has not run
-  reaches its words, no work but draws is queued and the buffer cache holds no newer data. `=2`
-  drains and logs the reads the drain changed (none in Donkey Kong Bananza). Off by default:
-  noting what the front sends costs it more than the drains save there.
+- Split GPU thread, with `EDEN_NX2_ACQUIRE_PEEK=1` (Donkey Kong Bananza's preset): an MME DMA
+  read no longer drains the back when no write the front sent and the back has not run reaches
+  its words, no work but draws is queued and the buffer cache holds no newer data. In Donkey Kong
+  Bananza 76-84% of them go on without one. `EDEN_NX2_DMA_READ_PEEK=0` drains as before, `=2`
+  drains and logs the reads the drain changed (none of 55,084 there).
 
 ## Dozer 0.1.6 (`v0.1.6`)
 
