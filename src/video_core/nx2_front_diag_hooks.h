@@ -64,6 +64,30 @@ inline bool On() {
     return value != 0;
 }
 
+/// EDEN_NX2_DMA_READ_PEEK (with EDEN_NX2_ACQUIRE_PEEK=1; =1 on, =2 verify, off otherwise): an
+/// MME DMA read goes on without draining the back when no write still queued for it may reach the
+/// words (ReadMayGoOn). The writes the front sends are noted for it as for the diag lines
+/// (Tracking): in Donkey Kong Bananza that costs the front more than the drains it saves.
+inline int ReadPeekMode() {
+    static const int mode = [] {
+        const char* const acquire = std::getenv("EDEN_NX2_ACQUIRE_PEEK");
+        if (acquire == nullptr || acquire[0] != '1') {
+            return 0;
+        }
+        const char* const value = std::getenv("EDEN_NX2_DMA_READ_PEEK");
+        if (value == nullptr) {
+            return 1;
+        }
+        return value[0] == '2' ? 2 : value[0] == '0' ? 0 : 1;
+    }();
+    return mode;
+}
+
+/// Whether the front notes the writes and work it sends (the diag lines, or ReadPeekMode).
+inline bool Tracking() {
+    return On() || ReadPeekMode() != 0;
+}
+
 /// EDEN_NX2_FRONT_DIAG_REGS=0: the register table off (Maxwell3D's front reads it once; its same
 /// value filter stays armed then).
 inline bool RegistersOn() {
@@ -171,8 +195,8 @@ struct State {
     // Registers of the engines whose writes DmaPusher's methods start (NoteEngineMethod).
     struct EngineShadow {
         const void* engine;
-        std::array<u32, 0x200> regs;
-        std::bitset<0x200> known; ///< Registers written since (not by a macro since)
+        std::array<u32, 0x6c4> regs;
+        std::bitset<0x6c4> known; ///< Registers written since (not by a macro since)
     };
     std::vector<EngineShadow> engines;
     // RESETFIX: vertex programs by address, the indirect draw reset program or not (read again
@@ -389,6 +413,38 @@ inline bool WritePending(const Tegra::MemoryManager& memory, State& state, GPUVA
     return false;
 }
 
+/// KeplerCompute methods the front sent that start work or write (Tracking), for the
+/// EDEN_NX2_DMA_READ_PEEK line: launches from memory (0xAE-0xB0), inline QMDs (0x107), report
+/// semaphore releases of a payload (noted as writes) and other reports (work).
+struct ComputeSends {
+    u64 launches{};
+    u64 inline_qmds{};
+    u64 report_releases{};
+    u64 other_reports{};
+};
+inline ComputeSends g_compute_sends;
+
+/// Why an MME DMA read drains (ReadMayGoOn): none, a queued write over the words, work queued
+/// whose writes the front cannot range (any but draws: their results stay in the caches, which
+/// the caller asks), or writes dropped from the list.
+enum class ReadBlock : u8 { None, Write, Work, Overflow };
+
+inline ReadBlock ReadMayGoOn(const Tegra::MemoryManager& memory, GPUVAddr address, u64 size,
+                             u32* work_out) {
+    State& state = Window();
+    const u64 consumed = GpuSplit::Get().DiagConsumed();
+    const auto all = state.pending.Query(0, 0, consumed);
+    constexpr u32 allowed = 1U << static_cast<u32>(WorkKind::Draw);
+    *work_out = all.work & ~allowed;
+    if (all.overflow) {
+        return ReadBlock::Overflow;
+    }
+    if (*work_out != 0) {
+        return ReadBlock::Work;
+    }
+    return WritePending(memory, state, address, size) ? ReadBlock::Write : ReadBlock::None;
+}
+
 /// A draw ended with the vertex program at `program`: RESETFIX writes records for it.
 inline void NoteDrawEnd(const Tegra::MemoryManager& memory, GPUVAddr program) {
     State& state = Window();
@@ -483,8 +539,25 @@ inline void NoteEngineMethod(const Tegra::MemoryManager& memory, const void* eng
             known.reset();
             return;
         }
-        if ((method >= 0xAE && method <= 0xB0) || method == 0x107 || method == 0x6C3) {
+        if (method == 0x6C3) {
+            // SET_REPORT_SEMAPHORE_D (KeplerCompute::ProcessNativeReportSemaphore): a release of
+            // the payload without a reduction writes the word (or 16 bytes) as a 3D one does.
+            const u32 control = args[count - 1];
+            const bool release = (control & 3) == 0 && ((control >> 3) & 1) == 0;
+            if (release && known[0x6C0] && known[0x6C1] && known[0x6C2]) {
+                const GPUVAddr report = (GPUVAddr{regs[0x6C0] & 0x1ffffff} << 32) | regs[0x6C1];
+                const bool one_word = ((control >> 28) & 1) != 0;
+                NoteWrite(memory, WriteKind::Report, report, one_word ? 4 : 16);
+                ++g_compute_sends.report_releases;
+            } else {
+                NoteWork(WorkKind::Compute);
+                ++g_compute_sends.other_reports;
+            }
+            return;
+        }
+        if ((method >= 0xAE && method <= 0xB0) || method == 0x107) {
             NoteWork(WorkKind::Compute);
+            ++(method == 0x107 ? g_compute_sends.inline_qmds : g_compute_sends.launches);
             return;
         }
     }
