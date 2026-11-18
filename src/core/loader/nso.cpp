@@ -26,6 +26,7 @@
 #include "core/hle/kernel/k_thread.h"
 #include "core/loader/nso.h"
 #include "core/loader/nx2_dk_dynamic_fps.h"
+#include "core/loader/nx2_dk_shadow.h"
 #include "core/loader/nx2_mkw_dynamic_fps.h"
 #include "core/memory.h"
 
@@ -229,6 +230,27 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
                             dk_dyn->controller_matches, dk_dyn->sleep_matches,
                             dk_dyn->step_matches);
             }
+        }
+    }
+
+    // EDEN_NX2_DK_SHADOW_CASCADES=<1-3> (unset by default): Bananza's shadow quality
+    // (nx2_dk_shadow.h).
+    static const int dk_shadow_cascades =
+        Nx2DkShadow::CascadesFrom(std::getenv(Nx2DkShadow::Switch));
+    if (dk_shadow_cascades != 0 && Nx2DkShadow::IsTarget(process.GetProgramId(), name)) {
+        const auto& text = nso_header.segments[0];
+        const size_t text_start = module_start + text.location;
+        const std::span<u8> image{codeset.memory};
+        if (text_start <= image.size() &&
+            Nx2DkShadow::Apply(image.subspan(text_start), text.size, PageAlignSize(text.size),
+                               dk_shadow_cascades)) {
+            LOG_INFO(Loader, "Donkey Kong Bananza: sun shadow cascades capped at {} ({})",
+                     dk_shadow_cascades, Nx2DkShadow::Switch);
+        } else {
+            LOG_WARNING(Loader,
+                        "Donkey Kong Bananza: {} not applied: the shadow setup is not where "
+                        "expected",
+                        Nx2DkShadow::Switch);
         }
     }
 

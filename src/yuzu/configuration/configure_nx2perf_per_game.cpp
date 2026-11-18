@@ -147,6 +147,28 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         });
     }
 
+    // Bananza's shadow quality, under its boxes: the sun shadow's most cascades, one per step
+    if (game == Perf::Game::Bananza) {
+        shadow = new QComboBox(this);
+        shadow->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        shadow->addItem(tr("Low"));
+        shadow->addItem(tr("Medium"));
+        shadow->addItem(tr("High"));
+        shadow->addItem(tr("Very high"));
+        shadow->setToolTip(
+            tr("How many cascades the sun's shadow is drawn in: Low 1, Medium 2, High 3, Very "
+               "high 4 (the game's own). Each cascade draws every shadow caster again, so a lower "
+               "quality means fewer draws and blurrier shadows further away."));
+        form->addRow(tr("Shadow quality"), shadow);
+        connect(shadow, &QComboBox::activated, this, [this](int index) {
+            const int chosen = Perf::ShadowLow + index;
+            own.dk_shadow = chosen == UISettings::values.nx2perf.dk_shadow
+                                ? std::nullopt
+                                : std::optional<int>{chosen};
+            Refresh();
+        });
+    }
+
     Refresh();
 }
 
@@ -167,6 +189,10 @@ void ConfigureNx2PerfPerGame::Refresh() {
         }
         // The game's own boxes have no global setting to go back to.
         ShowReset(row.reset, row.key < Perf::Keys.size() && own.boxes[row.key].has_value());
+    }
+    if (shadow != nullptr) {
+        const QSignalBlocker blocker{shadow};
+        shadow->setCurrentIndex(now.dk_shadow - Perf::ShadowLow);
     }
 }
 

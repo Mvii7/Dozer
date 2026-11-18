@@ -44,5 +44,6 @@ private:
     Core::Nx2PerfSettings::Overrides own;
     QComboBox* preset = nullptr;
     QPushButton* preset_reset = nullptr;
+    QComboBox* shadow = nullptr; ///< Bananza's shadow quality
     std::vector<Row> rows;
 };

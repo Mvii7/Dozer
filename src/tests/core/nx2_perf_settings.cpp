@@ -352,7 +352,7 @@ TEST_CASE("Nx2PerfSettings: a variable set outside the program wins", "[core]") 
     REQUIRE(Plan(AllOff(), Game::Bananza, [](std::string_view) { return true; }).empty());
 }
 
-TEST_CASE("Nx2PerfSettings: every name is one a preset can set", "[core]") {
+TEST_CASE("Nx2PerfSettings: every name is one a preset or a game's setting can set", "[core]") {
     std::set<std::string_view> wanted;
     for (const Preset preset :
          {Preset::Balanced, Preset::Performance, Preset::Reactive, Preset::Safe}) {
@@ -361,6 +361,12 @@ TEST_CASE("Nx2PerfSettings: every name is one a preset can set", "[core]") {
                 wanted.insert(var.name);
             }
         }
+    }
+    // Bananza's shadow quality is no preset's
+    Switches low_shadow = Balanced();
+    low_shadow.dk_shadow = ShadowLow;
+    for (const Var& var : Wanted(low_shadow, Game::Bananza)) {
+        wanted.insert(var.name);
     }
     std::set<std::string_view> names;
     ForEachName([&](std::string_view name) { names.insert(name); });
@@ -494,7 +500,8 @@ TEST_CASE("Nx2PerfSettings: a game's overrides read back what was written", "[co
 
     std::map<std::string, int> ini;
     SaveOverrides(overrides, [&](std::string_view key, int value) { ini[std::string{key}] = value; });
-    REQUIRE(ini.size() == KeyCount + 1);
+    REQUIRE(ini.size() == KeyCount + 2); // the boxes, the preset and the shadow quality
+    REQUIRE(ini.at("bananza_shadow_quality") == -1);
     REQUIRE(ini.at("preset") == static_cast<int>(Preset::Safe));
     REQUIRE(ini.at("read_traps") == 1);
     REQUIRE(ini.at("jit_same") == 0);
@@ -645,4 +652,36 @@ TEST_CASE("Nx2PerfSettings: Bananza's foliage off follows the preset", "[core]")
         old.values.erase("bananza_foliage_off");
         REQUIRE(old.Read() == FromPreset(preset, Balanced()));
     }
+}
+
+TEST_CASE("Nx2PerfSettings: Bananza's shadow quality", "[core]") {
+    // Very high, the game's own, sets nothing; the presets keep the game's choice.
+    REQUIRE(Performance().dk_shadow == ShadowVeryHigh);
+    const auto cascades = [](const std::vector<Var>& vars) -> std::string_view {
+        for (const Var& var : vars) {
+            if (var.name == "EDEN_NX2_DK_SHADOW_CASCADES") {
+                return var.value;
+            }
+        }
+        return {};
+    };
+    REQUIRE(cascades(Wanted(Performance(), Game::Bananza)).empty());
+    Overrides own;
+    own.dk_shadow = 2; // Medium
+    REQUIRE_FALSE(own.Empty());
+    const Switches medium = ForGame(Balanced(), Game::Bananza, own);
+    REQUIRE(medium.dk_shadow == 2);
+    REQUIRE(cascades(Wanted(medium, Game::Bananza)) == "2");
+    REQUIRE(cascades(Wanted(medium, Game::MarioKartWorld)).empty());
+    REQUIRE(FromPreset(Preset::Safe, medium).dk_shadow == 2);
+    own.dk_shadow = ShadowLow;
+    REQUIRE(cascades(Wanted(ForGame(Balanced(), Game::Bananza, own), Game::Bananza)) == "1");
+    // Stored per game, read back; anything outside the steps is none.
+    std::map<std::string, int> ini;
+    SaveOverrides(own, [&](std::string_view key, int value) { ini[std::string{key}] = value; });
+    REQUIRE(ini.at("bananza_shadow_quality") == 1);
+    REQUIRE(LoadOverrides([&](std::string_view key) { return ini.at(std::string{key}); }) == own);
+    ini["bananza_shadow_quality"] = 5;
+    REQUIRE_FALSE(
+        LoadOverrides([&](std::string_view key) { return ini.at(std::string{key}); }).dk_shadow);
 }

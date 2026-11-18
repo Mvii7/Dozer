@@ -52,6 +52,10 @@ constexpr int IndexOf(Preset preset) {
     return static_cast<int>(PresetOrder.size()) - 1;
 }
 
+/// Bananza's shadow quality steps: the sun shadow's most cascades.
+inline constexpr int ShadowLow = 1;
+inline constexpr int ShadowVeryHigh = 4;
+
 struct Switches {
     bool read_traps = false;       ///< on leaves EDEN_NX2_READ_TRAPS unset; off sets it to 0
     bool split_gpu_thread = true;  ///< EDEN_NX2_BACK_STAGES=1 + EDEN_NX2_BACK_CUTS=a
@@ -65,6 +69,9 @@ struct Switches {
     bool mkw_dyn = true;           ///< EDEN_NX2_MKW_DYN=1, Mario Kart World only
     // Game-specific, but set by the presets: on in Performance and Experimental, off in the others.
     bool dk_foliage_off = true;    ///< EDEN_NX2_DK_FOLIAGE_OFF=1, Bananza only
+    /// Bananza's shadow quality, kept per game only: the sun shadow's most cascades, Low 1 to
+    /// Very high 4 (the game's own); below it EDEN_NX2_DK_SHADOW_CASCADES=<n>. No preset sets it.
+    int dk_shadow = ShadowVeryHigh;
     Preset preset = Preset::Performance;
 
     bool operator==(const Switches&) const = default;
@@ -142,9 +149,10 @@ struct Overrides {
     std::optional<Preset> preset;
     bool global_preset = false;
     std::array<std::optional<bool>, KeyCount> boxes{};
+    std::optional<int> dk_shadow; ///< Bananza's shadow quality, ShadowLow to ShadowVeryHigh
 
     constexpr bool Empty() const {
-        if (preset || global_preset) {
+        if (preset || global_preset || dk_shadow) {
             return false;
         }
         for (const auto& box : boxes) {
@@ -165,6 +173,9 @@ constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) 
             switches.*KeyAt(i).field = *overrides.boxes[i];
         }
     }
+    if (overrides.dk_shadow) {
+        switches.dk_shadow = *overrides.dk_shadow;
+    }
     return switches;
 }
 
@@ -172,7 +183,8 @@ constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) 
 inline constexpr int FollowGlobalPreset = -2;
 
 /// Reads a game's overrides through `read(key)`: -1 for no override, 0 off, 1 on; "preset" is
-/// a preset number, FollowGlobalPreset, or -1 (Custom, or anything else, is none).
+/// a preset number, FollowGlobalPreset, or -1 (Custom, or anything else, is none);
+/// "bananza_shadow_quality" a shadow quality step or -1.
 template <typename Read>
 Overrides LoadOverrides(Read&& read) {
     Overrides overrides;
@@ -187,6 +199,10 @@ Overrides LoadOverrides(Read&& read) {
         if (value == 0 || value == 1) {
             overrides.boxes[i] = value == 1;
         }
+    }
+    if (const int shadow = read("bananza_shadow_quality");
+        shadow >= ShadowLow && shadow <= ShadowVeryHigh) {
+        overrides.dk_shadow = shadow;
     }
     return overrides;
 }
@@ -203,6 +219,7 @@ void SaveOverrides(const Overrides& overrides, Write&& write) {
         const auto& box = overrides.boxes[i];
         write(KeyAt(i).name, box ? static_cast<int>(*box) : -1);
     }
+    write("bananza_shadow_quality", overrides.dk_shadow.value_or(-1));
 }
 
 /// A stored preset number. Anything else is Custom (a file edited by hand).
@@ -237,6 +254,7 @@ constexpr Switches FromPreset(Preset preset, const Switches& current) {
     switches.preset = preset;
     switches.dk_dyn = current.dk_dyn;
     switches.mkw_dyn = current.mkw_dyn;
+    switches.dk_shadow = current.dk_shadow;
     return switches;
 }
 
@@ -469,7 +487,7 @@ inline constexpr std::array<std::string_view, 68> SafeOff{
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
-inline constexpr std::array<std::string_view, 15> Names{
+inline constexpr std::array<std::string_view, 16> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
@@ -477,7 +495,7 @@ inline constexpr std::array<std::string_view, 15> Names{
     "EDEN_NX2_PRESENT_INTERVAL_WORD", "EDEN_NX2_MODE_PACE",
     "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
-    "EDEN_NX2_DK_FOLIAGE_OFF",
+    "EDEN_NX2_DK_FOLIAGE_OFF", "EDEN_NX2_DK_SHADOW_CASCADES",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -521,6 +539,11 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
         }
         if (switches.dk_foliage_off) {
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_OFF", "1"});
+        }
+        if (switches.dk_shadow >= ShadowLow && switches.dk_shadow < ShadowVeryHigh) {
+            static constexpr std::array<std::string_view, 3> Cascades{"1", "2", "3"};
+            vars.push_back({"EDEN_NX2_DK_SHADOW_CASCADES",
+                            Cascades[static_cast<std::size_t>(switches.dk_shadow - 1)]});
         }
         vars.push_back({"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"});
         vars.push_back({"EDEN_NX2_MODE_PACE", "2"});

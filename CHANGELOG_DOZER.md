@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Donkey Kong Bananza: a **Shadow quality** box in its Properties > Tuning, under Foliage off: Low,
+  Medium, High and Very high cap the sun shadow's cascades at 1, 2, 3 and the game's own 4
+  (`EDEN_NX2_DK_SHADOW_CASCADES=<1-3>`, `core/loader/nx2_dk_shadow.h`). Each cascade draws the
+  shadow casters again. No preset changes it.
 - Split GPU thread: an equal semaphore acquire goes on without draining the back when the last
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are

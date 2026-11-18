@@ -186,7 +186,9 @@ program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE
 it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
 **Foliage off** box under its Dynamic frame rate box (`DK_FOLIAGE_OFF=1`): ticked by the
 Performance and Experimental presets, unticked by Balanced and Safe, and changeable per game; see
-"Donkey Kong Bananza foliage off" below. The log says which were set ("Dozer settings for <title id>
+"Donkey Kong Bananza foliage off" below. Under it, **Shadow quality** (Low, Medium, High, Very
+high: the sun shadow's 1 to 4 cascades, Very high the game's own; `DK_SHADOW_CASCADES=<1-3>`), which
+no preset changes; see "Donkey Kong Bananza shadow quality" below. The log says which were set ("Dozer settings for <title id>
 ...").
 
 **When a change takes effect.** The switches are read once per session. The settings take effect
@@ -357,6 +359,16 @@ is written to disk. Foliage baked into a stage may still be loaded but is not dr
 `start-safe.bat` leave the foliage on. In the menu program it is the **Foliage off** box in
 Bananza's Properties > Tuning, which the Performance and Experimental presets tick and Balanced and
 Safe untick. It applies when the game starts.
+
+## Donkey Kong Bananza shadow quality
+
+`EDEN_NX2_DK_SHADOW_CASCADES=<1-3>` caps the cascades Bananza's sun shadow is drawn in (the game
+sets up to 4). Each cascade draws every shadow caster again, so fewer cascades means fewer draws;
+the remaining ones are stretched over the same distance, so shadows further away get blurrier. The
+main module is patched as it loads, where the game sets up each shadow; the log says whether it
+was ("sun shadow cascades capped at ..."). In the menu program it is the **Shadow quality** box in
+Bananza's Properties > Tuning: Low (1), Medium (2), High (3) and Very high (the game's own, unset).
+No preset changes it. It applies when the game starts.
 
 ## Mario Kart World dynamic frame rate (MKW-DYN)
 
