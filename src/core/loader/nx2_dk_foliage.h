@@ -25,7 +25,7 @@ struct Settings {
     int cap = 0;          ///< % of the models drawn / kept alive at once, 0: the game's
     bool frustum_off = false;
     int density = 0;      ///< % of the dynamic placements, 0: the game's
-    bool off = false;     ///< no foliage at all
+    bool off = false;     ///< no foliage at all (the Tuning tab's Foliage off box)
     int far_clip = 0;     ///< % of each model's far clip distance
     int lod = 0;          ///< % of each model's LOD thresholds
     int emit = 0;         ///< % of the effects started per frame
@@ -55,9 +55,18 @@ inline int ReadEnv(Id id) {
     return text != nullptr ? Nx2DkQuality::Sanitize(std::atoi(text), knob) : 0;
 }
 
+/// EDEN_NX2_DK_FOLIAGE_OFF=1: Bananza's Foliage off box in the Tuning tab (on in the Performance and
+/// Experimental presets).
+constexpr const char* OffSwitch = "EDEN_NX2_DK_FOLIAGE_OFF";
+
+inline bool OffFromEnvironment() {
+    const char* const value = std::getenv(OffSwitch);
+    return value != nullptr && std::string_view{value} == "1";
+}
+
 inline Settings FromEnvironment() {
     return {ReadEnv(Id::FoliageCap),     ReadEnv(Id::FoliageFrustumOff) != 0,
-            ReadEnv(Id::FoliageDensity), ReadEnv(Id::FoliageOff) != 0,
+            ReadEnv(Id::FoliageDensity), OffFromEnvironment(),
             ReadEnv(Id::FoliageFarClip),
             ReadEnv(Id::FoliageLod),     ReadEnv(Id::EffectEmitCap),
             ReadEnv(Id::EffectParticleCap), ReadEnv(Id::EffectAliveCap),

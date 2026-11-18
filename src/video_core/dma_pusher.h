@@ -192,6 +192,10 @@ public:
     void FlushGpuWrittenCommands(GPUVAddr address, size_t size);
     /// Whether a page of the range was ever written by the GPU (Tegra::Nx2IsGpuWritten).
     bool IsGpuWrittenRange(GPUVAddr address, size_t size) const;
+    /// Notes the semaphore an engine method sent to the split's back may release
+    /// (GpuSplit::NoteSemaphoreWrite): a copy's release, or the reports and macros of the 3D and
+    /// compute engines when they run on the back.
+    void NoteBackSemaphore(Engines::EngineTypes type, u32 method, u32 argument);
     /// Downloads GPU-written macro parameters, with the records around them (one GPU wait).
     void FlushParameterWindow(GPUVAddr address, size_t size);
 
@@ -246,6 +250,8 @@ public:
 
     std::array<Engines::EngineInterface*, max_subchannels> subchannels{};
     std::array<Engines::EngineTypes, max_subchannels> subchannel_type;
+    /// The copy engine's semaphore address and payload as last sent (NoteBackSemaphore).
+    std::array<u32, 3> dma_semaphore{};
 
     Engines::Puller puller;
     std::mutex sync_mutex;

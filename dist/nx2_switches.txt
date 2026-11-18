@@ -199,8 +199,12 @@
 # GOB order, as before (default: the Switch 2 order, from the Orchid fork). The old order wrote
 # small mips as a weave of misplaced 4x4 blocks, which shows as stripes on far, minified terrain.
 #EDEN_NX2_BLIT_NATIVE_TILING=0
-# ASYNC_SKIP=1: skip draws whose pipeline is still compiling (things pop in; off).
-#EDEN_NX2_ASYNC_SKIP=1
+# ASYNC_SKIP: a depth-tested draw into color targets drawn in earlier frames, or a dispatch whose outputs already hold GPU writes, whose
+# pipeline is still compiling waits for it within a budget per frame (ASYNC_DRAW_WAIT_MS, default
+# 8), then is skipped and catches up once built. =0 waits in full
+# (before 0.1.7; freezes on new scenery), =1 skips at once (more pop-in).
+#EDEN_NX2_ASYNC_SKIP=0
+#EDEN_NX2_ASYNC_DRAW_WAIT_MS=8
 # ASTC_BC1=1|0: re-compressed ASTC images with no alpha go to BC1 (half the memory of BC3), found by
 # reading every block of each new image on the GPU thread (hitches when many textures stream in).
 # Unset: on only when the driver's memory budget is under 12 GiB.
@@ -347,8 +351,6 @@
 #EDEN_NX2_DKQ_FOLIAGE_CAP=100
 #EDEN_NX2_DKQ_FOLIAGE_FRUSTUM_OFF=1
 #EDEN_NX2_DKQ_FOLIAGE_DENSITY=100
-# FOLIAGE_OFF=1: all foliage off (no placement, a draw distance of nothing, caps of 1).
-#EDEN_NX2_DKQ_FOLIAGE_OFF=1
 # FOLIAGE_FAR_CLIP=<1-100>: each foliage model's far clip distance (100-300 units in the game's
 # data) in % of the game's: foliage is drawn only closer. FOLIAGE_LOD=<10-1000>: each model's
 # LOD thresholds in % of the game's: which direction is coarser is not known. FOLIAGE_DENSITY also scales
@@ -376,6 +378,12 @@
 #EDEN_NX2_DKQ_EFFECT_PARTICLE_CAP=100
 #EDEN_NX2_DKQ_EFFECT_ALIVE_CAP=100
 #EDEN_NX2_DKQ_EFFECT_MATERIAL_CAP=100
+# --- Donkey Kong Bananza foliage off (game-specific; core/loader/nx2_dk_foliage.h) ---
+# DK_FOLIAGE_OFF=1: as Bananza's RomFS is read, its foliage settings files (ClusteredRendering) get
+# no dynamic placement, a draw distance of nothing per model and draw caps of 1 (a mod layer made
+# in memory; nothing is written to disk): no grass, flowers or plants. Set by the Performance and
+# Experimental presets and launchers; Balanced and Safe leave the foliage on.
+#EDEN_NX2_DK_FOLIAGE_OFF=1
 
 # --- Mario Kart World dynamic frame rate (game-specific; core/loader/nx2_mkw_dynamic_fps.h) ---
 # MKW_DYN=1: while Mario Kart World's main module loads, patch its frame mode choice in memory

@@ -42,9 +42,9 @@ namespace {
 
 constexpr u32 SINGLE_BYTE_MODULUS = 0x100;
 
-// A layer with Donkey Kong Bananza's foliage settings as the Quality tab changes them, made from
-// the game's own files (core/loader/nx2_dk_foliage.h). Null when no row is set or the game does
-// not have the files.
+// A layer with Donkey Kong Bananza's foliage and effect settings as the Quality tab and the Tuning
+// tab's Foliage off box change them, made from the game's own files (core/loader/nx2_dk_foliage.h).
+// Null when nothing is set or the game does not have the files.
 VirtualDir MakeFoliageLayer(const VirtualDir& extracted) {
     const auto settings = Loader::Nx2DkFoliage::FromEnvironment();
     if (!settings.Active() || extracted == nullptr) {
@@ -653,7 +653,7 @@ void PatchManager::ApplyLayeredFS(VirtualFile& romfs, ContentRecordType type) co
     if (foliage) {
         if (auto layer = MakeFoliageLayer(extracted)) {
             layers.emplace_back(std::move(layer));
-            mods.emplace_back("Dozer foliage settings (Quality tab)");
+            mods.emplace_back("Dozer: Donkey Kong Bananza foliage and effect settings");
         }
     }
     if (layers.empty() && layers_ext.empty()) {

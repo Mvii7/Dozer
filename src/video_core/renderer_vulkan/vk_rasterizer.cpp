@@ -1933,8 +1933,13 @@ void RasterizerVulkan::DispatchCompute() {
     }
     CheckBufferLockOffB("RasterizerVulkan::DispatchCompute");
     std::scoped_lock lock{texture_cache.mutex, buffer_cache.mutex};
-    if (!pipeline->Configure(*kepler_compute, *gpu_memory, scheduler, buffer_cache,
-                             texture_cache)) {
+    const auto configured =
+        pipeline->Configure(*kepler_compute, *gpu_memory, scheduler, buffer_cache, texture_cache,
+                            kepler_compute->IsNativeMode() ? &pipeline_cache : nullptr);
+    if (configured == ComputePipeline::ConfigureResult::Skipped) {
+        return;
+    }
+    if (configured == ComputePipeline::ConfigureResult::Failed) {
         if (kepler_compute->IsNativeMode()) throw Shader::RuntimeError("Native compute resources unavailable");
         return;
     }
@@ -2709,6 +2714,7 @@ void RasterizerVulkan::TickFrame() {
     }
     NoteLightWork();
     draw_counter = 0;
+    pipeline_cache.TickFrame();
     guest_descriptor_queue.TickFrame();
     compute_pass_descriptor_queue.TickFrame();
     descriptor_buffer_ring.TickFrame();
@@ -5920,7 +5926,7 @@ void RasterizerVulkan::CheckSplitSetup(GraphicsPipeline& pipeline, std::span<con
         raced = texture_cache.WriteHits() != base.image_hits ||
                 texture_cache.ImageViewEpoch() != base.view_epoch ||
                 light_epoch_b.load(std::memory_order_seq_cst) != base.light_epoch;
-        looked_up = pipeline_cache.CurrentGraphicsPipeline();
+        looked_up = pipeline_cache.CurrentGraphicsPipeline(true);
         const u64 render_pass_begins = scheduler.RenderPassBegins();
         // Vertex streams the old setup binds straight to C's command buffer (those B's flags have
         // dirty; none in lockstep): C's mirror does not see them, B's next packet sends them all.
