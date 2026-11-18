@@ -238,18 +238,12 @@ void ConfigureBananza::RetranslateUI() {
     texts[Quality::ThunderOff] = {
         tr("Thunder off"),
         tr("Skips the thunder renderer. For testing.")};
-    texts[Quality::WetModelOff] = {
-        tr("Wet models off"),
-        tr("Skips the wet model control (no wet look on models). For testing.")};
     texts[Quality::CloudShapeOff] = {
         tr("Cloud shapes off"),
         tr("Skips the cloud shapes. For testing.")};
     texts[Quality::DofIndirectOff] = {
         tr("Depth of field off"),
         tr("Skips the indirect depth of field control. For testing.")};
-    texts[Quality::AglSkyOff] = {
-        tr("AGL sky off"),
-        tr("Skips the AGL sky. The sky may go missing. Something that expects it may break. For testing.")};
     texts[Quality::CubeMapOff] = {
         tr("Cube maps off"),
         tr("Skips the reflection cube maps altogether. Something that expects it may break. For testing.")};
@@ -265,9 +259,6 @@ void ConfigureBananza::RetranslateUI() {
     texts[Quality::PrePassLightOff] = {
         tr("Pre-pass light off"),
         tr("Skips the pre-pass light. Something that expects it may break. For testing.")};
-    texts[Quality::SkyModelOff] = {
-        tr("Sky model off"),
-        tr("Skips the sky model. Something that expects it may break. For testing.")};
     texts[Quality::FoliageCap] = {
         tr("Foliage models at once"),
         tr("Scales how many foliage models (grass, weeds, plants) the game draws and keeps alive "

@@ -244,16 +244,13 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Bloom extension off | on | Skips the bloom extension. For testing. |
 | Radial blur off | on | Skips the radial blur drawer. For testing. |
 | Thunder off | on | Skips the thunder renderer. For testing. |
-| Wet models off | on | Skips the wet model control (no wet look on models). For testing. |
 | Cloud shapes off | on | Skips the cloud shapes. For testing. |
 | Depth of field off | on | Skips the indirect depth of field control. For testing. |
-| AGL sky off | on | Skips the AGL sky. The sky may go missing. (for testing; may crash) |
 | Cube maps off | on | Skips the reflection cube maps altogether. (for testing; may crash) |
 | Fog off | on | Skips the fog. (for testing; may crash) |
 | Light maps off | on | Skips the light map director. (for testing; may crash) |
 | Foreground models off | on | Skips the foreground model drawer. (for testing; may crash) |
 | Pre-pass light off | on | Skips the pre-pass light. (for testing; may crash) |
-| Sky model off | on | Skips the sky model. (for testing; may crash) |
 | Foliage models at once | 100% | scales the most grass, weeds and plants drawn and kept alive at once (the game's caps are 25000 and 50000, and each stage's own draw buffer of 1200-6000, which is the limit a stage draws with); changes the game's settings files as the RomFS is read |
 | Foliage view margin off | on | removes the extra margin around the view for foliage; it may pop in when turning |
 | Foliage draw distance | 100% | scales how far each foliage model (grass, flowers, plants) is drawn from the distance in the game's data (100-300 units): foliage stays near you and ends sooner; 1% is 1-3 units, about none |

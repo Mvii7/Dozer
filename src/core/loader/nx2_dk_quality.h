@@ -58,16 +58,13 @@ enum Id : size_t {
     BloomExtensionOff, ///< IsUseBloomExtention forced off
     RadialBlurOff,     ///< IsUseRadialBlurDrawer forced off
     ThunderOff,        ///< IsUseThunderRenderer forced off
-    WetModelOff,       ///< IsUseWetModelCtrl forced off
     CloudShapeOff,     ///< IsUseCloudShape forced off
     DofIndirectOff,    ///< IsUseDofIndirectCtrl forced off
-    AglSkyOff, ///< IsUseAglSky forced off
     CubeMapOff, ///< IsUseCubeMap forced off
     FogOff, ///< IsUseFog forced off
     LightMapOff, ///< IsUseLightMapDirector forced off
     ModelForegroundOff, ///< IsUseModelForegroundDrawer forced off
     PrePassLightOff, ///< IsUsePrePassLight forced off
-    SkyModelOff, ///< IsUseSkyModel forced off
     FoliageCap,        ///< foliage models drawn / kept alive at once, % (ClusteredRendering)
     FoliageFrustumOff, ///< foliage frustum expansion set to 0
     FoliageDensity,    ///< foliage dynamic placement chance and rate, %
@@ -137,16 +134,13 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"bloom_extension_off", "EDEN_NX2_DKQ_BLOOM_EXTENSION_OFF", 1, 1, 0},
     {"radial_blur_off", "EDEN_NX2_DKQ_RADIAL_BLUR_OFF", 1, 1, 0},
     {"thunder_off", "EDEN_NX2_DKQ_THUNDER_OFF", 1, 1, 0},
-    {"wet_model_off", "EDEN_NX2_DKQ_WET_MODEL_OFF", 1, 1, 0},
     {"cloud_shape_off", "EDEN_NX2_DKQ_CLOUD_SHAPE_OFF", 1, 1, 0},
     {"dof_off", "EDEN_NX2_DKQ_DOF_OFF", 1, 1, 0},
-    {"aglsky_off", "EDEN_NX2_DKQ_AGLSKY_OFF", 1, 1, 0},
     {"cubemap_off", "EDEN_NX2_DKQ_CUBEMAP_OFF", 1, 1, 0},
     {"fog_off", "EDEN_NX2_DKQ_FOG_OFF", 1, 1, 0},
     {"lightmap_off", "EDEN_NX2_DKQ_LIGHTMAP_OFF", 1, 1, 0},
     {"model_foreground_off", "EDEN_NX2_DKQ_MODEL_FOREGROUND_OFF", 1, 1, 0},
     {"prepass_light_off", "EDEN_NX2_DKQ_PREPASS_LIGHT_OFF", 1, 1, 0},
-    {"sky_model_off", "EDEN_NX2_DKQ_SKY_MODEL_OFF", 1, 1, 0},
     {"foliage_cap", "EDEN_NX2_DKQ_FOLIAGE_CAP", 1, 100, 100},
     {"foliage_frustum_off", "EDEN_NX2_DKQ_FOLIAGE_FRUSTUM_OFF", 1, 1, 0},
     {"foliage_density", "EDEN_NX2_DKQ_FOLIAGE_DENSITY", 1, 100, 100},
@@ -352,22 +346,19 @@ constexpr u32 RadialBlurSamplesParam = 0x500; // RadialBlurSamplingNum
 constexpr u32 ColorDecalMaxParam = 0x280;     // ColorDecalMaxNum
 constexpr u32 GgxFilterParam = 0x210;         // IsUseGGXFilter
 // The switches read in place, where the game builds its directors: the param's offset
-constexpr std::array<std::pair<Id, u32>, 15> FeatureFlags{{
+constexpr std::array<std::pair<Id, u32>, 12> FeatureFlags{{
     {DecalOff, 0x80}, // IsUseDecal
     {DepthBloomOff, 0x118}, // IsUseDepthBloom
     {BloomExtensionOff, 0x110}, // IsUseBloomExtention
     {RadialBlurOff, 0xa0}, // IsUseRadialBlurDrawer
     {ThunderOff, 0xf8}, // IsUseThunderRenderer
-    {WetModelOff, 0x178}, // IsUseWetModelCtrl
     {CloudShapeOff, 0x188}, // IsUseCloudShape
     {DofIndirectOff, 0x128}, // IsUseDofIndirectCtrl
-    {AglSkyOff, 0x1c0}, // IsUseAglSky
     {CubeMapOff, 0x28}, // IsUseCubeMap
     {FogOff, 0x60}, // IsUseFog
     {LightMapOff, 0x130}, // IsUseLightMapDirector
     {ModelForegroundOff, 0x160}, // IsUseModelForegroundDrawer
     {PrePassLightOff, 0xb0}, // IsUsePrePassLight
-    {SkyModelOff, 0xe8}, // IsUseSkyModel
 }};
 constexpr u32 ShadowMaskParam = 0xe0;           // IsUseShadowMask
 constexpr u32 CubeMapOcclusionParam = 0x218;  // IsUseCubeMapOcclusionCheck
