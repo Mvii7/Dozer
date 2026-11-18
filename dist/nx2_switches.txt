@@ -113,6 +113,12 @@
 # ACQUIRE_PEEK: a semaphore acquire whose value memory already holds goes on without
 # draining the back. 0 off (default), 1 on (recommended), 2 drains and logs where 1 would not.
 #EDEN_NX2_ACQUIRE_PEEK=1
+# DMA_READ_PEEK (with ACQUIRE_PEEK=1): an MME DMA read goes on without draining the back when no
+# write the front sent and the back has not run reaches its words, no work but draws is queued
+# and the buffer cache holds no newer data of them. 0 off, 1 on (default), 2 drains and logs
+# reads the drain changed. The front then notes the methods that write memory or start work
+# other than draws.
+#EDEN_NX2_DMA_READ_PEEK=0
 # FRONT_RUNS=0: increasing runs of 3D state methods go to the front word by word, as before.
 #EDEN_NX2_FRONT_RUNS=0
 # JIT_SAME: the front's macro JIT drops state writes that would change nothing. 0 off
@@ -178,6 +184,12 @@
 #EDEN_NX2_USAGE_SKIP=0
 #EDEN_NX2_USAGE_RESET_SKIP=0
 #EDEN_NX2_GPU_WRITTEN_FILTER=0
+# ADD_MEMO=0: a GPU-written range already held whole is added to the range set again (default:
+# skipped while no subtract reached it).
+#EDEN_NX2_ADD_MEMO=0
+# PAGE_RANGES=0: the GPU-written range set is a tree again (default: a bitmap by 4 KiB page, so
+# adding and removing a range costs its pages, not a walk among some 20000 others).
+#EDEN_NX2_PAGE_RANGES=0
 #EDEN_NX2_MARK_WORDS=0
 #EDEN_NX2_INVAL_HULL=0
 #EDEN_NX2_INVAL_SKIP=0

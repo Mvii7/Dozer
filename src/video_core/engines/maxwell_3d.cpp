@@ -1578,6 +1578,88 @@ bool FrontSkipSame() {
     return skip;
 }
 
+// EDEN_NX2_DMA_READ_PEEK: the MME DMA reads that went on without a drain and why the others
+// drained, logged every 2^16 reads (front thread).
+struct ReadPeekCounts {
+    u64 reads{};
+    u64 went_on{};
+    u64 write{};
+    u64 work{};
+    u64 overflow{};
+    u64 dirty{};
+    std::array<u64, static_cast<size_t>(VideoCommon::Nx2FrontDiag::WorkKind::Count)> work_kinds{};
+    u64 verified{};
+    u64 differed{};
+};
+ReadPeekCounts g_read_peek;
+
+YUZU_NO_INLINE void LogReadPeek() {
+    namespace Diag = VideoCommon::Nx2FrontDiag;
+    const auto& c = g_read_peek;
+    std::string kinds;
+    for (size_t i = 0; i < c.work_kinds.size(); ++i) {
+        if (c.work_kinds[i] != 0) {
+            kinds += fmt::format("{}{} {}", kinds.empty() ? "" : ", ", Diag::work_kind_names[i],
+                                 c.work_kinds[i]);
+        }
+    }
+    const auto& compute = Diag::g_compute_sends;
+    LOG_INFO(HW_GPU,
+             "EDEN_NX2_DMA_READ_PEEK: {} of {} MME DMA reads without a drain; drained for a queued "
+             "write {}, queued work {} ({}), dropped writes {}, buffer cache data {}; =2: {} "
+             "checked, {} changed by the drain | compute sent so far: launches {}, inline QMDs {}, "
+             "report releases {}, other reports {}",
+             c.went_on, c.reads, c.write, c.work, kinds.empty() ? "-" : kinds, c.overflow, c.dirty,
+             c.verified, c.differed, compute.launches, compute.inline_qmds,
+             compute.report_releases, compute.other_reports);
+}
+
+void NoteReadPeek(VideoCommon::Nx2FrontDiag::ReadBlock block, u32 work, bool dirty) {
+    using VideoCommon::Nx2FrontDiag::ReadBlock;
+    auto& c = g_read_peek;
+    ++c.reads;
+    switch (block) {
+    case ReadBlock::None:
+        (dirty ? c.dirty : c.went_on) += 1;
+        break;
+    case ReadBlock::Write:
+        ++c.write;
+        break;
+    case ReadBlock::Work:
+        ++c.work;
+        for (size_t i = 0; i < c.work_kinds.size(); ++i) {
+            c.work_kinds[i] += (work >> i) & 1;
+        }
+        break;
+    case ReadBlock::Overflow:
+        ++c.overflow;
+        break;
+    }
+    if ((c.reads & 0xffff) == 0) {
+        LogReadPeek();
+    }
+}
+
+void NoteReadPeekVerify(bool differed) {
+    ++g_read_peek.verified;
+    g_read_peek.differed += differed ? 1 : 0;
+    if (differed && g_read_peek.differed <= 8) {
+        LOG_WARNING(HW_GPU, "EDEN_NX2_DMA_READ_PEEK=2: an MME DMA read changed by the drain");
+    }
+}
+
+// EDEN_NX2_DMA_READ_PEEK without the diag lines: the methods whose writes or work an MME DMA read
+// must wait for (FrontDiagNote's). Draw work is not among them (the read's buffer cache check
+// covers it), so other methods are not noted: noting every executable one cost the front more
+// than the drains it saved.
+constexpr bool FrontTrackedMethod(u32 method) {
+    constexpr u32 cb_data = MAXWELL3D_REG_INDEX(const_buffer.buffer);
+    return (method >= cb_data && method < cb_data + 16) ||
+           method == MAXWELL3D_REG_INDEX(report_semaphore.query) ||
+           method == MAXWELL3D_REG_INDEX(sync_info) ||
+           method == MAXWELL3D_REG_INDEX(inline_data) || method == MAXWELL3D_REG_INDEX(draw.end);
+}
+
 // Front diag (EDEN_NX2_GPU_PROFILE, nx2_front_diag_hooks.h): the guest memory a method the front
 // just sent writes on the back, from the front's registers, or the work it starts. `words`: the
 // constant buffer words written; `executable`: in the execution mask; `instance_loop`: a method
@@ -1830,7 +1912,8 @@ void Maxwell3D::FrontWrite(VideoCommon::GpuSplit& split, FrontState& fs, u32 met
     if (method == MAXWELL3D_REG_INDEX(report_semaphore.query)) {
         FrontNoteReport(split, fs);
     }
-    if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
+    if (VideoCommon::Nx2FrontDiag::On() ||
+        (FrontTrackedMethod(method) && VideoCommon::Nx2FrontDiag::Tracking())) [[unlikely]] {
         FrontDiagNote(memory_manager, fs.regs, method, 1, execution_mask[method],
                       DrawManager::IsInstanceLoopMethod(method));
     }
@@ -1981,7 +2064,9 @@ void Maxwell3D::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit
     if (method == MAXWELL3D_REG_INDEX(report_semaphore.query) && amount != 0) {
         FrontNoteReport(split, fs);
     }
-    if (VideoCommon::Nx2FrontDiag::On() && amount != 0) [[unlikely]] {
+    if (amount != 0 && (VideoCommon::Nx2FrontDiag::On() ||
+                        (FrontTrackedMethod(method) && VideoCommon::Nx2FrontDiag::Tracking())))
+        [[unlikely]] {
         FrontDiagNote(memory_manager, fs.regs, method, amount, execution_mask[method],
                       DrawManager::IsInstanceLoopMethod(method));
     }
@@ -2214,14 +2299,44 @@ void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 m
     const bool diag = Diag::On();
     const Diag::ReadProbe probe =
         diag ? Diag::DmaReadBefore(memory_manager, source, words) : Diag::ReadProbe{};
+    // EDEN_NX2_DMA_READ_PEEK: no queued write the front noted reaches the words, no work whose
+    // writes it cannot range is queued, and the buffer cache holds no newer data of them (asked
+    // as the guest CPU's threads do, while the back runs): the drain would change nothing.
+    bool go_on = false;
+    bool gpu_dirty = false;
+    std::array<u32, 64> before{};
+    const int peek_mode = Diag::ReadPeekMode();
+    if (peek_mode != 0) {
+        u32 work = 0;
+        const Diag::ReadBlock block = Diag::ReadMayGoOn(memory_manager, source, read_bytes, &work);
+        if (block == Diag::ReadBlock::None) {
+            gpu_dirty = memory_manager.IsMemoryDirty(source, read_bytes,
+                                                     VideoCommon::CacheType::BufferCache);
+            go_on = !gpu_dirty;
+        }
+        NoteReadPeek(block, work, gpu_dirty);
+        if (go_on && peek_mode == 2 && words <= before.size()) {
+            memory_manager.ReadBlockUnsafe(source, before.data(), read_bytes);
+        }
+    }
     // The words may be written by methods still queued for the back (indirect draw arguments
     // from a culling dispatch), and the caches that may hold newer ones belong to it.
-    const bool waited = Diag::CountDrain(split, VideoCommon::Nx2Profile::DrainSite::FrontDmaRead);
+    const bool waited =
+        go_on && peek_mode == 1
+            ? false
+            : Diag::CountDrain(split, VideoCommon::Nx2Profile::DrainSite::FrontDmaRead);
     if (VideoCommon::Nx2Profile::Enabled()) {
         VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::DmaReadBytes, read_bytes);
     }
-    const bool gpu_dirty =
-        memory_manager.IsMemoryDirty(source, read_bytes, VideoCommon::CacheType::BufferCache);
+    if (!go_on || peek_mode == 2) {
+        gpu_dirty =
+            memory_manager.IsMemoryDirty(source, read_bytes, VideoCommon::CacheType::BufferCache);
+    }
+    if (go_on && peek_mode == 2 && words <= before.size()) {
+        std::array<u32, 64> after{};
+        memory_manager.ReadBlockUnsafe(source, after.data(), read_bytes);
+        NoteReadPeekVerify(std::memcmp(before.data(), after.data(), read_bytes) != 0 || gpu_dirty);
+    }
     if (gpu_dirty) {
         memory_manager.FlushRegion(source, read_bytes, VideoCommon::CacheType::BufferCache);
     }
