@@ -31,7 +31,7 @@ constexpr size_t DepthGetter = 0x290, RadiusGetter = 0x2a0, PolygonGetter = 0x2b
 constexpr size_t MeshStore = 0x500;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
 constexpr size_t Voxel = 0x400;
-constexpr size_t DebrisSite = 0x780, LodSite = 0x7a0, KeySite = 0x7c0;
+constexpr size_t DebrisSite = 0x780, LodSite = 0x7a0, KeySite = 0x7c0, DecoSite = 0x7d0;
 constexpr size_t BorderSite = 0x740, ShadowMaskGetter = 0x760,
     FlagSite = 0x800;
 
@@ -81,6 +81,11 @@ struct Text {
         words[DebrisSite] = 0x528001E8;      // mov w8, #0xf
         const u32 keys[]{0x9105B908, 0x90009F29, 0x911D5D29, 0x39011A7F, 0xA9032668, 0x52804008};
         std::copy(std::begin(keys), std::end(keys), &words[KeySite]);
+        words[DecoSite] = 0x528003C8;          // mov w8, #0x1e
+        words[DecoSite + 14] = 0x91018288;     // add x8, x20, #0x60
+        words[DecoSite + 16] = 0x91017688;     // add x8, x20, #0x5d
+        words[DecoSite + 24] = 0xB90023FF;     // str wzr, [sp, #0x20]
+        words[DecoSite + 34] = 0x91016288;     // add x8, x20, #0x58
         for (size_t i = 0; i < 3; ++i) {
             words[LodSite + i * 4] = LdrS(0, 20, 0xac + static_cast<u32>(i) * 4);
             words[LodSite + i * 4 + 1] = 0xF9413668;               // ldr x8, [x19, #0x268]
@@ -321,6 +326,24 @@ TEST_CASE("Nx2DkQuality: the voxel damage and destruction keys", "[core]") {
     REQUIRE(result[VoxelDamageOff] == State::Applied);
     REQUIRE(both.words[KeySite] == 0x9105D108); // add x8, x8, #0x174: the zero after "Damage"
     REQUIRE(both.words[KeySite + 2] == 0x911D8929);
+}
+
+TEST_CASE("Nx2DkQuality: foliage rebuild on digging off", "[core]") {
+    Text text;
+    std::vector<u32> expected = text.words;
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(DecoRecalcOff, 1));
+    REQUIRE(result[DecoRecalcOff] == State::Applied);
+    const std::array<size_t, 2> sites{DecoSite + 14, DecoSite + 34};
+    const std::array<std::array<u32, 2>, 2> bodies{{{0x3903169F, 0x91018288}, {0x3901729F, 0x91016288}}};
+    for (size_t i = 0; i < 2; ++i) {
+        const size_t routine = Cave + DecoRoutine + i * DecoRoutineWords;
+        expected[sites[i]] = 0x14000000U | static_cast<u32>(routine - sites[i]);
+        expected[routine] = bodies[i][0];
+        expected[routine + 1] = bodies[i][1];
+        expected[routine + 2] =
+            0x14000000U | (static_cast<u32>((sites[i] + 1) - (routine + 2)) & 0x3FFFFFFU);
+    }
+    REQUIRE(text.words == expected);
 }
 
 TEST_CASE("Nx2DkQuality: debris off", "[core]") {

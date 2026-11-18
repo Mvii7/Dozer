@@ -189,6 +189,12 @@ void ConfigureBananza::RetranslateUI() {
         tr("Voxel destruction effects off"),
         tr("Gives the voxel effect emitter no effect to play when terrain is destroyed (its "
            "\"Destruction\" key made empty): the pieces that fly off, most likely.")};
+    texts[Quality::DecoRecalcOff] = {
+        tr("Foliage rebuild on digging off"),
+        tr("Stops the game from working out again the foliage (grass, plants) on a piece of "
+           "terrain each time its voxels change, which happens all the time while digging or "
+           "smashing: less CPU work then. Foliage may stay floating where terrain was removed. "
+           "For testing.")};
     texts[Quality::MeshSimplify] = {
         tr("Terrain mesh simplification"),
         tr("How the game simplifies the destructible terrain's meshes: 1 Normal (the game's "

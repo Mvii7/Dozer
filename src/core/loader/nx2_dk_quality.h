@@ -46,6 +46,7 @@ enum Id : size_t {
     ActorDrawDistance, ///< the actors' far clip distances (FarClipLevel), % of the game's
     VoxelDamageOff,    ///< the voxel effect emitter's DamageKey made empty
     VoxelDestructionOff, ///< the voxel effect emitter's DestructionKey made empty
+    DecoRecalcOff,     ///< IsRecalcClstrDecoOnVoxelChange forced off (foliage rebuilt on digging)
     GgxFilterOff,      ///< IsUseGGXFilter forced off (reflection cube map filtering)
     CubeMapOcclusionOff, ///< IsUseCubeMapOcclusionCheck forced off
     OcclusionDepth,    ///< OcclusionQueryThresholdDepth, % of the game's
@@ -122,6 +123,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"actor_draw_distance", "EDEN_NX2_DKQ_ACTOR_DRAW_DISTANCE", 10, 100, 100},
     {"voxel_damage_off", "EDEN_NX2_DKQ_VOXEL_DAMAGE_OFF", 1, 1, 0},
     {"voxel_destruction_off", "EDEN_NX2_DKQ_VOXEL_DESTRUCTION_OFF", 1, 1, 0},
+    {"deco_recalc_off", "EDEN_NX2_DKQ_DECO_RECALC_OFF", 1, 1, 0},
     {"ggx_filter_off", "EDEN_NX2_DKQ_GGX_FILTER_OFF", 1, 1, 0},
     {"cubemap_occlusion_off", "EDEN_NX2_DKQ_CUBEMAP_OCCLUSION_OFF", 1, 1, 0},
     {"occlusion_depth", "EDEN_NX2_DKQ_OCCLUSION_DEPTH", 10, 400, 100},
@@ -303,7 +305,9 @@ constexpr size_t DepthRoutine = DebrisRoutine + DebrisRoutineWords; ///< after t
 constexpr size_t DepthRoutineWords = 5;
 constexpr size_t LodRoutine = DepthRoutine + DepthRoutineWords; ///< three, after the depth one
 constexpr size_t LodRoutineWords = 5;
-constexpr size_t CaveWords = LodRoutine + 3 * LodRoutineWords;
+constexpr size_t DecoRoutine = LodRoutine + 3 * LodRoutineWords; ///< two, after the LOD ones
+constexpr size_t DecoRoutineWords = 3;
+constexpr size_t CaveWords = DecoRoutine + 2 * DecoRoutineWords;
 
 /// The upper half of a float, rounded: the constants are put in with one `movz wN, #x, lsl #16`.
 constexpr u32 FloatHigh(float value) {
@@ -799,6 +803,37 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 empty(at[0] + 2, 11); // "Destruction"
                 result[VoxelDestructionOff] = State::Applied;
             }
+        }
+    }
+
+    // IsRecalcClstrDecoOnVoxelChange (the foliage on a piece of terrain worked out again when its
+    // voxels change) is a byte of a voxel part's settings (+0xc5) and of a foliage decoration
+    // unit's (+0x5c); hardly any data sets it, so the loaders' defaults decide. Right after each
+    // loader binds it, the next field's address is set:
+    //   mov w8, #0x1e; 13 words; add x8, x20, #0x60           (the voxel part)
+    //   add x8, x20, #0x5d; 7 words; str wzr, [sp, #0x20]; 9 words; add x8, x20, #0x58
+    // Each add becomes a jump to a routine that clears the byte first (x20 is the settings):
+    //   strb wzr, [x20, #field]; add x8, x20, #next; b back
+    if (set(DecoRecalcOff) != 0) {
+        constexpr u32 AddPartsNext = 0x91018288U, AddDecoNext = 0x91016288U;
+        std::array<size_t, 1> parts{}, deco{};
+        if (CaveFree(DecoRoutine, 2 * DecoRoutineWords) &&
+            find({{0, 0x528003C8U}, {14, AddPartsNext}}, parts) &&
+            find({{0, 0x91017688U}, {8, 0xB90023FFU}, {18, AddDecoNext}}, deco)) {
+            const std::array<std::array<u32, 2>, 2> routines{{
+                {0x3903169FU, AddPartsNext}, // strb wzr, [x20, #0xc5]
+                {0x3901729FU, AddDecoNext},  // strb wzr, [x20, #0x5c]
+            }};
+            const std::array<size_t, 2> sites{parts[0] + 14, deco[0] + 18};
+            for (size_t i = 0; i < sites.size(); ++i) {
+                const size_t routine = cave + DecoRoutine + i * DecoRoutineWords;
+                put(routine, routines[i][0]);
+                put(routine + 1, routines[i][1]);
+                put(routine + 2,
+                    0x14000000U | (static_cast<u32>((sites[i] + 1) - (routine + 2)) & 0x3FFFFFFU));
+                put(sites[i], 0x14000000U | (static_cast<u32>(routine - sites[i]) & 0x3FFFFFFU));
+            }
+            result[DecoRecalcOff] = State::Applied;
         }
     }
 
