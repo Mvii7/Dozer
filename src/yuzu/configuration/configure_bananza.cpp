@@ -159,6 +159,15 @@ void ConfigureBananza::RetranslateUI() {
         tr("Scales how far away actors (objects, enemies, scenery pieces: over 2000 of them use "
            "it) stop being drawn, from the game's own distances (50 to 1200 by actor, 200 by "
            "default). Lower: they are clipped closer to you. Actors marked never to clip stay.")};
+    texts[Quality::ShadowCascades] = {
+        tr("Sun shadow cascades"),
+        tr("The most cascades the sun's shadow is drawn in (the game's: up to 4). Each cascade "
+           "draws every shadow caster again, so fewer cascades means fewer draws; the remaining "
+           "ones are stretched over the same distance, so shadows get blurrier.")};
+    texts[Quality::ShadowDistance] = {
+        tr("Sun shadow distance"),
+        tr("Scales how far the sun's shadow reaches (the end of its last cascade). Lower: "
+           "objects further away cast no shadow and are not drawn into it, so fewer draws.")};
     texts[Quality::GgxFilterOff] = {
         tr("Reflection filtering off"),
         tr("Skips the GGX filtering of the reflection cube maps. Reflections get sharper or "
@@ -304,6 +313,7 @@ void ConfigureBananza::ShowValue(std::size_t index) {
         text = tr("%n frame(s)", nullptr, value);
         break;
     case Quality::RadialBlurSamples:
+    case Quality::ShadowCascades:
     case Quality::ColorDecalMax:
         text = QString::number(value);
         break;

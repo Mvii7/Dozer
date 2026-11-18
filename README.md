@@ -229,6 +229,8 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Cube map update interval | 8 frames | how often reflection cube maps are captured (the one row where higher is faster) |
 | Radial blur render scale / samples | 50% / 20 | the radial blur's buffer size and samples |
 | Actor draw distance | 100% | scales the distances at which actors (objects, enemies, scenery pieces; over 2000 use them) are clipped, from the game's own 50-1200 (200 by default), 10-100%; actors marked never to clip stay |
+| Sun shadow cascades | 4 | the most cascades the sun's shadow is drawn in, 1-4; each draws the shadow casters again, so fewer means fewer draws and blurrier shadows |
+| Sun shadow distance | 100% | scales how far the sun's shadow reaches (the end of its last cascade), 10-100%; lower: fewer casters drawn into it |
 | Camera far distance | 100% | scales the distance beyond which the game draws nothing: a big cut roughly doubled the frame rate in a busy area, but scenery stops being drawn fairly close (from the Selevet fork's far clip scale) |
 | Colour decal limit | 660 | the most colour decals the game keeps |
 | Reflection filtering off | on | skips the GGX filtering of the reflection cube maps (for testing) |

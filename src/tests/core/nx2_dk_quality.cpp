@@ -28,9 +28,12 @@ constexpr size_t BlurSamplesGetter = 0x230, CubeMapGetter = 0x240;
 constexpr size_t BloomFirst = 0x300, BloomSecond = 0x310, BloomThird = 0x320;
 constexpr size_t DecalGetter = 0x260, GgxGetter = 0x270;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
-constexpr size_t DebrisSite = 0x780;
+constexpr size_t DebrisSite = 0x780, CascadeSite = 0x7a0, ShadowFarSites = 0x7c0;
 constexpr size_t BorderSite = 0x740, ShadowMaskGetter = 0x760,
     FlagSite = 0x800;
+
+constexpr u32 ShadowFarLoads[3][2]{
+    {0xBD5AE940, 0xB9822AC8}, {0xBD5AE900, 0x9BAA674A}, {0xBD5AEB60, 0xB9822AE8}};
 
 struct Text {
     std::vector<u32> words;
@@ -70,6 +73,12 @@ struct Text {
         std::copy(std::begin(second), std::end(second), &words[FarB]);
         std::copy(std::begin(third), std::end(third), &words[FarC]);
         words[DebrisSite] = 0x528001E8;      // mov w8, #0xf
+        const u32 cascade[]{0xB95A4B68, 0x6B09011F, 0x1A89B108};
+        std::copy(std::begin(cascade), std::end(cascade), &words[CascadeSite]);
+        for (size_t i = 0; i < 3; ++i) {
+            words[ShadowFarSites + i * 4] = ShadowFarLoads[i][0];
+            words[ShadowFarSites + i * 4 + 1] = ShadowFarLoads[i][1];
+        }
         words[DebrisSite + 14] = 0x91030288; // add x8, x20, #0xc0
         const u32 border[]{0x3941F3E8, 0xF94017E6, 0x7100011F, 0x1A9F17E8};
         std::copy(std::begin(border), std::end(border), &words[BorderSite]);
@@ -223,6 +232,48 @@ TEST_CASE("Nx2DkQuality: the actors' far clip distances", "[core]") {
             State::Missed);
 }
 
+TEST_CASE("Nx2DkQuality: the sun shadow cascades", "[core]") {
+    Text text;
+    std::vector<u32> expected = text.words;
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(ShadowCascades, 2));
+    REQUIRE(result[ShadowCascades] == State::Applied);
+    const size_t routine = Cave + CascadeRoutine;
+    expected[CascadeSite] = 0x14000000U | static_cast<u32>(routine - CascadeSite);
+    expected[routine] = 0xB95A4B68;     // ldr w8, [x27, #0x1a48]
+    expected[routine + 1] = 0x7100091F; // cmp w8, #2
+    expected[routine + 2] = 0x5400004D; // b.le +8
+    expected[routine + 3] = 0x52800048; // movz w8, #2
+    expected[routine + 4] =
+        0x14000000U | (static_cast<u32>((CascadeSite + 1) - (routine + 4)) & 0x3FFFFFFU);
+    REQUIRE(text.words == expected);
+}
+
+TEST_CASE("Nx2DkQuality: the sun shadow distance, three places", "[core]") {
+    Text text;
+    std::vector<u32> expected = text.words;
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(ShadowDistance, 50));
+    REQUIRE(result[ShadowDistance] == State::Applied);
+    for (size_t i = 0; i < 3; ++i) {
+        const size_t routine = Cave + ShadowFarRoutine + i * ShadowFarRoutineWords;
+        const size_t from = ShadowFarSites + i * 4;
+        expected[from] = 0x14000000U | static_cast<u32>(routine - from);
+        expected[routine] = ShadowFarLoads[i][0];
+        expected[routine + 1] = 0x1C00007F; // ldr s31, #12
+        expected[routine + 2] = 0x1E3F0800; // fmul s0, s0, s31
+        expected[routine + 3] =
+            0x14000000U | (static_cast<u32>((from + 1) - (routine + 3)) & 0x3FFFFFFU);
+        expected[routine + 4] = 0x3F000000; // 0.5
+    }
+    REQUIRE(text.words == expected);
+    // One place missing: none is changed
+    Text partial;
+    partial.words[ShadowFarSites + 8] = Filler;
+    const std::vector<u32> before = partial.words;
+    REQUIRE(Apply(partial.Bytes(), TextSize, AlignedSize, Only(ShadowDistance, 50))[ShadowDistance] ==
+            State::Missed);
+    REQUIRE(partial.words == before);
+}
+
 TEST_CASE("Nx2DkQuality: debris off", "[core]") {
     Text text;
     std::vector<u32> expected = text.words;
@@ -238,14 +289,18 @@ TEST_CASE("Nx2DkQuality: debris off", "[core]") {
     REQUIRE(text.words == expected);
 }
 
-TEST_CASE("Nx2DkQuality: the camera far and debris off together", "[core]") {
+TEST_CASE("Nx2DkQuality: the cave routines together", "[core]") {
     Text text;
     Values values{};
     values[CameraFar] = 50;
     values[DebrisOff] = 1;
+    values[ShadowCascades] = 1;
+    values[ShadowDistance] = 30;
     const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
     REQUIRE(result[CameraFar] == State::Applied);
     REQUIRE(result[DebrisOff] == State::Applied);
+    REQUIRE(result[ShadowCascades] == State::Applied);
+    REQUIRE(result[ShadowDistance] == State::Applied);
 }
 
 TEST_CASE("Nx2DkQuality: the camera far, three places", "[core]") {

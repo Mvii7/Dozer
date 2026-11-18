@@ -38,6 +38,8 @@ enum Id : size_t {
     CameraFar,         ///< the camera's far distance, % (EDEN_NX2_FAR_SCALE of the Selevet fork)
     ColorDecalMax,     ///< ColorDecalMaxNum
     ActorDrawDistance, ///< the actors' far clip distances (FarClipLevel), % of the game's
+    ShadowCascades,    ///< the most sun shadow cascades (depth_shadow_cascade_num)
+    ShadowDistance,    ///< the sun shadow's far distance (depth_shadow_far), % of the game's
     GgxFilterOff,      ///< IsUseGGXFilter forced off (reflection cube map filtering)
     VoxelBorderMeshOff, ///< terrain IsNoBorderMesh forced on
     ShadowMaskOff,     ///< IsUseShadowMask forced off
@@ -95,6 +97,8 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"camera_far", "EDEN_NX2_DKQ_CAMERA_FAR", 10, 100, 100},
     {"color_decal_max", "EDEN_NX2_DKQ_COLOR_DECAL_MAX", 1, 660, 660},
     {"actor_draw_distance", "EDEN_NX2_DKQ_ACTOR_DRAW_DISTANCE", 10, 100, 100},
+    {"shadow_cascades", "EDEN_NX2_DKQ_SHADOW_CASCADES", 1, 4, 4},
+    {"shadow_distance", "EDEN_NX2_DKQ_SHADOW_DISTANCE", 10, 100, 100},
     {"ggx_filter_off", "EDEN_NX2_DKQ_GGX_FILTER_OFF", 1, 1, 0},
     {"voxel_border_mesh_off", "EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF", 1, 1, 0},
     {"shadow_mask_off", "EDEN_NX2_DKQ_SHADOW_MASK_OFF", 1, 1, 0},
@@ -256,7 +260,11 @@ constexpr size_t FarRoutine = 0; ///< three
 constexpr size_t FarRoutineWords = 5;
 constexpr size_t DebrisRoutine = FarRoutine + 3 * FarRoutineWords; ///< after the far ones
 constexpr size_t DebrisRoutineWords = 4;
-constexpr size_t CaveWords = DebrisRoutine + DebrisRoutineWords;
+constexpr size_t CascadeRoutine = DebrisRoutine + DebrisRoutineWords; ///< after the debris one
+constexpr size_t CascadeRoutineWords = 5;
+constexpr size_t ShadowFarRoutine = CascadeRoutine + CascadeRoutineWords; ///< three
+constexpr size_t ShadowFarRoutineWords = 5;
+constexpr size_t CaveWords = ShadowFarRoutine + 3 * ShadowFarRoutineWords;
 
 /// The upper half of a float, rounded: the constants are put in with one `movz wN, #x, lsl #16`.
 constexpr u32 FloatHigh(float value) {
@@ -570,6 +578,67 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 std::memcpy(text.data() + at + i * sizeof(float), &scaled, sizeof(scaled));
             }
             result[ActorDrawDistance] = State::Applied;
+        }
+    }
+
+    // The sun shadow's settings (gsys depth shadow: depth_shadow_cascade_num_0 at +0x1a48 of the
+    // settings, the split distances after it, depth_shadow_far_0 at +0x1ae8) are set up for each
+    // shadow, the count clamped to the shadow's own most:
+    //   ldr w8, [x27, #0x1a48]; cmp w8, w9; csel w8, w8, w9, lt
+    // The load becomes a jump to a routine that caps it first (the flags are set again next):
+    //   ldr w8, [x27, #0x1a48]; cmp w8, #n; b.le +8; movz w8, #n; b back
+    // Each cascade draws the shadow casters again.
+    if (const int cascades = set(ShadowCascades); cascades != 0) {
+        constexpr u32 LdrCount = 0xB95A4B68U; // ldr w8, [x27, #0x1a48]
+        std::array<size_t, 1> at{};
+        if (CaveFree(CascadeRoutine, CascadeRoutineWords) &&
+            find({{0, LdrCount}, {1, 0x6B09011FU}, {2, 0x1A89B108U}}, at)) {
+            const size_t routine = cave + CascadeRoutine;
+            const size_t from = at[0];
+            const u32 n = static_cast<u32>(cascades);
+            put(routine, LdrCount);
+            put(routine + 1, 0x7100011FU | (n << 10)); // cmp w8, #n
+            put(routine + 2, 0x5400004DU); // b.le +8: past the movz, to the jump back
+            put(routine + 3, Movz(8, n));
+            put(routine + 4,
+                0x14000000U | (static_cast<u32>((from + 1) - (routine + 4)) & 0x3FFFFFFU));
+            put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
+            result[ShadowCascades] = State::Applied;
+        }
+    }
+
+    // The shadow's far distance is put after the last cascade's split in three places, each
+    // `ldr s0, [xN, #0x1ae8]` followed by one known word. Each load becomes a jump to a routine
+    // that scales it (s31 is used nowhere in those functions):
+    //   ldr s0, [xN, #0x1ae8]; ldr s31, <scale>; fmul s0, s0, s31; b back; <scale>
+    // Shorter: the far cascade covers less, so fewer casters are drawn into it.
+    if (const int distance = set(ShadowDistance); distance != 0) {
+        constexpr std::array<std::pair<u32, u32>, 3> sites{{
+            {0xBD5AE940U, 0xB9822AC8U}, // ldr s0, [x10, #0x1ae8]; ldrsw x8, [x22, #0x228]
+            {0xBD5AE900U, 0x9BAA674AU}, // ldr s0, [x8, #0x1ae8]; umaddl x10, w26, w10, x25
+            {0xBD5AEB60U, 0xB9822AE8U}, // ldr s0, [x27, #0x1ae8]; ldrsw x8, [x23, #0x228]
+        }};
+        std::array<std::array<size_t, 1>, 3> at{};
+        bool found = CaveFree(ShadowFarRoutine, 3 * ShadowFarRoutineWords);
+        for (size_t i = 0; found && i < sites.size(); ++i) {
+            found = find({{0, sites[i].first}, {1, sites[i].second}}, at[i]);
+        }
+        if (found) {
+            const float factor = percent(distance);
+            u32 scale;
+            std::memcpy(&scale, &factor, sizeof(scale));
+            for (size_t i = 0; i < sites.size(); ++i) {
+                const size_t routine = cave + ShadowFarRoutine + i * ShadowFarRoutineWords;
+                const size_t from = at[i][0];
+                put(routine, sites[i].first);
+                put(routine + 1, 0x1C00007FU); // ldr s31, #12
+                put(routine + 2, 0x1E3F0800U); // fmul s0, s0, s31
+                put(routine + 3,
+                    0x14000000U | (static_cast<u32>((from + 1) - (routine + 3)) & 0x3FFFFFFU));
+                put(routine + 4, scale);
+                put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
+            }
+            result[ShadowDistance] = State::Applied;
         }
     }
 

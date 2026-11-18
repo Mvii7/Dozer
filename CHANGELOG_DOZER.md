@@ -130,7 +130,7 @@ and `=0` brings back the 2.0.0 code path.
 
 - Donkey Kong Bananza's Properties window has a **Quality** tab (only that game has it): a Default / Balanced / Performance / Custom preset box and
   experimental quality sliders (render resolution range,
-  bloom and radial blur buffers, cube map update interval, camera far distance, actor draw distance, colour decal
+  bloom and radial blur buffers, cube map update interval, camera far distance, actor draw distance, sun shadow cascades and distance, colour decal
   limit; some of the rows are only for finding out what they do). A
   ticked row replaces one value the game reads from its graphics parameters while it loads
   (`EDEN_NX2_DKQ_*`, `core/loader/nx2_dk_quality.h`); all unticked by default. Found by reading
