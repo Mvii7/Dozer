@@ -11,11 +11,15 @@ and `=0` brings back the 2.0.0 code path.
 - Donkey Kong Bananza: a **Shadow quality** box in its Properties > Tuning, under Foliage off: Low,
   Medium, High and Very high cap the sun shadow's cascades at 1, 2, 3 and the game's own 4
   (`EDEN_NX2_DK_SHADOW_CASCADES=<1-3>`, `core/loader/nx2_dk_shadow.h`). Each cascade draws the
-  shadow casters again. No preset changes it.
+  shadow casters again.
 - Donkey Kong Bananza: the reflection cube map is captured every 24 frames instead of the game's 8
   when the menu program starts it (`EDEN_NX2_DK_CUBEMAP_INTERVAL`, no box; each capture draws the
   scene again), and a **Reflections off** box in its Properties > Tuning turns the cube map off
-  (`EDEN_NX2_DK_REFLECTIONS_OFF=1`, `core/loader/nx2_dk_reflections.h`). No preset changes it.
+  (`EDEN_NX2_DK_REFLECTIONS_OFF=1`, `core/loader/nx2_dk_reflections.h`).
+- Donkey Kong Bananza's presets: Performance, Balanced (read traps still on) and Experimental turn
+  foliage and reflections off and set Medium shadows; Safe leaves the game's own. A new **Quality**
+  preset in Bananza's Properties > Tuning only: Balanced's settings with foliage, reflections and
+  Very high shadows. The launchers set the same.
 - Split GPU thread: an equal semaphore acquire goes on without draining the back when the last
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are

@@ -36,25 +36,33 @@ enum class Preset : u8 {
     Safe = 2,        ///< start-safe.bat: all off, and the shortcuts Dozer keeps on set to 0
     Custom = 3,      ///< the boxes as set, nothing else
     Performance = 4, ///< start-performance.bat: Balanced with read traps off
+    Quality = 5,     ///< Balanced with Bananza's foliage, shadows and reflections as the game's
 };
 
-/// Combo order in the Tuning tab. Not the stored numbers.
+/// Combo order in the Tuning tab. Not the stored numbers. Quality is only for Bananza's own
+/// (GamePresetOrder): it changes nothing but Bananza's settings.
 inline constexpr std::array<Preset, 5> PresetOrder{
     Preset::Performance, Preset::Balanced, Preset::Reactive, Preset::Safe, Preset::Custom,
 };
+inline constexpr std::array<Preset, 6> BananzaPresetOrder{
+    Preset::Performance, Preset::Balanced, Preset::Quality,
+    Preset::Reactive,    Preset::Safe,     Preset::Custom,
+};
 
-/// The combo index of a preset (Custom when it is not one of these).
-constexpr int IndexOf(Preset preset) {
-    for (int i = 0; i < static_cast<int>(PresetOrder.size()); ++i) {
-        if (PresetOrder[static_cast<std::size_t>(i)] == preset) {
+/// The combo index of a preset in `order` (Custom, the last, when it is not one of these).
+template <std::size_t N = PresetOrder.size()>
+constexpr int IndexOf(Preset preset, const std::array<Preset, N>& order = PresetOrder) {
+    for (int i = 0; i < static_cast<int>(order.size()); ++i) {
+        if (order[static_cast<std::size_t>(i)] == preset) {
             return i;
         }
     }
-    return static_cast<int>(PresetOrder.size()) - 1;
+    return static_cast<int>(order.size()) - 1;
 }
 
 /// Bananza's shadow quality steps: the sun shadow's most cascades.
 inline constexpr int ShadowLow = 1;
+inline constexpr int ShadowMedium = 2;
 inline constexpr int ShadowVeryHigh = 4;
 
 struct Switches {
@@ -68,14 +76,16 @@ struct Switches {
     // Game-specific: no preset sets or clears these (the Safe preset leaves them as they are).
     bool dk_dyn = true;            ///< EDEN_NX2_DK_DYN=1, Bananza only
     bool mkw_dyn = true;           ///< EDEN_NX2_MKW_DYN=1, Mario Kart World only
-    // Game-specific, but set by the presets: on in Performance and Experimental, off in the others.
+    // Game-specific, but set by the presets (FromPreset): on in Performance, Balanced and
+    // Experimental, off in Safe and Quality.
     bool dk_foliage_off = true;    ///< EDEN_NX2_DK_FOLIAGE_OFF=1, Bananza only
-    /// Bananza's reflections off (EDEN_NX2_DK_REFLECTIONS_OFF=1); no preset sets it. On or off,
-    /// Bananza also always gets a reflection capture interval (EDEN_NX2_DK_CUBEMAP_INTERVAL).
-    bool dk_reflections_off = false;
+    /// Bananza's reflections off (EDEN_NX2_DK_REFLECTIONS_OFF=1). Unticked, Bananza gets a
+    /// reflection capture interval instead (EDEN_NX2_DK_CUBEMAP_INTERVAL).
+    bool dk_reflections_off = true;
     /// Bananza's shadow quality, kept per game only: the sun shadow's most cascades, Low 1 to
-    /// Very high 4 (the game's own); below it EDEN_NX2_DK_SHADOW_CASCADES=<n>. No preset sets it.
-    int dk_shadow = ShadowVeryHigh;
+    /// Very high 4 (the game's own); below it EDEN_NX2_DK_SHADOW_CASCADES=<n>. Medium in
+    /// Performance, Balanced and Experimental, Very high in Safe and Quality.
+    int dk_shadow = ShadowMedium;
     Preset preset = Preset::Performance;
 
     bool operator==(const Switches&) const = default;
@@ -91,8 +101,17 @@ constexpr Switches Performance() {
 constexpr Switches Balanced() {
     Switches switches{};
     switches.read_traps = true;
-    switches.dk_foliage_off = false;
     switches.preset = Preset::Balanced;
+    return switches;
+}
+
+/// Balanced with Bananza as the game makes it: foliage, very high shadows and reflections.
+constexpr Switches Quality() {
+    Switches switches = Balanced();
+    switches.dk_foliage_off = false;
+    switches.dk_reflections_off = false;
+    switches.dk_shadow = ShadowVeryHigh;
+    switches.preset = Preset::Quality;
     return switches;
 }
 
@@ -112,6 +131,8 @@ constexpr Switches AllOff() {
         .fg_timed = false,
         .osd = false,
         .dk_foliage_off = false,
+        .dk_reflections_off = false,
+        .dk_shadow = ShadowVeryHigh,
         .preset = Preset::Safe,
     };
 }
@@ -196,7 +217,7 @@ Overrides LoadOverrides(Read&& read) {
     const int preset = read("preset");
     overrides.global_preset = preset == FollowGlobalPreset;
     if (preset != static_cast<int>(Preset::Custom) && preset >= 0 &&
-        preset <= static_cast<int>(Preset::Performance)) {
+        preset <= static_cast<int>(Preset::Quality)) {
         overrides.preset = static_cast<Preset>(preset);
     }
     for (std::size_t i = 0; i < KeyCount; ++i) {
@@ -235,32 +256,32 @@ constexpr Preset PresetFromInt(int value) {
     case static_cast<int>(Preset::Safe):
     case static_cast<int>(Preset::Custom):
     case static_cast<int>(Preset::Performance):
+    case static_cast<int>(Preset::Quality):
         return static_cast<Preset>(value);
     default:
         return Preset::Custom;
     }
 }
 
-/// The boxes of a preset (Custom: `current` as it is), with the preset set. The game-specific
-/// boxes are always `current`'s.
-/// Performance and Experimental (Reactive) are Balanced's boxes with read traps off and Bananza's
-/// foliage off.
+/// The boxes of a preset (Custom: `current` as it is), with the preset set. The dynamic frame
+/// rate boxes are always `current`'s; Bananza's foliage, shadows and reflections are the preset's.
+/// Performance and Experimental (Reactive) are Balanced's boxes with read traps off; Quality is
+/// Balanced's with Bananza as the game makes it.
 constexpr Switches FromPreset(Preset preset, const Switches& current) {
     if (preset == Preset::Custom) {
         Switches switches = current;
         switches.preset = Preset::Custom;
         return switches;
     }
-    Switches switches = preset == Preset::Safe ? AllOff() : Balanced();
+    Switches switches = preset == Preset::Safe      ? AllOff()
+                        : preset == Preset::Quality ? Quality()
+                                                    : Balanced();
     if (preset == Preset::Performance || preset == Preset::Reactive) {
         switches.read_traps = false;
-        switches.dk_foliage_off = true;
     }
     switches.preset = preset;
     switches.dk_dyn = current.dk_dyn;
     switches.mkw_dyn = current.mkw_dyn;
-    switches.dk_shadow = current.dk_shadow;
-    switches.dk_reflections_off = current.dk_reflections_off;
     return switches;
 }
 
@@ -363,6 +384,7 @@ constexpr std::optional<bool> ReactiveFlushing(Preset preset) {
     switch (preset) {
     case Preset::Balanced:
     case Preset::Performance:
+    case Preset::Quality:
         return false;
     case Preset::Reactive:
         return true;
@@ -388,13 +410,17 @@ Switches Load(Read&& read, ReadPreset&& read_preset) {
             key.name == "read_traps" ? read_traps_fallback : Balanced().*key.field;
         switches.*key.field = read(key.name, fallback);
     }
+    const Switches preset_switches = FromPreset(preset, Balanced());
     for (const Key& key : GameKeys) {
-        // bananza_foliage_off was added after the presets: a file without it gets the preset's
-        const bool fallback = key.field == &Switches::dk_foliage_off
-                                  ? FromPreset(preset, Balanced()).dk_foliage_off
-                                  : Balanced().*key.field;
+        // Bananza's foliage and reflections were added after the presets: a file without them
+        // gets the preset's
+        const bool by_preset = key.field == &Switches::dk_foliage_off ||
+                               key.field == &Switches::dk_reflections_off;
+        const bool fallback = by_preset ? preset_switches.*key.field : Balanced().*key.field;
         switches.*key.field = read(key.name, fallback);
     }
+    // Bananza's shadow quality is not stored here: the preset's (games keep their own choice)
+    switches.dk_shadow = preset_switches.dk_shadow;
     switches.preset = preset;
     return AfterBoxChange(switches);
 }

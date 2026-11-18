@@ -31,12 +31,18 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_FG_TIMED", "1"},
     {"EDEN_NX2_OSD", "1"},
     {"EDEN_NX2_DK_DYN", "1"},
+    {"EDEN_NX2_DK_FOLIAGE_OFF", "1"},
+    {"EDEN_NX2_DK_SHADOW_CASCADES", "2"},
+    {"EDEN_NX2_DK_REFLECTIONS_OFF", "1"},
     {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
     {"EDEN_NX2_MODE_PACE", "2"},
     {"EDEN_NX2_PACE_SPIN_US", "1500"},
-    {"EDEN_NX2_DK_CUBEMAP_INTERVAL", "24"},
 };
+// Of those, the ones Bananza gets that another game does not.
+constexpr std::size_t BalancedBananzaOwn = 7;
 
+// The game-specific variables Bananza gets whatever the preset (Safe's: foliage, very high
+// shadows and reflections as the game's, the reflections spaced out).
 const std::vector<Var> BananzaVars{
     {"EDEN_NX2_DK_DYN", "1"},
     {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
@@ -68,6 +74,9 @@ const std::set<std::string_view> BananzaOnly{
     "EDEN_NX2_MODE_PACE",
     "EDEN_NX2_PACE_SPIN_US",
     "EDEN_NX2_DK_CUBEMAP_INTERVAL",
+    "EDEN_NX2_DK_FOLIAGE_OFF",
+    "EDEN_NX2_DK_SHADOW_CASCADES",
+    "EDEN_NX2_DK_REFLECTIONS_OFF",
 };
 
 // An ini group as the config sees it: the on / off keys and "preset".
@@ -126,9 +135,9 @@ TEST_CASE("Nx2PerfSettings: every setting reads back what was written", "[core]"
         REQUIRE(ini.values.at(std::string{key.name}) == false);
     }
     // The game-specific settings are stored like the others, but are no part of any preset
-    // (but for Bananza's foliage off, below).
+    // (but for Bananza's foliage and reflections off, below).
     for (const Key& key : GameKeys) {
-        if (key.field == &Switches::dk_foliage_off) {
+        if (key.field == &Switches::dk_foliage_off || key.field == &Switches::dk_reflections_off) {
             continue;
         }
         for (const Preset preset :
@@ -233,9 +242,8 @@ TEST_CASE("Nx2PerfSettings: a box changed by hand makes it Custom", "[core]") {
 }
 
 TEST_CASE("Nx2PerfSettings: presets set the launchers' variables", "[core]") {
-    // Performance: Balanced's, Bananza's foliage off and read traps off (start-performance.bat).
+    // Performance: Balanced's and read traps off (start-performance.bat).
     auto performance = BalancedBananza;
-    performance.insert(performance.begin() + 8, {"EDEN_NX2_DK_FOLIAGE_OFF", "1"});
     performance.push_back({"EDEN_NX2_READ_TRAPS", "0"});
     REQUIRE(Wanted(FromPreset(Preset::Performance, Balanced()), Game::Bananza) == performance);
     // Experimental: Performance's and RX_RT_FIT=3 (start-reactive-experimental.bat).
@@ -311,14 +319,13 @@ TEST_CASE("Nx2PerfSettings: a game's settings never reach another game", "[core]
         }
     }
     const auto other = Wanted(Balanced(), GameOf(OtherGame));
-    REQUIRE(other.size() == BalancedBananza.size() - BananzaVars.size());
-    // Bananza's dynamic frame rate off: its frame pacing and reflection interval stay, always.
+    REQUIRE(other.size() == BalancedBananza.size() - BalancedBananzaOwn);
+    // Bananza's dynamic frame rate off: its frame pacing stays, always.
     Switches no_dk = Balanced();
     no_dk.dk_dyn = false;
     const auto pacing = Wanted(no_dk, Game::Bananza);
-    REQUIRE(pacing.size() == other.size() + 4);
-    REQUIRE(pacing[pacing.size() - 2] == Var{"EDEN_NX2_PACE_SPIN_US", "1500"});
-    REQUIRE(pacing.back() == Var{"EDEN_NX2_DK_CUBEMAP_INTERVAL", "24"});
+    REQUIRE(pacing.size() == other.size() + BalancedBananzaOwn - 1);
+    REQUIRE(pacing.back() == Var{"EDEN_NX2_PACE_SPIN_US", "1500"});
     // Mario Kart World's switch is its own: Bananza's box does not touch it.
     REQUIRE(Wanted(no_dk, Game::MarioKartWorld) == Wanted(Balanced(), Game::MarioKartWorld));
     auto mkw = other;
@@ -621,47 +628,77 @@ TEST_CASE("Nx2PerfSettings: a game with its own preset can follow the global one
     REQUIRE(!loaded.preset);
 }
 
-TEST_CASE("Nx2PerfSettings: Bananza's foliage off follows the preset", "[core]") {
-    // On in Performance and Experimental, off in Balanced and Safe; Custom keeps it.
-    REQUIRE(FromPreset(Preset::Performance, Balanced()).dk_foliage_off);
-    REQUIRE(FromPreset(Preset::Reactive, Balanced()).dk_foliage_off);
-    REQUIRE_FALSE(FromPreset(Preset::Balanced, Performance()).dk_foliage_off);
-    REQUIRE_FALSE(FromPreset(Preset::Safe, Performance()).dk_foliage_off);
-    REQUIRE(FromPreset(Preset::Custom, Performance()).dk_foliage_off);
-    REQUIRE_FALSE(FromPreset(Preset::Custom, Balanced()).dk_foliage_off);
-    // Only Bananza gets the variable.
+TEST_CASE("Nx2PerfSettings: Bananza's foliage, shadows and reflections follow the preset", "[core]") {
+    // Foliage and reflections off and medium shadows in Performance, Balanced and Experimental;
+    // the game's own in Safe and Quality; Custom keeps them.
+    for (const Preset preset : {Preset::Performance, Preset::Balanced, Preset::Reactive}) {
+        const Switches switches = FromPreset(preset, Quality());
+        REQUIRE(switches.dk_foliage_off);
+        REQUIRE(switches.dk_reflections_off);
+        REQUIRE(switches.dk_shadow == ShadowMedium);
+    }
+    for (const Preset preset : {Preset::Safe, Preset::Quality}) {
+        const Switches switches = FromPreset(preset, Performance());
+        REQUIRE_FALSE(switches.dk_foliage_off);
+        REQUIRE_FALSE(switches.dk_reflections_off);
+        REQUIRE(switches.dk_shadow == ShadowVeryHigh);
+    }
+    REQUIRE(FromPreset(Preset::Balanced, Performance()).read_traps); // Balanced keeps read traps
+    REQUIRE(FromPreset(Preset::Custom, Quality()) .dk_shadow == ShadowVeryHigh);
+    REQUIRE(FromPreset(Preset::Custom, Balanced()).dk_foliage_off);
+    // Quality is Balanced's boxes otherwise, and sets nothing of Bananza's but the interval.
+    for (const Key& key : Keys) {
+        REQUIRE(Quality().*key.field == Balanced().*key.field);
+    }
+    REQUIRE_FALSE(ReactiveFlushing(Preset::Quality).value_or(true));
+    auto quality = BalancedBananza;
+    quality.erase(std::remove_if(quality.begin(), quality.end(),
+                                 [](const Var& var) {
+                                     return var.name == "EDEN_NX2_DK_FOLIAGE_OFF" ||
+                                            var.name == "EDEN_NX2_DK_SHADOW_CASCADES" ||
+                                            var.name == "EDEN_NX2_DK_REFLECTIONS_OFF";
+                                 }),
+                  quality.end());
+    quality.insert(quality.begin() + 11, {"EDEN_NX2_DK_CUBEMAP_INTERVAL", "24"});
+    REQUIRE(Wanted(Quality(), Game::Bananza) == quality);
+    // Only Bananza gets the variables.
     const Var off{"EDEN_NX2_DK_FOLIAGE_OFF", "1"};
     const auto has = [&](const std::vector<Var>& vars) {
         return std::find(vars.begin(), vars.end(), off) != vars.end();
     };
-    REQUIRE(has(Wanted(Performance(), Game::Bananza)));
+    REQUIRE(has(Wanted(Balanced(), Game::Bananza)));
     REQUIRE_FALSE(has(Wanted(Performance(), Game::MarioKartWorld)));
     REQUIRE_FALSE(has(Wanted(Performance(), Game::Other)));
-    REQUIRE_FALSE(has(Wanted(Balanced(), Game::Bananza)));
     REQUIRE_FALSE(has(Wanted(AllOff(), Game::Bananza)));
-    // Bananza starts with Performance: foliage off with a Balanced global preset; following the
-    // global preset, or a box of its own, decides otherwise.
-    REQUIRE(ForGame(Balanced(), Game::Bananza, {}).dk_foliage_off);
-    Overrides global;
-    global.global_preset = true;
-    REQUIRE_FALSE(ForGame(Balanced(), Game::Bananza, global).dk_foliage_off);
+    // A game's own box or shadow quality goes over its preset's.
     Overrides own;
     own.boxes[Keys.size() + 2] = false;
+    own.dk_shadow = ShadowLow;
     REQUIRE_FALSE(ForGame(Balanced(), Game::Bananza, own).dk_foliage_off);
+    REQUIRE(ForGame(Balanced(), Game::Bananza, own).dk_shadow == ShadowLow);
     REQUIRE(KeyAt(Keys.size() + 2).field == &Switches::dk_foliage_off);
-    // A file from before the setting: the preset's.
+    // Bananza's own Quality preset, stored and read back.
+    Overrides quality_preset;
+    quality_preset.preset = Preset::Quality;
+    std::map<std::string, int> stored;
+    SaveOverrides(quality_preset,
+                  [&](std::string_view key, int value) { stored[std::string{key}] = value; });
+    REQUIRE(LoadOverrides([&](std::string_view key) { return stored.at(std::string{key}); }) ==
+            quality_preset);
+    REQUIRE(ForGame(Balanced(), Game::Bananza, quality_preset) ==
+            FromPreset(Preset::Quality, Balanced()));
+    // A file from before the settings: the preset's.
     for (const Preset preset :
          {Preset::Balanced, Preset::Performance, Preset::Reactive, Preset::Safe}) {
         Ini old;
         old.Write(FromPreset(preset, Balanced()));
         old.values.erase("bananza_foliage_off");
+        old.values.erase("bananza_reflections_off");
         REQUIRE(old.Read() == FromPreset(preset, Balanced()));
     }
 }
 
 TEST_CASE("Nx2PerfSettings: Bananza's shadow quality", "[core]") {
-    // Very high, the game's own, sets nothing; the presets keep the game's choice.
-    REQUIRE(Performance().dk_shadow == ShadowVeryHigh);
     const auto cascades = [](const std::vector<Var>& vars) -> std::string_view {
         for (const Var& var : vars) {
             if (var.name == "EDEN_NX2_DK_SHADOW_CASCADES") {
@@ -670,17 +707,16 @@ TEST_CASE("Nx2PerfSettings: Bananza's shadow quality", "[core]") {
         }
         return {};
     };
-    REQUIRE(cascades(Wanted(Performance(), Game::Bananza)).empty());
+    // Very high, the game's own, sets nothing.
+    REQUIRE(cascades(Wanted(AllOff(), Game::Bananza)).empty());
+    REQUIRE(cascades(Wanted(Performance(), Game::Bananza)) == "2");
     Overrides own;
-    own.dk_shadow = 2; // Medium
-    REQUIRE_FALSE(own.Empty());
-    const Switches medium = ForGame(Balanced(), Game::Bananza, own);
-    REQUIRE(medium.dk_shadow == 2);
-    REQUIRE(cascades(Wanted(medium, Game::Bananza)) == "2");
-    REQUIRE(cascades(Wanted(medium, Game::MarioKartWorld)).empty());
-    REQUIRE(FromPreset(Preset::Safe, medium).dk_shadow == 2);
     own.dk_shadow = ShadowLow;
-    REQUIRE(cascades(Wanted(ForGame(Balanced(), Game::Bananza, own), Game::Bananza)) == "1");
+    REQUIRE_FALSE(own.Empty());
+    const Switches low = ForGame(Balanced(), Game::Bananza, own);
+    REQUIRE(low.dk_shadow == ShadowLow);
+    REQUIRE(cascades(Wanted(low, Game::Bananza)) == "1");
+    REQUIRE(cascades(Wanted(low, Game::MarioKartWorld)).empty());
     // Stored per game, read back; anything outside the steps is none.
     std::map<std::string, int> ini;
     SaveOverrides(own, [&](std::string_view key, int value) { ini[std::string{key}] = value; });
@@ -697,22 +733,19 @@ TEST_CASE("Nx2PerfSettings: Bananza's reflections", "[core]") {
     const auto has = [](const std::vector<Var>& vars, const Var& var) {
         return std::find(vars.begin(), vars.end(), var) != vars.end();
     };
-    // The interval always, Bananza only; off is a box of its own that no preset sets.
-    for (const Preset preset :
-         {Preset::Balanced, Preset::Performance, Preset::Reactive, Preset::Safe}) {
-        const Switches switches = FromPreset(preset, Balanced());
-        REQUIRE_FALSE(switches.dk_reflections_off);
-        REQUIRE(has(Wanted(switches, Game::Bananza), interval));
-        REQUIRE_FALSE(has(Wanted(switches, Game::MarioKartWorld), interval));
+    // Off: no interval; on (Safe, Quality, or a box): the interval, Bananza only.
+    REQUIRE(has(Wanted(Balanced(), Game::Bananza), off));
+    REQUIRE_FALSE(has(Wanted(Balanced(), Game::Bananza), interval));
+    REQUIRE_FALSE(has(Wanted(Balanced(), Game::Other), off));
+    for (const Switches& on : {AllOff(), Quality()}) {
+        REQUIRE(has(Wanted(on, Game::Bananza), interval));
+        REQUIRE_FALSE(has(Wanted(on, Game::Bananza), off));
+        REQUIRE_FALSE(has(Wanted(on, Game::MarioKartWorld), interval));
     }
     Overrides own;
-    own.boxes[Keys.size() + 3] = true;
+    own.boxes[Keys.size() + 3] = false;
     REQUIRE(KeyAt(Keys.size() + 3).field == &Switches::dk_reflections_off);
-    const Switches reflections_off = ForGame(Balanced(), Game::Bananza, own);
-    REQUIRE(reflections_off.dk_reflections_off);
-    REQUIRE(FromPreset(Preset::Safe, reflections_off).dk_reflections_off);
-    const auto vars = Wanted(reflections_off, Game::Bananza);
-    REQUIRE(has(vars, off));
-    REQUIRE_FALSE(has(vars, interval)); // no capture to space out
-    REQUIRE_FALSE(has(Wanted(reflections_off, Game::Other), off));
+    const Switches reflections_on = ForGame(Balanced(), Game::Bananza, own);
+    REQUIRE_FALSE(reflections_on.dk_reflections_off);
+    REQUIRE(has(Wanted(reflections_on, Game::Bananza), interval));
 }

@@ -116,14 +116,15 @@ void ConfigureNx2Perf::ShowPreset() {
     }
     switch (preset) {
     case Perf::Preset::Balanced:
-        ui->preset_text->setText(tr("The balanced settings. Foliage is rendered at a performance "
-                                    "cost. Reactive Flushing off (Graphics, Advanced). Like "
+        ui->preset_text->setText(tr("The balanced settings, with read traps on. Donkey Kong "
+                                    "Bananza: foliage and reflections off, medium shadows. "
+                                    "Reactive Flushing off (Graphics, Advanced). Like "
                                     "start-balanced.bat."));
         break;
     case Perf::Preset::Performance:
         ui->preset_text->setText(tr("The fastest settings, with read traps and Reactive Flushing "
-                                    "off. Foliage is not rendered for a performance gain. Like "
-                                    "start-performance.bat."));
+                                    "off. Donkey Kong Bananza: foliage and reflections off, "
+                                    "medium shadows. Like start-performance.bat."));
         break;
     case Perf::Preset::Reactive:
         ui->preset_text->setText(
@@ -135,6 +136,11 @@ void ConfigureNx2Perf::ShowPreset() {
                                     "default off too (the variables start-safe.bat sets to 0). "
                                     "Frame generation off; other graphics settings such as "
                                     "Reactive Flushing stay as they are."));
+        break;
+    case Perf::Preset::Quality:
+        ui->preset_text->setText(tr("The balanced settings, with Donkey Kong Bananza as the game "
+                                    "makes it: foliage, reflections and very high shadows. Only "
+                                    "chosen in that game's Properties."));
         break;
     case Perf::Preset::Custom:
         ui->preset_text->setText(tr("Your own choice of the settings below."));

@@ -60,6 +60,8 @@ QString PresetName(Perf::Preset preset) {
         return QObject::tr("Experimental");
     case Perf::Preset::Safe:
         return QObject::tr("Safe");
+    case Perf::Preset::Quality:
+        return QObject::tr("Quality");
     case Perf::Preset::Custom:
         break;
     }
@@ -104,12 +106,12 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     // Preferred, like the other tabs' boxes: the box grows to the cross's height.
     preset = new QComboBox(this);
     preset->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    for (const Perf::Preset choice : Perf::PresetOrder) {
+    for (const Perf::Preset choice : Order()) {
         preset->addItem(PresetName(choice));
     }
     // Custom is what changing a box of the Tuning tab makes; it is only shown.
     if (auto* model = qobject_cast<QStandardItemModel*>(preset->model())) {
-        model->item(Perf::IndexOf(Perf::Preset::Custom))->setEnabled(false);
+        model->item(static_cast<int>(Order().size()) - 1)->setEnabled(false);
     }
     preset_reset = CreateResetButton(this);
     auto* preset_row = new QHBoxLayout;
@@ -117,8 +119,9 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     preset_row->addWidget(preset_reset);
     form->addRow(tr("Preset"), preset_row);
     connect(preset, &QComboBox::activated, this, [this](int index) {
-        if (index >= 0 && static_cast<std::size_t>(index) < Perf::PresetOrder.size()) {
-            ChoosePreset(Perf::PresetOrder[static_cast<std::size_t>(index)]);
+        const auto order = Order();
+        if (index >= 0 && static_cast<std::size_t>(index) < order.size()) {
+            ChoosePreset(order[static_cast<std::size_t>(index)]);
         }
     });
     connect(preset_reset, &QPushButton::clicked, this, [this] {
@@ -163,9 +166,10 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         form->addRow(tr("Shadow quality"), shadow);
         connect(shadow, &QComboBox::activated, this, [this](int index) {
             const int chosen = Perf::ShadowLow + index;
-            own.dk_shadow = chosen == UISettings::values.nx2perf.dk_shadow
-                                ? std::nullopt
-                                : std::optional<int>{chosen};
+            Perf::Overrides without = own;
+            without.dk_shadow.reset();
+            const int base = Perf::ForGame(UISettings::values.nx2perf, game, without).dk_shadow;
+            own.dk_shadow = chosen == base ? std::nullopt : std::optional<int>{chosen};
             Refresh();
         });
     }
@@ -175,12 +179,27 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
 
 ConfigureNx2PerfPerGame::~ConfigureNx2PerfPerGame() = default;
 
+std::span<const Perf::Preset> ConfigureNx2PerfPerGame::Order() const {
+    // Quality only changes Bananza's own settings
+    if (game == Perf::Game::Bananza) {
+        return Perf::BananzaPresetOrder;
+    }
+    return Perf::PresetOrder;
+}
+
 void ConfigureNx2PerfPerGame::Refresh() {
     const Perf::Switches& global = UISettings::values.nx2perf;
     const Perf::Switches now = Perf::ForGame(global, game, own);
     {
         const QSignalBlocker blocker{preset};
-        preset->setCurrentIndex(Perf::IndexOf(now.preset));
+        const auto order = Order();
+        int index = static_cast<int>(order.size()) - 1;
+        for (std::size_t i = 0; i < order.size(); ++i) {
+            if (order[i] == now.preset) {
+                index = static_cast<int>(i);
+            }
+        }
+        preset->setCurrentIndex(index);
     }
     ShowReset(preset_reset, now.preset != global.preset);
     for (const Row& row : rows) {
@@ -201,6 +220,15 @@ void ConfigureNx2PerfPerGame::ChoosePreset(Perf::Preset chosen) {
     const Perf::Preset global = UISettings::values.nx2perf.preset;
     own.preset.reset();
     own.global_preset = false;
+    // Bananza's foliage, reflections and shadows are the preset's again
+    for (std::size_t key = 0; key < Perf::KeyCount; ++key) {
+        const auto field = Perf::KeyAt(key).field;
+        if (field == &Perf::Switches::dk_foliage_off ||
+            field == &Perf::Switches::dk_reflections_off) {
+            own.boxes[key].reset();
+        }
+    }
+    own.dk_shadow.reset();
     // Only what differs from where the game starts is kept.
     if (chosen != Perf::PresetFor(global, game, own)) {
         if (chosen == global) {

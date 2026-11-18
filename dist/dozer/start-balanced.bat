@@ -90,8 +90,12 @@ set EDEN_NX2_MODE_PACE=2
 set EDEN_NX2_PACE_SPIN_US=1500
 rem Donkey Kong Bananza dynamic frame rate (DK_DYN above; 0 = the game's own 60/30 rule).
 set EDEN_NX2_DK_DYN=%DK_DYN%
-rem Donkey Kong Bananza foliage drawn (Performance and Experimental turn it off, README).
-set EDEN_NX2_DK_FOLIAGE_OFF=
+rem Donkey Kong Bananza foliage off: its grass, flowers and plants are not drawn (README).
+set EDEN_NX2_DK_FOLIAGE_OFF=1
+rem Donkey Kong Bananza: medium shadows (the sun shadow in 2 cascades) and no reflections (README).
+set EDEN_NX2_DK_SHADOW_CASCADES=2
+set EDEN_NX2_DK_REFLECTIONS_OFF=1
+set EDEN_NX2_DK_CUBEMAP_INTERVAL=
 rem Mario Kart World dynamic frame rate (MKW_DYN above).
 set EDEN_NX2_MKW_DYN=%MKW_DYN%
 rem FSR3 frame generation: generated frames blended for the time they are shown (only

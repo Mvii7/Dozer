@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
 #include <vector>
 
 #include <QWidget>
@@ -35,6 +36,8 @@ private:
         std::size_t key; ///< the index in Core::Nx2PerfSettings::KeyAt
     };
 
+    /// The presets this game's combo lists, in order (Custom last).
+    std::span<const Core::Nx2PerfSettings::Preset> Order() const;
     void Refresh();
     void ChoosePreset(Core::Nx2PerfSettings::Preset chosen);
     void ChooseBox(const Row& row, bool checked);

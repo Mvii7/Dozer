@@ -184,13 +184,14 @@ changes them (not even Safe), and they have no global setting. For Bananza the
 program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`,
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
 it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
-**Foliage off** box under its Dynamic frame rate box (`DK_FOLIAGE_OFF=1`): ticked by the
-Performance and Experimental presets, unticked by Balanced and Safe, and changeable per game; see
-"Donkey Kong Bananza foliage off" below. Under it, **Shadow quality** (Low, Medium, High, Very
-high: the sun shadow's 1 to 4 cascades, Very high the game's own; `DK_SHADOW_CASCADES=<1-3>`), which
-no preset changes; see "Donkey Kong Bananza shadow quality" below. Then **Reflections off**
-(`DK_REFLECTIONS_OFF=1`), also no preset's; with it unticked the program sets
-`DK_CUBEMAP_INTERVAL=24` (no box): see "Donkey Kong Bananza reflections" below. The log says which were set ("Dozer settings for <title id>
+**Foliage off** box under its Dynamic frame rate box (`DK_FOLIAGE_OFF=1`), a **Reflections off**
+box (`DK_REFLECTIONS_OFF=1`; unticked, the program sets `DK_CUBEMAP_INTERVAL=24`, no box) and
+**Shadow quality** (Low, Medium, High, Very high: the sun shadow's 1 to 4 cascades, Very high the
+game's own; `DK_SHADOW_CASCADES=<1-3>`). The presets set all three: Performance, Balanced and
+Experimental foliage and reflections off and Medium shadows; Safe the game's own. Bananza's
+Properties also have a **Quality** preset: Balanced's settings with foliage, reflections and Very
+high shadows. Each is changeable per game; see "Donkey Kong Bananza foliage off", "... shadow
+quality" and "... reflections" below. The log says which were set ("Dozer settings for <title id>
 ...").
 
 **When a change takes effect.** The switches are read once per session. The settings take effect
@@ -357,10 +358,10 @@ and `ModelSettings`) are changed in memory, as a mod layer below your own mods: 
 placement, every foliage model's draw distance set to nothing, and the draw caps set to 1. Nothing
 is written to disk. Foliage baked into a stage may still be loaded but is not drawn.
 
-`start-performance.bat` and `start-reactive-experimental.bat` set it; `start-balanced.bat` and
-`start-safe.bat` leave the foliage on. In the menu program it is the **Foliage off** box in
-Bananza's Properties > Tuning, which the Performance and Experimental presets tick and Balanced and
-Safe untick. It applies when the game starts.
+`start-performance.bat`, `start-balanced.bat` and `start-reactive-experimental.bat` set it;
+`start-safe.bat` leaves the foliage on. In the menu program it is the **Foliage off** box in
+Bananza's Properties > Tuning, which the Performance, Balanced and Experimental presets tick and
+Safe and Quality untick. It applies when the game starts.
 
 ## Donkey Kong Bananza shadow quality
 
@@ -370,7 +371,8 @@ the remaining ones are stretched over the same distance, so shadows further away
 main module is patched as it loads, where the game sets up each shadow; the log says whether it
 was ("sun shadow cascades capped at ..."). In the menu program it is the **Shadow quality** box in
 Bananza's Properties > Tuning: Low (1), Medium (2), High (3) and Very high (the game's own, unset).
-No preset changes it. It applies when the game starts.
+Performance, Balanced and Experimental (and their launchers) set Medium; Safe and Quality Very
+high. It applies when the game starts.
 
 ## Donkey Kong Bananza reflections
 
@@ -380,7 +382,8 @@ capture draws the scene again), which its shiny and wet surfaces reflect.
 and reflections that follow changes later. The menu program always sets 24 for Bananza (no box);
 set the variable in `nx2_switches.txt` to try another value, which wins over the program's.
 `EDEN_NX2_DK_REFLECTIONS_OFF=1` turns the cube map off: no captures, no reflections. In the menu
-program it is the **Reflections off** box in Bananza's Properties > Tuning; no preset changes it.
+program it is the **Reflections off** box in Bananza's Properties > Tuning, ticked by
+Performance, Balanced and Experimental (and their launchers), unticked by Safe and Quality.
 Both are patched in the main module as it loads; the log says whether they were. They apply when
 the game starts.
 
