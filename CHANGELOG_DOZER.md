@@ -6,7 +6,7 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Unreleased (Dozer)
+## Dozer 0.1.6 (`v0.1.6`)
 
 - Donkey Kong Bananza: a **Foliage off** box in its Properties > Tuning, under Dynamic frame rate
   (`EDEN_NX2_DK_FOLIAGE_OFF=1`). Its foliage settings files are changed as the RomFS is read (an
@@ -30,7 +30,17 @@ and `=0` brings back the 2.0.0 code path.
   is written to a temporary file and renamed over the old one, so a crash while saving keeps the
   previous cache.
 
-## Dozer 0.1.6 (`v0.1.6`)
+- Switch 2 semaphore acquires that wait for a word to reach a value are checked without draining
+  the GPU split first: a release still queued for the back decides them, else the word in memory
+  does. A suspended acquire that is not met drains at most once per 1 ms. Equal and mask acquires,
+  counter reports, words on GPU-written pages, High GPU accuracy and delayed fences still drain.
+  The front also publishes early to a back that ran dry. `EDEN_NX2_ACQUIRE_NODRAIN=0` drains as
+  before, `=2` drains anyway and logs where the word disagrees. Ported from Lichii.
+- Mario Kart World: the water shader samples a ground-height map that is never bound; where both
+  heights read zero its wave stays at zero, and real shallows and dry ground keep the game's own
+  amplitudes. The water collision map is downloaded on the next fence instead of idling the GPU.
+  From Lichii.
+- macOS: `GPUDirtyMemoryManager` builds again (a `std::min` type mismatch).
 
 - Ported from Lichii: CPU-side performance work. A guest core polls for interrupts in hardware for
   up to 100 us before it idles (`EDEN_NX2_IDLE_SPIN_US=0` blocks at once as before); the GPU
