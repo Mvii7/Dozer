@@ -190,7 +190,7 @@ TEST_CASE("Nx2DkFoliage: the material effect caps", "[core]") {
     REQUIRE(Read32(archive, root + 8 + 4) == Bits(30.0f));
 }
 
-TEST_CASE("Nx2DkFoliage: the models' far clip and LOD thresholds", "[core]") {
+TEST_CASE("Nx2DkFoliage: the models' far clip", "[core]") {
     auto archive = Sarc(Byml({{"FarClipDistance", 0xD2, Bits(200.0f)},
                               {"LodThreshold0", 0xD2, Bits(0.1f)},
                               {"NearClipDistance", 0xD2, Bits(9.0f)}}));
@@ -200,11 +200,8 @@ TEST_CASE("Nx2DkFoliage: the models' far clip and LOD thresholds", "[core]") {
     REQUIRE(PatchModelSettings(archive, settings));
     const size_t root = 0x60 + Read32(archive, 12 + 0x60) + 4;
     REQUIRE(Read32(archive, root + 4) == Bits(100.0f));
-    REQUIRE(Read32(archive, root + 8 + 4) == Bits(0.1f)); // the LOD row is not set
-    settings.lod = 200;
-    REQUIRE(PatchModelSettings(archive, settings));
-    REQUIRE(Read32(archive, root + 8 + 4) == Bits(0.1f * 2.0f));
-    REQUIRE(Read32(archive, root + 16 + 4) == Bits(9.0f)); // the near clip is left alone
+    REQUIRE(Read32(archive, root + 8 + 4) == Bits(0.1f));  // the LOD thresholds are left alone
+    REQUIRE(Read32(archive, root + 16 + 4) == Bits(9.0f)); // and the near clip
 }
 
 TEST_CASE("Nx2DkFoliage: the number of placed models", "[core]") {
@@ -261,44 +258,6 @@ TEST_CASE("Nx2DkFoliage: effect caps off", "[core]") {
     auto units = Sarc(Byml({{"MaxActiveEffectNum", 0xD1, 8}}));
     REQUIRE(PatchSettingUnits(units, settings));
     REQUIRE(Read32(units, 0x60 + Read32(units, 12 + 0x60) + 4 + 4) == 1);
-}
-
-TEST_CASE("Nx2DkFoliage: voxel effect rows", "[core]") {
-    auto effects = Sarc(Byml({{"BufferSize", 0xD1, 1024}, {"IsUseDepthCollisionEffect", 0xD0, 1}}));
-    Settings settings;
-    settings.voxel_emitter = 25;
-    settings.depth_collision_off = true;
-    REQUIRE(settings.Active());
-    REQUIRE(PatchEffectSettings(effects, settings));
-    const size_t root = 0x60 + Read32(effects, 12 + 0x60) + 4;
-    REQUIRE(Read32(effects, root + 4) == 256);
-    REQUIRE(Read32(effects, root + 8 + 4) == 0);
-}
-
-TEST_CASE("Nx2DkFoliage: the object LOD thresholds", "[core]") {
-    auto archive = Sarc(Byml({{"ModelLodThresholdFirst", 0xD2, Bits(0.25f)},
-                              {"ModelLodThresholdSecond", 0xD2, Bits(0.125f)},
-                              {"ShadowLodOffset", 0xD2, Bits(1.0f)}}));
-    Settings settings;
-    REQUIRE_FALSE(PatchGraphicsParam(archive, settings));
-    settings.object_lod = 200;
-    REQUIRE(settings.Active());
-    REQUIRE(PatchGraphicsParam(archive, settings));
-    const size_t root = 0x60 + Read32(archive, 12 + 0x60) + 4;
-    REQUIRE(Read32(archive, root + 4) == Bits(0.5f));
-    REQUIRE(Read32(archive, root + 8 + 4) == Bits(0.25f));
-    REQUIRE(Read32(archive, root + 16 + 4) == Bits(1.0f)); // the others are left alone
-}
-
-TEST_CASE("Nx2DkFoliage: voxel debris off", "[core]") {
-    auto effects = Sarc(Byml({{"BufferSize", 0xD1, 1024}, {"OneEmitterBufferSize", 0xD1, 192}}));
-    Settings settings;
-    settings.voxel_emitter_off = true;
-    REQUIRE(settings.Active());
-    REQUIRE(PatchEffectSettings(effects, settings));
-    const size_t root = 0x60 + Read32(effects, 12 + 0x60) + 4;
-    REQUIRE(Read32(effects, root + 4) == 0);
-    REQUIRE(Read32(effects, root + 8 + 4) == 192); // the other buffers are left alone
 }
 
 TEST_CASE("Nx2DkFoliage: each stage's foliage draw buffer", "[core]") {

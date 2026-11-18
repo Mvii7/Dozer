@@ -130,15 +130,19 @@ and `=0` brings back the 2.0.0 code path.
 
 - Donkey Kong Bananza's Properties window has a **Quality** tab (only that game has it): a Default / Balanced / Performance / Custom preset box and
   experimental quality sliders (render resolution range,
-  bloom and radial blur buffers, cube map update interval, terrain LOD distance, terrain mesh simplification, camera far distance, colour decal
+  bloom and radial blur buffers, cube map update interval, camera far distance, actor draw distance, colour decal
   limit; some of the rows are only for finding out what they do). A
   ticked row replaces one value the game reads from its graphics parameters while it loads
   (`EDEN_NX2_DKQ_*`, `core/loader/nx2_dk_quality.h`); all unticked by default. Found by reading
   the game's executable; which ones help, and which break something, is still being tried.
   Three rows change the game's foliage settings files (ClusteredRendering) as the RomFS is read,
   as an in-memory mod layer (`core/loader/nx2_dk_foliage.h`): models at once, view margin, placement
-  density, draw distance and LOD bias per model, foliage off, an off box per effect cap, debris off, plus four effect caps (effects per frame, particles per emitter, effects alive, terrain
+  density, draw distance per model, foliage off, an off box per effect cap, debris off, plus four effect caps (effects per frame, particles per emitter, effects alive, terrain
   material effects) from the effect settings files.
+  Rows that only change mesh detail or the game's own CPU work (terrain LOD and mesh
+  simplification, character, object and foliage LOD, the occlusion query thresholds, which the
+  emulator does not use below High GPU accuracy, and the voxel effect rows) are gone: in testing
+  none of them changed the draws per frame, which is what limits the frame rate.
 
 - Opaque ASTC to BC1 (`EDEN_NX2_ASTC_BC1`) is now on by default only when the driver's memory
   budget is under 12 GiB. Finding the opaque images reads every block of each new ASTC image on the

@@ -302,52 +302,19 @@
 # RADIAL_BLUR_SCALE=<10-100> in % (50), RADIAL_BLUR_SAMPLES=<1-32> (20).
 #EDEN_NX2_DKQ_RADIAL_BLUR_SCALE=50
 #EDEN_NX2_DKQ_RADIAL_BLUR_SAMPLES=20
-# VOXEL_LOD1_DIST / VOXEL_LOD2_DIST=<10-400>: the terrain's near and far LOD distance in % of the
-# game's (100; its own: 200 and 420). Lower:
-# coarser terrain closer to the camera.
-#EDEN_NX2_DKQ_VOXEL_LOD1_DIST=100
-#EDEN_NX2_DKQ_VOXEL_LOD2_DIST=100
-# VOXEL_LOD1_VALUE / VOXEL_LOD2_VALUE=<10-1000>: the near and far LOD value in % of the game's
-# (100; its own: 180 and 1000). Effect not known.
-#EDEN_NX2_DKQ_VOXEL_LOD1_VALUE=100
-#EDEN_NX2_DKQ_VOXEL_LOD2_VALUE=100
-# MESH_SIMPLIFY=<1-5>: the terrain's mesh simplification type for every field: 1 Normal (the
-# game's usual), 2 High, 3 SuperHigh, 4 NoSimplify, 5 Low (which simplifies the most is not
-# known: higher could mean more simplification or less).
-#EDEN_NX2_DKQ_MESH_SIMPLIFY=5
-# CHARACTER_LOD=<25-400>: the LOD thresholds of models with their own (Donkey Kong's 0.57 and 0.42 of
-# the screen; other characters) in % of the game's, as each model loads. Higher: simpler meshes
-# sooner.
-#EDEN_NX2_DKQ_CHARACTER_LOD=100
 # ACTOR_DRAW_DISTANCE=<10-100>: the actors' far clip distances in % of the game's (a table of the
 # executable's read-only data, one per FarClipLevel: Default 200, EasyClipLv1-3 50/100/150,
 # HardClipLv1-5 300/450/700/900/1200; NonClip actors are never clipped). Lower: actors clipped
 # closer.
 #EDEN_NX2_DKQ_ACTOR_DRAW_DISTANCE=100
-# VOXEL_DAMAGE_OFF=1 / VOXEL_DESTRUCTION_OFF=1: the voxel effect emitter's "Damage" / "Destruction"
-# effect key made empty, so it plays nothing when terrain is damaged / destroyed.
-#EDEN_NX2_DKQ_VOXEL_DAMAGE_OFF=1
-#EDEN_NX2_DKQ_VOXEL_DESTRUCTION_OFF=1
-# DECO_RECALC_OFF=1: the foliage on terrain is not worked out again when its voxels change
-# (IsRecalcClstrDecoOnVoxelChange off): less CPU while digging; foliage may stay floating.
-#EDEN_NX2_DKQ_DECO_RECALC_OFF=1
 # CAMERA_FAR=<10-100>: the camera's far distance in % (100). Beyond it nothing is drawn: 10 about
 # doubled the frame rate in a busy area (Selevet fork, EDEN_NX2_FAR_SCALE) but scenery stops
 # being drawn fairly close.
 #EDEN_NX2_DKQ_CAMERA_FAR=100
 # COLOR_DECAL_MAX=<1-660>: the most colour decals (660).
 #EDEN_NX2_DKQ_COLOR_DECAL_MAX=660
-# GGX_FILTER_OFF=1, CUBEMAP_OCCLUSION_OFF=1: skip the reflection cube maps' GGX filtering / their
-# occlusion check. For testing.
+# GGX_FILTER_OFF=1: skip the reflection cube maps' GGX filtering. For testing.
 #EDEN_NX2_DKQ_GGX_FILTER_OFF=1
-#EDEN_NX2_DKQ_CUBEMAP_OCCLUSION_OFF=1
-# OCCLUSION_DEPTH=<10-400> / OCCLUSION_RADIUS=<10-1000> / OCCLUSION_POLYGON=<1-400>: the occlusion
-# query thresholds (the game's 90 in the stages or 50, 50, 1000) in % of the game's. An object is tested for being hidden
-# only if its radius is under RADIUS and it has more polygons than POLYGON: a higher radius and
-# fewer polygons test more objects. DEPTH's effect is not known.
-#EDEN_NX2_DKQ_OCCLUSION_DEPTH=100
-#EDEN_NX2_DKQ_OCCLUSION_RADIUS=100
-#EDEN_NX2_DKQ_OCCLUSION_POLYGON=100
 # VOXEL_BORDER_MESH_OFF=1: no border mesh between neighbouring terrain chunks. For testing.
 #EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF=1
 # SHADOW_MASK_OFF=1: turn off the game's shadow masks (volume shadows). For testing.
@@ -378,30 +345,15 @@
 #EDEN_NX2_DKQ_FOLIAGE_FRUSTUM_OFF=1
 #EDEN_NX2_DKQ_FOLIAGE_DENSITY=100
 # FOLIAGE_FAR_CLIP=<1-100>: each foliage model's far clip distance (100-300 units in the game's
-# data) in % of the game's: foliage is drawn only closer. FOLIAGE_LOD=<10-1000>: each model's
-# LOD thresholds in % of the game's: which direction is coarser is not known. FOLIAGE_DENSITY also scales
+# data) in % of the game's: foliage is drawn only closer. FOLIAGE_DENSITY also scales
 # the number of dynamically placed models of each material.
 #EDEN_NX2_DKQ_FOLIAGE_FAR_CLIP=100
-#EDEN_NX2_DKQ_FOLIAGE_LOD=100
-# OBJECT_LOD=<25-400>: the graphics parameters' model LOD thresholds (0.1875, 0.093, 0.045 of the
-# screen; the models without thresholds of their own) in % of the game's, in the game's
-# SystemData/ProjectGraphicsParam as it is read. Higher: simpler meshes sooner.
-#EDEN_NX2_DKQ_OBJECT_LOD=100
 # EFFECT_EMIT_CAP / EFFECT_PARTICLE_CAP / EFFECT_ALIVE_CAP / EFFECT_MATERIAL_CAP=<5-100>: in % of
 # the game's: effects started per frame (156), particles per emitter (512), effects alive per
 # emission rule (64) and terrain material effects active at once. Same mechanism as FOLIAGE_*.
 # EFFECT_EMIT_OFF / EFFECT_PARTICLE_OFF / EFFECT_ALIVE_OFF / EFFECT_MATERIAL_OFF=1: that effect cap at 1.
-# VOXEL_EMITTER_BUFFER / VOXEL_SURFACE_BUFFER=<1-100>: the voxel effect emitter's buffer (1024) and
-# the voxel surface effects' buffer (5000) in % of the game's. VOXEL_SURFACE_EFFECT_OFF=1 /
-# DEPTH_COLLISION_EFFECT_OFF=1: those effects off. Not tested yet.
 # DEBRIS_OFF=1: every terrain material gets FragmentType DisableForce (no fragments when broken).
 #EDEN_NX2_DKQ_DEBRIS_OFF=1
-#EDEN_NX2_DKQ_VOXEL_EMITTER_BUFFER=100
-# VOXEL_EMITTER_OFF=1: the voxel effect emitter's buffer at 0 (no voxel effects at all, if the game copes).
-#EDEN_NX2_DKQ_VOXEL_EMITTER_OFF=1
-#EDEN_NX2_DKQ_VOXEL_SURFACE_BUFFER=100
-#EDEN_NX2_DKQ_VOXEL_SURFACE_EFFECT_OFF=1
-#EDEN_NX2_DKQ_DEPTH_COLLISION_EFFECT_OFF=1
 #EDEN_NX2_DKQ_EFFECT_EMIT_OFF=1
 #EDEN_NX2_DKQ_EFFECT_PARTICLE_OFF=1
 #EDEN_NX2_DKQ_EFFECT_ALIVE_OFF=1

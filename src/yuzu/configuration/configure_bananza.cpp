@@ -13,7 +13,6 @@
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSlider>
-#include <QStringList>
 #include <QVBoxLayout>
 
 #include "qt_common/config/uisettings.h"
@@ -147,22 +146,6 @@ void ConfigureBananza::RetranslateUI() {
                                        tr("The radial blur's buffer size relative to the frame.")};
     texts[Quality::RadialBlurSamples] = {tr("Radial blur samples"),
                                          tr("Samples the radial blur takes per pixel.")};
-    texts[Quality::VoxelLod1Dist] = {
-        tr("Terrain LOD 1 distance (near)"),
-        tr("Scales the distance at which the destructible terrain switches to its first, "
-           "coarser mesh (the game's own is 200). Lower: coarser terrain closer to the camera.")};
-    texts[Quality::VoxelLod1Value] = {
-        tr("Terrain LOD 1 value (near)"),
-        tr("Scales the value the first LOD step carries beside its distance (the game's own is "
-           "180). Higher may mean a coarser step; not known yet: for testing.")};
-    texts[Quality::VoxelLod2Dist] = {
-        tr("Terrain LOD 2 distance (far)"),
-        tr("Scales the distance at which the terrain switches to its farthest, coarsest mesh "
-           "(the game's own is 420). Lower: far terrain simplifies sooner, near terrain stays.")};
-    texts[Quality::VoxelLod2Value] = {
-        tr("Terrain LOD 2 value (far)"),
-        tr("Scales the value the far LOD step carries (the game's own is 1000). Higher may mean "
-           "a coarser step; not known yet: for testing.")};
     texts[Quality::CameraFar] = {
         tr("Camera far distance"),
         tr("Scales the distance beyond which the game draws nothing. A big cut (about 10%) "
@@ -171,60 +154,15 @@ void ConfigureBananza::RetranslateUI() {
     texts[Quality::ColorDecalMax] = {
         tr("Colour decal limit"),
         tr("The most colour decals (paint marks) the game keeps; its own is 660.")};
-    texts[Quality::CharacterLod] = {
-        tr("Character LOD bias"),
-        tr("Scales the screen sizes at which models with thresholds of their own (Donkey Kong: "
-           "0.57 and 0.42 of the screen; other characters) switch to simpler meshes. Higher: "
-           "simpler meshes sooner, cheaper but coarser.")};
     texts[Quality::ActorDrawDistance] = {
         tr("Actor draw distance"),
         tr("Scales how far away actors (objects, enemies, scenery pieces: over 2000 of them use "
            "it) stop being drawn, from the game's own distances (50 to 1200 by actor, 200 by "
            "default). Lower: they are clipped closer to you. Actors marked never to clip stay.")};
-    texts[Quality::VoxelDamageOff] = {
-        tr("Voxel damage effects off"),
-        tr("Gives the voxel effect emitter no effect to play when terrain is damaged (its "
-           "\"Damage\" key made empty). For finding out which effects these are.")};
-    texts[Quality::VoxelDestructionOff] = {
-        tr("Voxel destruction effects off"),
-        tr("Gives the voxel effect emitter no effect to play when terrain is destroyed (its "
-           "\"Destruction\" key made empty): the pieces that fly off, most likely.")};
-    texts[Quality::DecoRecalcOff] = {
-        tr("Foliage rebuild on digging off"),
-        tr("Stops the game from working out again the foliage (grass, plants) on a piece of "
-           "terrain each time its voxels change, which happens all the time while digging or "
-           "smashing: less CPU work then. Foliage may stay floating where terrain was removed. "
-           "For testing.")};
-    texts[Quality::MeshSimplify] = {
-        tr("Terrain mesh simplification"),
-        tr("How the game simplifies the destructible terrain's meshes: 1 Normal (the game's "
-           "usual), 2 High, 3 SuperHigh, 4 NoSimplify, 5 Low. Which of them simplifies the "
-           "most is not known: the names could mean either way, so try them. Applies to every "
-           "terrain field, including ones the game keeps unsimplified.")};
     texts[Quality::GgxFilterOff] = {
         tr("Reflection filtering off"),
         tr("Skips the GGX filtering of the reflection cube maps. Reflections get sharper or "
            "wrong; may cost less. For testing.")};
-    texts[Quality::CubeMapOcclusionOff] = {
-        tr("Cube map occlusion check off"),
-        tr("Skips the occlusion check the reflection cube maps make. For testing.")};
-    texts[Quality::OcclusionDepth] = {
-        tr("Occlusion query depth"),
-        tr("Scales the depth threshold of the game's occlusion queries (its own is 90 in the "
-           "stages, 50 elsewhere). What "
-           "higher or lower does is not known yet: for testing.")};
-    texts[Quality::OcclusionRadius] = {
-        tr("Occlusion query radius"),
-        tr("The game tests whether an object is hidden (behind terrain, say) only if its radius "
-           "is under this (its own is 50) and it has more polygons than the row below. Higher: "
-           "bigger objects are tested too, so more hidden ones are skipped, but more queries "
-           "cost more and hidden objects may pop in a frame late.")};
-    texts[Quality::OcclusionPolygon] = {
-        tr("Occlusion query polygons"),
-        tr("Objects with more polygons than this (the game's: 1000) are tested for being hidden "
-           "before they are drawn. Lower: simpler objects are tested too, so more hidden ones "
-           "are skipped; the tests themselves cost something, so very low may cost more than "
-           "it saves.")};
     texts[Quality::ShadowMaskOff] = {
         tr("Shadow masks off"),
         tr("Turns off the game's shadow masks (the volume shadows). Shadows or darkening may go "
@@ -285,16 +223,6 @@ void ConfigureBananza::RetranslateUI() {
            "own distance in the game's data (100 to 300 units). Lower: foliage ends closer to "
            "you but stays near you; 1% is a distance of 1 to 3 units, so about no foliage. "
            "Needs a restart.")};
-    texts[Quality::ObjectLod] = {
-        tr("Object LOD bias"),
-        tr("Scales the screen sizes at which models without thresholds of their own (most "
-           "objects and scenery) switch to simpler meshes (the game's: 0.19, 0.09, 0.05 of the "
-           "screen). Higher: simpler meshes sooner, cheaper but coarser. Changed in the game's "
-           "graphics settings file as it is read; needs a restart.")};
-    texts[Quality::FoliageLod] = {
-        tr("Foliage LOD bias"),
-        tr("Scales when each foliage model switches to a simpler mesh. Which direction is "
-           "coarser is not known yet: try values above and below 100%. For testing. Needs a restart.")};
     texts[Quality::EffectEmitCap] = {
         tr("Effects started per frame"),
         tr("Scales how many effects (particles, dust, debris) the game may start in one frame "
@@ -324,28 +252,6 @@ void ConfigureBananza::RetranslateUI() {
         tr("Terrain material effects off"),
         tr("Lets one terrain material effect (dust, smoke, snow) be active at most. Needs a "
            "restart.")};
-    texts[Quality::VoxelEmitterOff] = {
-        tr("Voxel debris off"),
-        tr("Sets the voxel effect emitter's buffer to nothing, so it has no room for any of the "
-           "voxel pieces that fly off when terrain breaks. For finding out whether that buffer "
-           "is the debris; if the game crashes or misbehaves, use the buffer row at 1% instead. "
-           "Needs a restart.")};
-    texts[Quality::VoxelEmitterBuffer] = {
-        tr("Voxel debris buffer"),
-        tr("Scales the buffer of the voxel effect emitter, which the game uses for the voxel "
-           "pieces that fly off when terrain breaks (its own is 1024). Needs a restart.")};
-    texts[Quality::VoxelSurfaceBuffer] = {
-        tr("Voxel surface effect buffer"),
-        tr("Scales the buffer of the effects that sit on voxel surfaces (the game's own is "
-           "5000). Needs a restart.")};
-    texts[Quality::VoxelSurfaceEffectOff] = {
-        tr("Voxel surface effects off"),
-        tr("Turns the game's voxel surface effects off. For finding out what they are. Needs a "
-           "restart.")};
-    texts[Quality::DepthCollisionEffectOff] = {
-        tr("Depth collision effects off"),
-        tr("Turns the effects that collide with the scene's depth (particles that bounce off "
-           "terrain) off. Needs a restart.")};
     texts[Quality::DebrisOff] = {
         tr("Debris off"),
         tr("Gives every terrain material the setting some of them (trees, iron mesh) already "
@@ -397,12 +303,6 @@ void ConfigureBananza::ShowValue(std::size_t index) {
     case Quality::CubeMapInterval:
         text = tr("%n frame(s)", nullptr, value);
         break;
-    case Quality::MeshSimplify: {
-        const QStringList names{tr("Normal"), tr("High"), tr("SuperHigh"), tr("NoSimplify"),
-                                tr("Low")};
-        text = names.value(value - 1);
-        break;
-    }
     case Quality::RadialBlurSamples:
     case Quality::ColorDecalMax:
         text = QString::number(value);

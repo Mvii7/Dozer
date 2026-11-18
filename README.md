@@ -228,17 +228,10 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Bloom buffer scale | 25% | the bloom buffers' size |
 | Cube map update interval | 8 frames | how often reflection cube maps are captured (the one row where higher is faster) |
 | Radial blur render scale / samples | 50% / 20 | the radial blur's buffer size and samples |
-| Terrain LOD 1 / LOD 2 distance | 100% | the distance at which the destructible terrain switches to its first (200) and its farthest (420) coarser mesh, each its own row; lower: coarser sooner |
-| Terrain LOD 1 / LOD 2 value | 100% | the value each of the two terrain LOD steps carries (180 and 1000); higher may mean coarser (not known; for testing) |
 | Actor draw distance | 100% | scales the distances at which actors (objects, enemies, scenery pieces; over 2000 use them) are clipped, from the game's own 50-1200 (200 by default), 10-100%; actors marked never to clip stay |
-| Voxel damage / destruction effects off | off | the voxel effect emitter's "Damage" / "Destruction" effect key made empty: no effect when terrain is damaged / destroyed |
-| Foliage rebuild on digging off | off | the foliage on a piece of terrain is not worked out again each time its voxels change (`IsRecalcClstrDecoOnVoxelChange`): less CPU while digging; foliage may stay floating; for testing |
-| Character LOD bias | 100% | scales the screen sizes at which models with LOD thresholds of their own (Donkey Kong: 0.57 and 0.42; other characters) switch to simpler meshes, 25-400%; higher: simpler sooner |
-| Object LOD bias | 100% | the same for every other model, through the game's graphics settings file (0.1875, 0.093, 0.045) |
-| Terrain mesh simplification | Normal | the type of mesh simplification the game's terrain fields use (Normal, High, SuperHigh, NoSimplify, Low); which one simplifies the most is not known, so try them; it is applied to every field |
 | Camera far distance | 100% | scales the distance beyond which the game draws nothing: a big cut roughly doubled the frame rate in a busy area, but scenery stops being drawn fairly close (from the Selevet fork's far clip scale) |
 | Colour decal limit | 660 | the most colour decals the game keeps |
-| Reflection filtering off, cube map occlusion check off | on | skips those two steps of the reflection cube maps (for testing) |
+| Reflection filtering off | on | skips the GGX filtering of the reflection cube maps (for testing) |
 | Terrain border mesh off | on | builds no border mesh between neighbouring terrain chunks; cracks may show (for testing) |
 | Decals off | on | Skips creating the game's decal director (decals are not drawn). May break something that expects it. For testing. |
 | Depth bloom off | on | Skips the depth bloom. For testing. |
@@ -255,17 +248,12 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Foliage models at once | 100% | scales the most grass, weeds and plants drawn and kept alive at once (the game's caps are 25000 and 50000, and each stage's own draw buffer of 1200-6000, which is the limit a stage draws with); changes the game's settings files as the RomFS is read |
 | Foliage view margin off | on | removes the extra margin around the view for foliage; it may pop in when turning |
 | Foliage draw distance | 100% | scales how far each foliage model (grass, flowers, plants) is drawn from the distance in the game's data (100-300 units): foliage stays near you and ends sooner; 1% is 1-3 units, about none |
-| Foliage LOD bias | 100% | scales when each foliage model switches to a simpler mesh, 10-1000%; which direction is coarser is not known yet (for testing) |
 | Foliage placement density | 100% | scales the chance and rate of the foliage placed while playing (foliage in the stage's data is only cut by the cap) |
 | Effects started per frame / Particles per emitter | 156 / 512 | scales the most effects the game starts in a frame and the most particles in one emitter (dust, debris, sparks); in the game's effect settings files as they are read |
 | Effect starts / Emitter particles / Alive effects / Terrain material effects off | off | one box per effect cap; ticked sets that cap to 1 (the game's: 156 / 512 / 64 / its own); something that expects an effect may break |
 | Debris off | off | gives every terrain material the no-fragments setting (`FragmentType` DisableForce) some already have; may change how terrain breaks apart; for testing |
-| Voxel debris buffer / Voxel surface effect buffer | 100% | scales the buffers of the game's voxel effect emitter (1024) and voxel surface effects (5000), found in the effect settings; for finding out which is the debris |
-| Voxel debris off | off | sets the voxel effect emitter's buffer to 0: no room for the voxel pieces at all; if the game does not cope, use the buffer row at 1% |
-| Voxel surface effects off / Depth collision effects off | off | turn those effect systems off in the effect settings; not tested yet |
 | Effects alive per rule / Terrain material effects | 100% | scales how many effects the emission rules keep alive and how many terrain material effects (dust, smoke, snow) are active at once |
 | Shadow masks off | on | turns off the game's shadow masks (volume shadows); shadows may go missing (for testing) |
-| Occlusion query depth / radius / polygons | 100% | scales the thresholds of the game's occlusion queries: an object is tested for being hidden (behind terrain, say) only if its radius is under the radius (50) and it has more polygons than the polygons (1000); a higher radius (up to 1000%) and fewer polygons (down to 1%) test more objects. Depth's effect is not known |
 
 Rows marked "for testing" have an effect nobody has measured yet, and none of them is in the presets.
 

@@ -35,23 +35,10 @@ enum Id : size_t {
     CubeMapInterval,   ///< CubeMapShotInterval, frames
     RadialBlurScale,   ///< RadialBlurRenderScale, %
     RadialBlurSamples, ///< RadialBlurSamplingNum
-    VoxelLod1Dist,     ///< terrain Lod1Dist (the nearer LOD step), % of the game's
-    VoxelLod1Value,    ///< terrain Lod1Value, % of the game's
-    VoxelLod2Dist,     ///< terrain Lod2Dist (the farther LOD step), % of the game's
-    VoxelLod2Value,    ///< terrain Lod2Value, % of the game's
     CameraFar,         ///< the camera's far distance, % (EDEN_NX2_FAR_SCALE of the Selevet fork)
     ColorDecalMax,     ///< ColorDecalMaxNum
-    MeshSimplify,      ///< terrain MeshSimplifyType: 1 Normal, 2 High, 3 SuperHigh, 4 NoSimplify, 5 Low
-    CharacterLod,      ///< each model's own LodThreshold0-2 (characters), % of the game's
     ActorDrawDistance, ///< the actors' far clip distances (FarClipLevel), % of the game's
-    VoxelDamageOff,    ///< the voxel effect emitter's DamageKey made empty
-    VoxelDestructionOff, ///< the voxel effect emitter's DestructionKey made empty
-    DecoRecalcOff,     ///< IsRecalcClstrDecoOnVoxelChange forced off (foliage rebuilt on digging)
     GgxFilterOff,      ///< IsUseGGXFilter forced off (reflection cube map filtering)
-    CubeMapOcclusionOff, ///< IsUseCubeMapOcclusionCheck forced off
-    OcclusionDepth,    ///< OcclusionQueryThresholdDepth, % of the game's
-    OcclusionRadius,   ///< OcclusionQueryThresholdRadius, %: objects under it get a query
-    OcclusionPolygon,  ///< OcclusionQueryThresholdPolygon, %: objects over it get a query
     VoxelBorderMeshOff, ///< terrain IsNoBorderMesh forced on
     ShadowMaskOff,     ///< IsUseShadowMask forced off
     DecalOff,          ///< IsUseDecal forced off
@@ -70,8 +57,6 @@ enum Id : size_t {
     FoliageFrustumOff, ///< foliage frustum expansion set to 0
     FoliageDensity,    ///< foliage dynamic placement chance and rate, %
     FoliageFarClip,    ///< each foliage model's FarClipDistance, % of the game's
-    FoliageLod,        ///< each foliage model's LodThreshold0-2, % of the game's (direction not known)
-    ObjectLod,         ///< the graphics parameters' ModelLodThresholdFirst-Third, % of the game's
     EffectEmitCap,     ///< EmitCountPerFrameMax (effects started per frame), % of the game's
     EffectParticleCap, ///< OneEmitterMaxParticleNum, % of the game's
     EffectAliveCap,    ///< the MaxAliveEffectsNum of the effect rules, % of the game's
@@ -80,11 +65,6 @@ enum Id : size_t {
     EffectParticleOff, ///< particles per emitter at 1
     EffectAliveOff,    ///< effects alive per rule at 1
     EffectMaterialOff, ///< terrain material effects at 1
-    VoxelEmitterBuffer, ///< buffer of the voxel effect emitter (voxel debris), %
-    VoxelEmitterOff,   ///< the voxel effect emitter's buffer set to 0
-    VoxelSurfaceBuffer, ///< buffer of the voxel surface effects, %
-    VoxelSurfaceEffectOff, ///< voxel surface effects off
-    DepthCollisionEffectOff, ///< depth collision effects off
     DebrisOff,         ///< every voxel material's FragmentType forced to DisableForce
     Count,
 };
@@ -112,23 +92,10 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"cubemap_interval", "EDEN_NX2_DKQ_CUBEMAP_INTERVAL", 1, 240, 8},
     {"radial_blur_scale", "EDEN_NX2_DKQ_RADIAL_BLUR_SCALE", 10, 100, 50},
     {"radial_blur_samples", "EDEN_NX2_DKQ_RADIAL_BLUR_SAMPLES", 1, 32, 20},
-    {"voxel_lod1_dist", "EDEN_NX2_DKQ_VOXEL_LOD1_DIST", 10, 400, 100},
-    {"voxel_lod1_value", "EDEN_NX2_DKQ_VOXEL_LOD1_VALUE", 10, 1000, 100},
-    {"voxel_lod2_dist", "EDEN_NX2_DKQ_VOXEL_LOD2_DIST", 10, 400, 100},
-    {"voxel_lod2_value", "EDEN_NX2_DKQ_VOXEL_LOD2_VALUE", 10, 1000, 100},
     {"camera_far", "EDEN_NX2_DKQ_CAMERA_FAR", 10, 100, 100},
     {"color_decal_max", "EDEN_NX2_DKQ_COLOR_DECAL_MAX", 1, 660, 660},
-    {"mesh_simplify", "EDEN_NX2_DKQ_MESH_SIMPLIFY", 1, 5, 1},
-    {"character_lod", "EDEN_NX2_DKQ_CHARACTER_LOD", 25, 400, 100},
     {"actor_draw_distance", "EDEN_NX2_DKQ_ACTOR_DRAW_DISTANCE", 10, 100, 100},
-    {"voxel_damage_off", "EDEN_NX2_DKQ_VOXEL_DAMAGE_OFF", 1, 1, 0},
-    {"voxel_destruction_off", "EDEN_NX2_DKQ_VOXEL_DESTRUCTION_OFF", 1, 1, 0},
-    {"deco_recalc_off", "EDEN_NX2_DKQ_DECO_RECALC_OFF", 1, 1, 0},
     {"ggx_filter_off", "EDEN_NX2_DKQ_GGX_FILTER_OFF", 1, 1, 0},
-    {"cubemap_occlusion_off", "EDEN_NX2_DKQ_CUBEMAP_OCCLUSION_OFF", 1, 1, 0},
-    {"occlusion_depth", "EDEN_NX2_DKQ_OCCLUSION_DEPTH", 10, 400, 100},
-    {"occlusion_radius", "EDEN_NX2_DKQ_OCCLUSION_RADIUS", 10, 1000, 100},
-    {"occlusion_polygon", "EDEN_NX2_DKQ_OCCLUSION_POLYGON", 1, 400, 100},
     {"voxel_border_mesh_off", "EDEN_NX2_DKQ_VOXEL_BORDER_MESH_OFF", 1, 1, 0},
     {"shadow_mask_off", "EDEN_NX2_DKQ_SHADOW_MASK_OFF", 1, 1, 0},
     {"decal_off", "EDEN_NX2_DKQ_DECAL_OFF", 1, 1, 0},
@@ -147,8 +114,6 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"foliage_frustum_off", "EDEN_NX2_DKQ_FOLIAGE_FRUSTUM_OFF", 1, 1, 0},
     {"foliage_density", "EDEN_NX2_DKQ_FOLIAGE_DENSITY", 1, 100, 100},
     {"foliage_far_clip", "EDEN_NX2_DKQ_FOLIAGE_FAR_CLIP", 1, 100, 100},
-    {"foliage_lod", "EDEN_NX2_DKQ_FOLIAGE_LOD", 10, 1000, 100},
-    {"object_lod", "EDEN_NX2_DKQ_OBJECT_LOD", 25, 400, 100},
     {"effect_emit_cap", "EDEN_NX2_DKQ_EFFECT_EMIT_CAP", 5, 100, 100},
     {"effect_particle_cap", "EDEN_NX2_DKQ_EFFECT_PARTICLE_CAP", 5, 100, 100},
     {"effect_alive_cap", "EDEN_NX2_DKQ_EFFECT_ALIVE_CAP", 5, 100, 100},
@@ -157,11 +122,6 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"effect_particle_off", "EDEN_NX2_DKQ_EFFECT_PARTICLE_OFF", 1, 1, 0},
     {"effect_alive_off", "EDEN_NX2_DKQ_EFFECT_ALIVE_OFF", 1, 1, 0},
     {"effect_material_off", "EDEN_NX2_DKQ_EFFECT_MATERIAL_OFF", 1, 1, 0},
-    {"voxel_emitter_buffer", "EDEN_NX2_DKQ_VOXEL_EMITTER_BUFFER", 1, 100, 100},
-    {"voxel_emitter_off", "EDEN_NX2_DKQ_VOXEL_EMITTER_OFF", 1, 1, 0},
-    {"voxel_surface_buffer", "EDEN_NX2_DKQ_VOXEL_SURFACE_BUFFER", 1, 100, 100},
-    {"voxel_surface_effect_off", "EDEN_NX2_DKQ_VOXEL_SURFACE_EFFECT_OFF", 1, 1, 0},
-    {"depth_collision_effect_off", "EDEN_NX2_DKQ_DEPTH_COLLISION_EFFECT_OFF", 1, 1, 0},
     {"debris_off", "EDEN_NX2_DKQ_DEBRIS_OFF", 1, 1, 0},
 }};
 
@@ -177,9 +137,7 @@ enum class Preset : u8 {
     Custom,
 };
 
-/// A preset's values (0: the game's). Custom has none of its own: nothing set. The terrain LOD
-/// distance and mesh simplification are not in them: the first Performance preset with them was
-/// slower than the game's own, and which row did it is not known yet.
+/// A preset's values (0: the game's). Custom has none of its own: nothing set.
 constexpr Values PresetValues(Preset preset) {
     Values values{};
     if (preset == Preset::Balanced) {
@@ -292,22 +250,13 @@ constexpr float GameMinRate = 1.375f;
 constexpr float GameMaxRate = 2.0f;
 
 /// Words of free space past the end of the text segment: the dynamic FPS patch has the first 19,
-/// the terrain LOD routines start at word 20.
+/// the camera far routines start at word 20.
 constexpr size_t CaveOffset = 20;
-constexpr size_t CaveRoutineWords = 5;
-constexpr size_t MeshRoutine = 4 * CaveRoutineWords; ///< after the terrain LOD routines
-constexpr size_t MeshRoutineWords = 4;
-constexpr size_t FarRoutine = MeshRoutine + MeshRoutineWords; ///< three, after the mesh one
+constexpr size_t FarRoutine = 0; ///< three
 constexpr size_t FarRoutineWords = 5;
 constexpr size_t DebrisRoutine = FarRoutine + 3 * FarRoutineWords; ///< after the far ones
 constexpr size_t DebrisRoutineWords = 4;
-constexpr size_t DepthRoutine = DebrisRoutine + DebrisRoutineWords; ///< after the debris one
-constexpr size_t DepthRoutineWords = 5;
-constexpr size_t LodRoutine = DepthRoutine + DepthRoutineWords; ///< three, after the depth one
-constexpr size_t LodRoutineWords = 5;
-constexpr size_t DecoRoutine = LodRoutine + 3 * LodRoutineWords; ///< two, after the LOD ones
-constexpr size_t DecoRoutineWords = 3;
-constexpr size_t CaveWords = DecoRoutine + 2 * DecoRoutineWords;
+constexpr size_t CaveWords = DebrisRoutine + DebrisRoutineWords;
 
 /// The upper half of a float, rounded: the constants are put in with one `movz wN, #x, lsl #16`.
 constexpr u32 FloatHigh(float value) {
@@ -365,14 +314,6 @@ constexpr std::array<std::pair<Id, u32>, 12> FeatureFlags{{
     {PrePassLightOff, 0xb0}, // IsUsePrePassLight
 }};
 constexpr u32 ShadowMaskParam = 0xe0;           // IsUseShadowMask
-constexpr u32 CubeMapOcclusionParam = 0x218;  // IsUseCubeMapOcclusionCheck
-constexpr u32 OcclusionDepthParam = 0x520;    // OcclusionQueryThresholdDepth
-constexpr u32 OcclusionRadiusParam = 0x528;   // OcclusionQueryThresholdRadius
-constexpr u32 OcclusionPolygonParam = 0x530;  // OcclusionQueryThresholdPolygon
-
-// The game's values of the occlusion rows, from its ProjectGraphicsParam (Default).
-constexpr float GameOcclusionRadius = 50.0f;
-constexpr int GameOcclusionPolygon = 1000;
 
 // `text` starts at the text segment and holds at least `aligned_size` bytes, the segment's size
 // rounded up to whole pages; `text_size` is its size in the NSO header.
@@ -509,18 +450,13 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
         }
     };
     false_getter(GgxFilterOff, GgxFilterParam);
-    false_getter(CubeMapOcclusionOff, CubeMapOcclusionParam);
     false_getter(ShadowMaskOff, ShadowMaskParam);
-    float_getter(OcclusionRadius, OcclusionRadiusParam,
-                 GameOcclusionRadius * percent(set(OcclusionRadius)));
     float_getter(GpuTarget, GpuTargetParam, static_cast<float>(set(GpuTarget)));
     float_getter(FrameMinScale, FrameMinScaleParam, percent(set(FrameMinScale)));
     float_getter(RadialBlurScale, RadialBlurScaleParam, percent(set(RadialBlurScale)));
     int_getter(RadialBlurSamples, RadialBlurSamplesParam);
     int_getter(CubeMapInterval, CubeMapIntervalParam);
     int_getter(ColorDecalMax, ColorDecalMaxParam);
-    int_getter(OcclusionPolygon, OcclusionPolygonParam,
-               GameOcclusionPolygon * set(OcclusionPolygon) / 100);
 
     // BloomBufferBaseScale is read in three places; the register it comes through is loaded
     // again right after each:
@@ -539,83 +475,6 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 put(at + 1, FmovFromW(0, 11));
             }
             result[BloomScale] = State::Applied;
-        }
-    }
-
-    // The terrain (voxel field) takes its two LOD steps from VoxelMeshLodParam, one place (LOD 1
-    // is the nearer step, LOD 2 the farther one):
-    //   bl Lod1Dist;  ldr s8, [x0];  mov x0, x24
-    //   bl Lod1Value; ldr s9, [x0];  mov x0, x24
-    //   bl Lod2Dist;  ldr s10, [x0]; mov x0, x24
-    //   bl Lod2Value; ldr s0, [x0]
-    // Each load asked for becomes a call to a routine in the free space past the text segment
-    // that loads and scales (x16, s16 and x30 are free right after a call):
-    //   ldr sN, [x0]; movz w16, #scale, lsl #16; fmov s16, w16; fmul sN, sN, s16; ret
-    const std::array<int, 4> lod{set(VoxelLod1Dist), set(VoxelLod1Value), set(VoxelLod2Dist),
-                                 set(VoxelLod2Value)};
-    if (lod[0] != 0 || lod[1] != 0 || lod[2] != 0 || lod[3] != 0) {
-        constexpr u32 MovX0X24 = 0xAA1803E0U;
-        std::array<size_t, 1> at{};
-        const bool cave_free = CaveFree(0, MeshRoutine);
-        if (cave_free && find({{1, LdrS(8, 0, 0)},
-                               {2, MovX0X24},
-                               {4, LdrS(9, 0, 0)},
-                               {5, MovX0X24},
-                               {7, LdrS(10, 0, 0)},
-                               {8, MovX0X24},
-                               {10, LdrS(0, 0, 0)}},
-                              at)) {
-            struct Load {
-                size_t distance;
-                u32 reg;
-                int scale;
-            };
-            const std::array<Load, 4> loads{
-                {{1, 8, lod[0]}, {4, 9, lod[1]}, {7, 10, lod[2]}, {10, 0, lod[3]}}};
-            for (size_t i = 0; i < loads.size(); ++i) {
-                const Load& load = loads[i];
-                if (load.scale == 0) {
-                    continue;
-                }
-                const size_t from = at[0] + load.distance;
-                const size_t routine = cave + i * CaveRoutineWords;
-                put(routine, LdrS(load.reg, 0, 0));
-                put(routine + 1, MovzHigh(16, FloatHigh(percent(load.scale))));
-                put(routine + 2, FmovFromW(16, 16));
-                put(routine + 3, 0x1E300800U | (load.reg << 5) | load.reg); // fmul sN, sN, s16
-                put(routine + 4, Ret);
-                put(from, 0x94000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU)); // bl
-            }
-            const std::array<Id, 4> ids{VoxelLod1Dist, VoxelLod1Value, VoxelLod2Dist, VoxelLod2Value};
-            for (size_t i = 0; i < ids.size(); ++i) {
-                if (lod[i] != 0) {
-                    result[ids[i]] = State::Applied;
-                }
-            }
-        }
-    }
-
-    // The terrain's mesh simplification type (VoxelMeshLodParam's MeshSimplifyType: Normal 0,
-    // High 1, SuperHigh 2, NoSimplify 3, Low 4) is stored in the loader and read after the one
-    // place all of its paths meet:
-    //   str w8, [sp, #0x94]; ldr x0, [x19, #0x60]
-    // The load becomes a jump to a routine that stores the chosen type first (w8 is loaded
-    // again right after):
-    //   movz w8, #type; str w8, [sp, #0x94]; ldr x0, [x19, #0x60]; b back
-    if (const int type = set(MeshSimplify); type != 0) {
-        constexpr u32 StrW8Sp94 = 0xB90097E8U;
-        constexpr u32 LdrX0X19 = 0xF9403260U;
-        std::array<size_t, 1> at{};
-        if (CaveFree(MeshRoutine, MeshRoutineWords) && find({{0, StrW8Sp94}, {1, LdrX0X19}}, at)) {
-            const size_t routine = cave + MeshRoutine;
-            const size_t from = at[0] + 1;
-            put(routine, Movz(8, static_cast<u32>(type - 1)));
-            put(routine + 1, StrW8Sp94);
-            put(routine + 2, LdrX0X19);
-            put(routine + 3,
-                0x14000000U | (static_cast<u32>((from + 1) - (routine + 3)) & 0x3FFFFFFU));
-            put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
-            result[MeshSimplify] = State::Applied;
         }
     }
 
@@ -687,72 +546,6 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
         }
     }
 
-    // OcclusionQueryThresholdDepth differs between the graphics variants (90 in the stages, 50
-    // elsewhere), so it is scaled rather than replaced: the getter's load becomes a jump to
-    //   ldr s0, [x8, #0x64]; ldr s1, <scale>; fmul s0, s0, s1; ret; <scale>
-    if (const int depth = set(OcclusionDepth); depth != 0) {
-        constexpr u32 LdrS1Literal = 0x1C000061U; // ldr s1, #12: the word after the ret
-        constexpr u32 FmulS0S0S1 = 0x1E210800U;
-        std::array<size_t, 1> at{};
-        if (CaveFree(DepthRoutine, DepthRoutineWords) &&
-            find({{0, LdrX(8, 0, OcclusionDepthParam)}, {1, LdrS(0, 8, ValueOffset)}, {2, Ret}},
-                 at)) {
-            const size_t routine = cave + DepthRoutine;
-            const size_t from = at[0] + 1;
-            put(routine, LdrS(0, 8, ValueOffset));
-            put(routine + 1, LdrS1Literal);
-            put(routine + 2, FmulS0S0S1);
-            put(routine + 3, Ret);
-            u32 scale;
-            const float factor = percent(depth);
-            std::memcpy(&scale, &factor, sizeof(scale));
-            put(routine + 4, scale);
-            put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
-            result[OcclusionDepth] = State::Applied;
-        }
-    }
-
-    // A model's own LOD thresholds (its ModelParam's LodThreshold0-2, which a model with
-    // IsUseUniqueLodThreshold, Donkey Kong's say, uses instead of the graphics parameters') are
-    // copied into the model as it loads; a parent's are loaded at the same three places:
-    //   ldr s0, [x20, #0xac]; ldr x8, [x19, #0x268]; str s0, [x8]      (and #0xb0 / #4, #0xb4 / #8)
-    // Each store becomes a jump to a routine that scales s0 first (s1 is not used there):
-    //   ldr s1, <scale>; fmul s0, s0, s1; str s0, [x8, #k]; b back; <scale>
-    // A threshold is the screen size above which the finer mesh is used: higher, coarser sooner.
-    if (const int character_lod = set(CharacterLod); character_lod != 0) {
-        constexpr u32 LdrX8X19Lods = 0xF9413668U;     // ldr x8, [x19, #0x268]
-        constexpr u32 LdrS1Literal = 0x1C000081U;     // ldr s1, #16: the word after the b
-        constexpr u32 FmulS0S0S1 = 0x1E210800U;
-        constexpr std::array<std::pair<u32, u32>, 3> sites{{
-            {0xac, 0xBD000100U}, // str s0, [x8]
-            {0xb0, 0xBD000500U}, // str s0, [x8, #4]
-            {0xb4, 0xBD000900U}, // str s0, [x8, #8]
-        }};
-        std::array<std::array<size_t, 1>, 3> at{};
-        bool found = CaveFree(LodRoutine, 3 * LodRoutineWords);
-        for (size_t i = 0; found && i < sites.size(); ++i) {
-            found = find({{0, LdrS(0, 20, sites[i].first)}, {1, LdrX8X19Lods}, {2, sites[i].second}},
-                          at[i]);
-        }
-        if (found) {
-            const float factor = percent(character_lod);
-            u32 scale;
-            std::memcpy(&scale, &factor, sizeof(scale));
-            for (size_t i = 0; i < sites.size(); ++i) {
-                const size_t routine = cave + LodRoutine + i * LodRoutineWords;
-                const size_t from = at[i][0] + 2;
-                put(routine, LdrS1Literal);
-                put(routine + 1, FmulS0S0S1);
-                put(routine + 2, sites[i].second);
-                put(routine + 3,
-                    0x14000000U | (static_cast<u32>((from + 1) - (routine + 3)) & 0x3FFFFFFU));
-                put(routine + 4, scale);
-                put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
-            }
-            result[CharacterLod] = State::Applied;
-        }
-    }
-
     // An actor's ClippingParam names a FarClipLevel (NonClip, Default, EasyClipLv1-3,
     // HardClipLv1-5); the distance of each level is a table of the read-only data:
     //   -1 (never clipped), 200, 50, 100, 150, 300, 450, 700, 900, 1200
@@ -777,63 +570,6 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 std::memcpy(text.data() + at + i * sizeof(float), &scaled, sizeof(scaled));
             }
             result[ActorDrawDistance] = State::Applied;
-        }
-    }
-
-    // The voxel effect emitter's settings start with the effect keys it emits when terrain is
-    // damaged and destroyed ("Damage", "Destruction"; the effect settings file sets neither):
-    //   add x8, x8, #0x16e ("Damage"); adrp x9; add x9, x9, #0x757 ("Destruction");
-    //   strb wzr, [x19, #0x46]; stp x8, x9, [x19, #0x30]; mov w8, #0x200
-    // A key off points at its own string's terminating zero instead: an empty key, no effect.
-    if (set(VoxelDamageOff) != 0 || set(VoxelDestructionOff) != 0) {
-        constexpr u32 AddDamage = 0x9105B908U, AddDestruction = 0x911D5D29U;
-        constexpr u32 StrbFlag = 0x39011A7FU, MovBuffer = 0x52804008U;
-        std::array<size_t, 1> at{};
-        if (find({{0, AddDamage}, {2, AddDestruction}, {3, StrbFlag}, {5, MovBuffer}}, at)) {
-            const auto empty = [&](size_t index, u32 length) {
-                // The add's immediate moves past the string's characters
-                const u32 add = word(index);
-                put(index, (add & ~(0xFFFU << 10)) | ((((add >> 10) & 0xFFFU) + length) << 10));
-            };
-            if (set(VoxelDamageOff) != 0) {
-                empty(at[0], 6); // "Damage"
-                result[VoxelDamageOff] = State::Applied;
-            }
-            if (set(VoxelDestructionOff) != 0) {
-                empty(at[0] + 2, 11); // "Destruction"
-                result[VoxelDestructionOff] = State::Applied;
-            }
-        }
-    }
-
-    // IsRecalcClstrDecoOnVoxelChange (the foliage on a piece of terrain worked out again when its
-    // voxels change) is a byte of a voxel part's settings (+0xc5) and of a foliage decoration
-    // unit's (+0x5c); hardly any data sets it, so the loaders' defaults decide. Right after each
-    // loader binds it, the next field's address is set:
-    //   mov w8, #0x1e; 13 words; add x8, x20, #0x60           (the voxel part)
-    //   add x8, x20, #0x5d; 7 words; str wzr, [sp, #0x20]; 9 words; add x8, x20, #0x58
-    // Each add becomes a jump to a routine that clears the byte first (x20 is the settings):
-    //   strb wzr, [x20, #field]; add x8, x20, #next; b back
-    if (set(DecoRecalcOff) != 0) {
-        constexpr u32 AddPartsNext = 0x91018288U, AddDecoNext = 0x91016288U;
-        std::array<size_t, 1> parts{}, deco{};
-        if (CaveFree(DecoRoutine, 2 * DecoRoutineWords) &&
-            find({{0, 0x528003C8U}, {14, AddPartsNext}}, parts) &&
-            find({{0, 0x91017688U}, {8, 0xB90023FFU}, {18, AddDecoNext}}, deco)) {
-            const std::array<std::array<u32, 2>, 2> routines{{
-                {0x3903169FU, AddPartsNext}, // strb wzr, [x20, #0xc5]
-                {0x3901729FU, AddDecoNext},  // strb wzr, [x20, #0x5c]
-            }};
-            const std::array<size_t, 2> sites{parts[0] + 14, deco[0] + 18};
-            for (size_t i = 0; i < sites.size(); ++i) {
-                const size_t routine = cave + DecoRoutine + i * DecoRoutineWords;
-                put(routine, routines[i][0]);
-                put(routine + 1, routines[i][1]);
-                put(routine + 2,
-                    0x14000000U | (static_cast<u32>((sites[i] + 1) - (routine + 2)) & 0x3FFFFFFU));
-                put(sites[i], 0x14000000U | (static_cast<u32>(routine - sites[i]) & 0x3FFFFFFU));
-            }
-            result[DecoRecalcOff] = State::Applied;
         }
     }
 

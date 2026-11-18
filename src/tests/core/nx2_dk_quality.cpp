@@ -17,8 +17,8 @@ namespace {
 using namespace Loader::Nx2DkQuality;
 
 constexpr u32 Filler = 0x12345678;
-// A text segment of 0x2e80 bytes in 0x3000: the free space starts at word 0xba0, the terrain
-// LOD routines at 0xba0 + CaveOffset.
+// A text segment of 0x2e80 bytes in 0x3000: the free space starts at word 0xba0, the routines
+// at 0xba0 + CaveOffset.
 constexpr u32 TextSize = 0x2e80;
 constexpr u32 AlignedSize = 0x3000;
 constexpr size_t Cave = 0xba0 + CaveOffset;
@@ -26,12 +26,9 @@ constexpr size_t MinNear = 0x100, MaxFar = 0x120, MaxNear = 0x140, MinFar = 0x16
 constexpr size_t GpuGetter = 0x200, FrameGetter = 0x210, BlurScaleGetter = 0x220;
 constexpr size_t BlurSamplesGetter = 0x230, CubeMapGetter = 0x240;
 constexpr size_t BloomFirst = 0x300, BloomSecond = 0x310, BloomThird = 0x320;
-constexpr size_t DecalGetter = 0x260, GgxGetter = 0x270, CubeOccGetter = 0x280;
-constexpr size_t DepthGetter = 0x290, RadiusGetter = 0x2a0, PolygonGetter = 0x2b0;
-constexpr size_t MeshStore = 0x500;
+constexpr size_t DecalGetter = 0x260, GgxGetter = 0x270;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
-constexpr size_t Voxel = 0x400;
-constexpr size_t DebrisSite = 0x780, LodSite = 0x7a0, KeySite = 0x7c0, DecoSite = 0x7d0;
+constexpr size_t DebrisSite = 0x780;
 constexpr size_t BorderSite = 0x740, ShadowMaskGetter = 0x760,
     FlagSite = 0x800;
 
@@ -53,15 +50,9 @@ struct Text {
         PutGetter(GpuGetter, GpuTargetParam, true);
         PutGetter(FrameGetter, FrameMinScaleParam, true);
         PutGetter(BlurScaleGetter, RadialBlurScaleParam, true);
-        PutGetter(DepthGetter, OcclusionDepthParam, true);
-        PutGetter(RadiusGetter, OcclusionRadiusParam, true);
-        PutGetter(PolygonGetter, OcclusionPolygonParam, false);
-        for (const auto& [at, offset] : {std::pair{GgxGetter, GgxFilterParam},
-                                          std::pair{CubeOccGetter, CubeMapOcclusionParam}}) {
-            words[at] = LdrX(8, 0, offset);
-            words[at + 1] = 0x39419100; // ldrb w0, [x8, #0x64]
-            words[at + 2] = Ret;
-        }
+        words[GgxGetter] = LdrX(8, 0, GgxFilterParam);
+        words[GgxGetter + 1] = 0x39419100; // ldrb w0, [x8, #0x64]
+        words[GgxGetter + 2] = Ret;
         words[ShadowMaskGetter] = LdrX(8, 0, ShadowMaskParam);
         words[ShadowMaskGetter + 1] = 0x39419100; // ldrb w0, [x8, #0x64]
         words[ShadowMaskGetter + 2] = Ret;
@@ -79,21 +70,7 @@ struct Text {
         std::copy(std::begin(second), std::end(second), &words[FarB]);
         std::copy(std::begin(third), std::end(third), &words[FarC]);
         words[DebrisSite] = 0x528001E8;      // mov w8, #0xf
-        const u32 keys[]{0x9105B908, 0x90009F29, 0x911D5D29, 0x39011A7F, 0xA9032668, 0x52804008};
-        std::copy(std::begin(keys), std::end(keys), &words[KeySite]);
-        words[DecoSite] = 0x528003C8;          // mov w8, #0x1e
-        words[DecoSite + 14] = 0x91018288;     // add x8, x20, #0x60
-        words[DecoSite + 16] = 0x91017688;     // add x8, x20, #0x5d
-        words[DecoSite + 24] = 0xB90023FF;     // str wzr, [sp, #0x20]
-        words[DecoSite + 34] = 0x91016288;     // add x8, x20, #0x58
-        for (size_t i = 0; i < 3; ++i) {
-            words[LodSite + i * 4] = LdrS(0, 20, 0xac + static_cast<u32>(i) * 4);
-            words[LodSite + i * 4 + 1] = 0xF9413668;               // ldr x8, [x19, #0x268]
-            words[LodSite + i * 4 + 2] = 0xBD000100 + (static_cast<u32>(i) << 10); // str s0, [x8, #4i]
-        }
         words[DebrisSite + 14] = 0x91030288; // add x8, x20, #0xc0
-        words[MeshStore] = 0xB90097E8;     // str w8, [sp, #0x94]
-        words[MeshStore + 1] = 0xF9403260; // ldr x0, [x19, #0x60]
         const u32 border[]{0x3941F3E8, 0xF94017E6, 0x7100011F, 0x1A9F17E8};
         std::copy(std::begin(border), std::end(border), &words[BorderSite]);
         words[BloomFirst] = LdrX(8, 8, BloomScaleParam);
@@ -101,14 +78,6 @@ struct Text {
         for (const size_t at : {BloomSecond, BloomThird}) {
             words[at] = LdrX(11, 26, BloomScaleParam);
             words[at + 1] = LdrS(0, 11, ValueOffset);
-        }
-        const u32 loads[]{LdrS(8, 0, 0), LdrS(9, 0, 0), LdrS(10, 0, 0), LdrS(0, 0, 0)};
-        for (size_t i = 0; i < 4; ++i) {
-            words[Voxel + i * 3] = 0x94000080; // bl
-            words[Voxel + i * 3 + 1] = loads[i];
-            if (i < 3) {
-                words[Voxel + i * 3 + 2] = 0xAA1803E0; // mov x0, x24
-            }
         }
     }
 
@@ -210,35 +179,13 @@ TEST_CASE("Nx2DkQuality: the getters", "[core]") {
     REQUIRE(text.words == expected);
 }
 
-TEST_CASE("Nx2DkQuality: the toggles and the occlusion thresholds", "[core]") {
+TEST_CASE("Nx2DkQuality: reflection filtering off", "[core]") {
     Text text;
     std::vector<u32> expected = text.words;
-    Values values{};
-    values[GgxFilterOff] = 1;
-    values[CubeMapOcclusionOff] = 1;
-    values[OcclusionDepth] = 200;   // x2.0
-    values[OcclusionRadius] = 50;   // 25.0
-    values[OcclusionPolygon] = 150; // 1500
-    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
-    for (const Id id : {GgxFilterOff, CubeMapOcclusionOff, OcclusionDepth, OcclusionRadius,
-                        OcclusionPolygon}) {
-        REQUIRE(result[id] == State::Applied);
-    }
-    for (const size_t at : {GgxGetter, CubeOccGetter}) {
-        expected[at] = 0x52800000; // movz w0, #0
-        expected[at + 1] = Ret;
-    }
-    const size_t depth = Cave + DepthRoutine;
-    expected[DepthGetter + 1] = 0x14000000U | static_cast<u32>(depth - (DepthGetter + 1));
-    expected[depth] = LdrS(0, 8, ValueOffset);
-    expected[depth + 1] = 0x1C000061; // ldr s1, #12
-    expected[depth + 2] = 0x1E210800; // fmul s0, s0, s1
-    expected[depth + 3] = Ret;
-    expected[depth + 4] = 0x40000000; // 2.0
-    expected[RadiusGetter] = 0x52A83908; // movz w8, #0x41c8, lsl #16 (25.0)
-    expected[RadiusGetter + 1] = 0x1E270100;
-    expected[PolygonGetter] = 0x5280BB80; // movz w0, #1500
-    expected[PolygonGetter + 1] = Ret;
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(GgxFilterOff, 1));
+    REQUIRE(result[GgxFilterOff] == State::Applied);
+    expected[GgxGetter] = 0x52800000; // movz w0, #0
+    expected[GgxGetter + 1] = Ret;
     REQUIRE(text.words == expected);
 }
 
@@ -249,40 +196,6 @@ TEST_CASE("Nx2DkQuality: the decal limit", "[core]") {
     REQUIRE(result[ColorDecalMax] == State::Applied);
     expected[DecalGetter] = 0x52800400; // movz w0, #32
     expected[DecalGetter + 1] = Ret;
-    REQUIRE(text.words == expected);
-}
-
-TEST_CASE("Nx2DkQuality: the mesh simplification type", "[core]") {
-    Text text;
-    std::vector<u32> expected = text.words;
-    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(MeshSimplify, 5));
-    REQUIRE(result[MeshSimplify] == State::Applied);
-    const size_t routine = Cave + MeshRoutine;
-    expected[MeshStore + 1] = 0x14000000U | static_cast<u32>(routine - (MeshStore + 1));
-    expected[routine] = 0x52800088;     // movz w8, #4 (Low)
-    expected[routine + 1] = 0xB90097E8; // str w8, [sp, #0x94]
-    expected[routine + 2] = 0xF9403260; // ldr x0, [x19, #0x60]
-    expected[routine + 3] =
-        0x14000000U | (static_cast<u32>((MeshStore + 2) - (routine + 3)) & 0x3FFFFFFU);
-    REQUIRE(text.words == expected);
-}
-
-TEST_CASE("Nx2DkQuality: the character LOD thresholds", "[core]") {
-    Text text;
-    std::vector<u32> expected = text.words;
-    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(CharacterLod, 200));
-    REQUIRE(result[CharacterLod] == State::Applied);
-    for (size_t i = 0; i < 3; ++i) {
-        const size_t routine = Cave + LodRoutine + i * LodRoutineWords;
-        const size_t from = LodSite + i * 4 + 2;
-        expected[from] = 0x14000000U | static_cast<u32>(routine - from);
-        expected[routine] = 0x1C000081;     // ldr s1, #16
-        expected[routine + 1] = 0x1E210800; // fmul s0, s0, s1
-        expected[routine + 2] = 0xBD000100 + (static_cast<u32>(i) << 10);
-        expected[routine + 3] =
-            0x14000000U | (static_cast<u32>((from + 1) - (routine + 3)) & 0x3FFFFFFU);
-        expected[routine + 4] = 0x40000000; // 2.0
-    }
     REQUIRE(text.words == expected);
 }
 
@@ -310,42 +223,6 @@ TEST_CASE("Nx2DkQuality: the actors' far clip distances", "[core]") {
             State::Missed);
 }
 
-TEST_CASE("Nx2DkQuality: the voxel damage and destruction keys", "[core]") {
-    Text text;
-    std::vector<u32> expected = text.words;
-    Values values{};
-    values[VoxelDestructionOff] = 1;
-    Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
-    REQUIRE(result[VoxelDestructionOff] == State::Applied);
-    REQUIRE(result[VoxelDamageOff] == State::Unset);
-    expected[KeySite + 2] = 0x911D8929; // add x9, x9, #0x762: the zero after "Destruction"
-    REQUIRE(text.words == expected);
-    values[VoxelDamageOff] = 1;
-    Text both;
-    result = Apply(both.Bytes(), TextSize, AlignedSize, values);
-    REQUIRE(result[VoxelDamageOff] == State::Applied);
-    REQUIRE(both.words[KeySite] == 0x9105D108); // add x8, x8, #0x174: the zero after "Damage"
-    REQUIRE(both.words[KeySite + 2] == 0x911D8929);
-}
-
-TEST_CASE("Nx2DkQuality: foliage rebuild on digging off", "[core]") {
-    Text text;
-    std::vector<u32> expected = text.words;
-    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(DecoRecalcOff, 1));
-    REQUIRE(result[DecoRecalcOff] == State::Applied);
-    const std::array<size_t, 2> sites{DecoSite + 14, DecoSite + 34};
-    const std::array<std::array<u32, 2>, 2> bodies{{{0x3903169F, 0x91018288}, {0x3901729F, 0x91016288}}};
-    for (size_t i = 0; i < 2; ++i) {
-        const size_t routine = Cave + DecoRoutine + i * DecoRoutineWords;
-        expected[sites[i]] = 0x14000000U | static_cast<u32>(routine - sites[i]);
-        expected[routine] = bodies[i][0];
-        expected[routine + 1] = bodies[i][1];
-        expected[routine + 2] =
-            0x14000000U | (static_cast<u32>((sites[i] + 1) - (routine + 2)) & 0x3FFFFFFU);
-    }
-    REQUIRE(text.words == expected);
-}
-
 TEST_CASE("Nx2DkQuality: debris off", "[core]") {
     Text text;
     std::vector<u32> expected = text.words;
@@ -361,16 +238,14 @@ TEST_CASE("Nx2DkQuality: debris off", "[core]") {
     REQUIRE(text.words == expected);
 }
 
-TEST_CASE("Nx2DkQuality: the terrain LOD and the mesh simplification together", "[core]") {
+TEST_CASE("Nx2DkQuality: the camera far and debris off together", "[core]") {
     Text text;
     Values values{};
-    values[VoxelLod1Dist] = 50;
-    values[MeshSimplify] = 5;
     values[CameraFar] = 50;
+    values[DebrisOff] = 1;
     const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
-    REQUIRE(result[VoxelLod1Dist] == State::Applied);
-    REQUIRE(result[MeshSimplify] == State::Applied);
     REQUIRE(result[CameraFar] == State::Applied);
+    REQUIRE(result[DebrisOff] == State::Applied);
 }
 
 TEST_CASE("Nx2DkQuality: the camera far, three places", "[core]") {
@@ -425,63 +300,12 @@ TEST_CASE("Nx2DkQuality: the bloom scale needs all three places", "[core]") {
     REQUIRE(text.words == before);
 }
 
-TEST_CASE("Nx2DkQuality: the terrain LOD distance and value", "[core]") {
-    Text text;
-    std::vector<u32> expected = text.words;
-    Values values{};
-    values[VoxelLod1Dist] = 50;
-    values[VoxelLod1Value] = 200;
-    values[VoxelLod2Dist] = 50;
-    values[VoxelLod2Value] = 200;
-    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
-    REQUIRE(result[VoxelLod1Dist] == State::Applied);
-    REQUIRE(result[VoxelLod1Value] == State::Applied);
-    REQUIRE(result[VoxelLod2Dist] == State::Applied);
-    REQUIRE(result[VoxelLod2Value] == State::Applied);
-    const auto bl = [](size_t from, size_t to) {
-        return 0x94000000U | (static_cast<u32>(to - from) & 0x3FFFFFFU);
-    };
-    // The loads of Lod1Dist, Lod1Value, Lod2Dist and Lod2Value, one routine each
-    const std::array<u32, 4> loads{0xBD400008, 0xBD400009, 0xBD40000A, 0xBD400000};
-    const std::array<u32, 4> movz{0x52A7E010, 0x52A80010, 0x52A7E010, 0x52A80010}; // 0.5, 2.0
-    const std::array<u32, 4> regs{8, 9, 10, 0};
-    for (size_t i = 0; i < 4; ++i) {
-        const size_t routine = Cave + i * CaveRoutineWords;
-        expected[Voxel + 1 + i * 3] = bl(Voxel + 1 + i * 3, routine);
-        expected[routine] = loads[i];
-        expected[routine + 1] = movz[i];
-        expected[routine + 2] = 0x1E270210;                        // fmov s16, w16
-        expected[routine + 3] = 0x1E300800U | (regs[i] << 5) | regs[i]; // fmul sN, sN, s16
-        expected[routine + 4] = Ret;
-    }
-    REQUIRE(text.words == expected);
-}
-
-TEST_CASE("Nx2DkQuality: the far terrain LOD distance alone", "[core]") {
-    Text text;
-    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(VoxelLod2Dist, 50));
-    REQUIRE(result[VoxelLod2Dist] == State::Applied);
-    REQUIRE(result[VoxelLod1Dist] == State::Unset);
-    REQUIRE(text.words[Voxel + 1] == 0xBD400008);  // the Lod1Dist load is not replaced
-    REQUIRE(text.words[Voxel + 7] != 0xBD40000A);  // the Lod2Dist one is
-}
-
-TEST_CASE("Nx2DkQuality: the near terrain LOD distance alone leaves the rest", "[core]") {
-    Text text;
-    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(VoxelLod1Dist, 50));
-    REQUIRE(result[VoxelLod1Dist] == State::Applied);
-    REQUIRE(result[VoxelLod1Value] == State::Unset);
-    REQUIRE(result[VoxelLod2Dist] == State::Unset);
-    REQUIRE(text.words[Voxel + 4] == 0xBD400009); // the Lod1Value load is not replaced
-    REQUIRE(text.words[Voxel + 7] == 0xBD40000A); // nor the Lod2Dist one
-}
-
-TEST_CASE("Nx2DkQuality: the terrain LOD needs its free space", "[core]") {
+TEST_CASE("Nx2DkQuality: the camera far needs its free space", "[core]") {
     Text text;
     text.words[Cave + 7] = Filler;
     const std::vector<u32> before = text.words;
-    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(VoxelLod1Dist, 50));
-    REQUIRE(result[VoxelLod1Dist] == State::Missed);
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(CameraFar, 50));
+    REQUIRE(result[CameraFar] == State::Missed);
     REQUIRE(text.words == before);
 }
 
@@ -501,20 +325,20 @@ TEST_CASE("Nx2DkQuality: values and variables", "[core]") {
     REQUIRE(Parse("24", Knobs[ResBest]) == -1);
     REQUIRE(Parse("101", Knobs[ResBest]) == -1);
     REQUIRE(Parse("60%", Knobs[ResBest]) == -1);
-    REQUIRE(Parse("400", Knobs[VoxelLod1Dist]) == 400);
-    REQUIRE(Sanitize(9, Knobs[VoxelLod1Dist]) == 0);
+    REQUIRE(Parse("240", Knobs[CubeMapInterval]) == 240);
+    REQUIRE(Sanitize(9, Knobs[CameraFar]) == 0);
 
     Values values{};
     values[ResBest] = 60;
-    values[VoxelLod1Dist] = 400;
+    values[CameraFar] = 40;
     values[CubeMapInterval] = 999; // out of range: left out
     REQUIRE(Wanted(values, false).empty());
     const auto vars = Wanted(values, true);
     REQUIRE(vars.size() == 2);
     REQUIRE(vars[0].name == "EDEN_NX2_DKQ_RES_BEST");
     REQUIRE(vars[0].value == "60");
-    REQUIRE(vars[1].name == "EDEN_NX2_DKQ_VOXEL_LOD1_DIST");
-    REQUIRE(vars[1].value == "400");
+    REQUIRE(vars[1].name == "EDEN_NX2_DKQ_CAMERA_FAR");
+    REQUIRE(vars[1].value == "40");
 }
 
 TEST_CASE("Nx2DkQuality: the presets", "[core]") {

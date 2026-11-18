@@ -27,7 +27,6 @@ struct Settings {
     int density = 0;      ///< % of the dynamic placements, 0: the game's
     bool off = false;     ///< no foliage at all (the Tuning tab's Foliage off box)
     int far_clip = 0;     ///< % of each model's far clip distance
-    int lod = 0;          ///< % of each model's LOD thresholds
     int emit = 0;         ///< % of the effects started per frame
     int particles = 0;    ///< % of the particles in one emitter
     int alive = 0;        ///< % of the effects alive per effect rule
@@ -36,19 +35,11 @@ struct Settings {
     bool particles_off = false;
     bool alive_off = false;
     bool material_off = false;
-    int voxel_emitter = 0;     ///< % of the voxel effect emitter's buffer
-    int voxel_surface = 0;     ///< % of the voxel surface effects' buffer
-    bool voxel_surface_off = false;
-    bool depth_collision_off = false;
-    int object_lod = 0;        ///< % of the graphics parameters' model LOD thresholds
-    bool voxel_emitter_off = false; ///< the voxel effect emitter's buffer at 0
 
     [[nodiscard]] bool Active() const {
-        return off || cap != 0 || frustum_off || density != 0 || far_clip != 0 || lod != 0 || emit != 0 || particles != 0 ||
-               alive != 0 || material != 0 || emit_off ||
-               particles_off || alive_off || material_off || voxel_emitter != 0 ||
-               voxel_surface != 0 || voxel_surface_off || depth_collision_off || object_lod != 0 ||
-               voxel_emitter_off;
+        return off || cap != 0 || frustum_off || density != 0 || far_clip != 0 || emit != 0 ||
+               particles != 0 || alive != 0 || material != 0 || emit_off || particles_off ||
+               alive_off || material_off;
     }
 };
 
@@ -70,15 +61,11 @@ inline bool OffFromEnvironment() {
 inline Settings FromEnvironment() {
     return {ReadEnv(Id::FoliageCap),     ReadEnv(Id::FoliageFrustumOff) != 0,
             ReadEnv(Id::FoliageDensity), OffFromEnvironment(),
-            ReadEnv(Id::FoliageFarClip),
-            ReadEnv(Id::FoliageLod),     ReadEnv(Id::EffectEmitCap),
+            ReadEnv(Id::FoliageFarClip), ReadEnv(Id::EffectEmitCap),
             ReadEnv(Id::EffectParticleCap), ReadEnv(Id::EffectAliveCap),
             ReadEnv(Id::EffectMaterialCap), ReadEnv(Id::EffectEmitOff) != 0,
             ReadEnv(Id::EffectParticleOff) != 0, ReadEnv(Id::EffectAliveOff) != 0,
-            ReadEnv(Id::EffectMaterialOff) != 0,
-            ReadEnv(Id::VoxelEmitterBuffer), ReadEnv(Id::VoxelSurfaceBuffer),
-            ReadEnv(Id::VoxelSurfaceEffectOff) != 0, ReadEnv(Id::DepthCollisionEffectOff) != 0,
-            ReadEnv(Id::ObjectLod), ReadEnv(Id::VoxelEmitterOff) != 0};
+            ReadEnv(Id::EffectMaterialOff) != 0};
 }
 
 constexpr std::string_view SystemSettingsPath = "ClusteredRendering/SystemSettings.alsarc.zs";
@@ -86,7 +73,6 @@ constexpr std::string_view ModelSettingsPath = "ClusteredRendering/ModelSettings
 constexpr std::string_view MaterialSettingsPath = "ClusteredRendering/MaterialSettings.alsarc.zs";
 constexpr std::string_view EffectSettingsPath = "SystemData/EffectSettings.alsarc.zs";
 constexpr std::string_view SettingUnitPath = "MaterialEffect/SettingUnit.alsarc.zs";
-constexpr std::string_view GraphicsParamPath = "SystemData/ProjectGraphicsParam.alsarc.zs";
 /// Each stage's scene settings (a SARC of components, ClusteredRenderingSettings among them)
 constexpr std::string_view SceneParamFolder = "Pack/SceneParam";
 
@@ -279,10 +265,10 @@ inline bool PatchMaterialSettings(std::span<u8> archive, const Settings& setting
     return changed;
 }
 
-/// Scales each model's FarClipDistance and LodThreshold0-2 of a decompressed
-/// ClusteredRendering/ModelSettings archive in place. Returns whether it changed anything.
+/// Scales each model's FarClipDistance of a decompressed ClusteredRendering/ModelSettings archive
+/// in place. Returns whether it changed anything.
 inline bool PatchModelSettings(std::span<u8> archive, const Settings& settings) {
-    if (settings.far_clip == 0 && settings.lod == 0 && !settings.off) {
+    if (settings.far_clip == 0 && !settings.off) {
         return false;
     }
     Detail::Reader in{archive};
@@ -301,9 +287,6 @@ inline bool PatchModelSettings(std::span<u8> archive, const Settings& settings) 
                     return;
                 }
                 percent = settings.far_clip;
-            } else if (key == "LodThreshold0" || key == "LodThreshold1" ||
-                       key == "LodThreshold2") {
-                percent = settings.lod;
             }
             if (percent != 0) {
                 Detail::Put(in, at,
@@ -337,28 +320,10 @@ inline bool PatchEffectSettings(std::span<u8> archive, const Settings& settings)
                 percent = settings.material;
                 off = settings.material_off;
             }
-            if (type == Detail::TypeBool) {
-                if ((key == "IsUseVoxelSurfaceEffect" && settings.voxel_surface_off) ||
-                    (key == "IsUseDepthCollisionEffect" && settings.depth_collision_off)) {
-                    Detail::Put(in, at, 0);
-                    changed = true;
-                }
-                return;
-            }
-            if (key == "BufferSize") {
-                percent = settings.voxel_emitter;
-            } else if (key == "VoxelSurfaceEffectBufferSize") {
-                percent = settings.voxel_surface;
-            }
             if (!(type == Detail::TypeInt || type == Detail::TypeUInt)) {
                 return;
             }
-            if (key == "BufferSize" && settings.voxel_emitter_off) {
-                // No room at all: no voxel effect can be emitted (if the game does not cope, the
-                // buffer row at 1% is the closest it gets)
-                Detail::Put(in, at, 0);
-                changed = true;
-            } else if (off) {
+            if (off) {
                 // One at most (not 0, which a buffer size might not allow)
                 Detail::Put(in, at, 1);
                 changed = true;
@@ -387,30 +352,6 @@ inline bool PatchSettingUnits(std::span<u8> archive, const Settings& settings) {
                                 ? 1
                                 : std::max<u32>(in.U32(at) *
                                                     static_cast<u32>(settings.material) / 100, 1));
-                changed = true;
-            }
-        });
-    });
-    return changed;
-}
-
-/// Scales the model LOD thresholds (ModelLodThresholdFirst, Second, Third) of every graphics
-/// variant of a decompressed SystemData/ProjectGraphicsParam archive in place: the screen size
-/// above which a model without thresholds of its own uses a finer mesh (higher: coarser sooner).
-inline bool PatchGraphicsParam(std::span<u8> archive, const Settings& settings) {
-    if (settings.object_lod == 0) {
-        return false;
-    }
-    Detail::Reader in{archive};
-    bool changed = false;
-    Detail::ForEachSarcFile(in, [&](size_t base) {
-        Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
-            if (type == Detail::TypeFloat &&
-                (key == "ModelLodThresholdFirst" || key == "ModelLodThresholdSecond" ||
-                 key == "ModelLodThresholdThird")) {
-                Detail::Put(in, at,
-                            Detail::AsBits(Detail::AsFloat(in.U32(at)) *
-                                           static_cast<float>(settings.object_lod) / 100.0f));
                 changed = true;
             }
         });

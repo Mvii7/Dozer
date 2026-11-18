@@ -72,7 +72,6 @@ VirtualDir MakeFoliageLayer(const VirtualDir& extracted) {
     patch(Loader::Nx2DkFoliage::ModelSettingsPath, Loader::Nx2DkFoliage::PatchModelSettings);
     patch(Loader::Nx2DkFoliage::EffectSettingsPath, Loader::Nx2DkFoliage::PatchEffectSettings);
     patch(Loader::Nx2DkFoliage::SettingUnitPath, Loader::Nx2DkFoliage::PatchSettingUnits);
-    patch(Loader::Nx2DkFoliage::GraphicsParamPath, Loader::Nx2DkFoliage::PatchGraphicsParam);
     // Each stage's own foliage draw buffer (its scene's ClusteredRenderingSettings), when a row
     // scales it: a faster compression, as there are some 200 of them
     if (Loader::Nx2DkFoliage::ScenesWanted(settings)) {
