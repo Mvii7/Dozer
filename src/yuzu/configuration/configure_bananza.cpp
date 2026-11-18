@@ -181,6 +181,14 @@ void ConfigureBananza::RetranslateUI() {
         tr("Scales how far away actors (objects, enemies, scenery pieces: over 2000 of them use "
            "it) stop being drawn, from the game's own distances (50 to 1200 by actor, 200 by "
            "default). Lower: they are clipped closer to you. Actors marked never to clip stay.")};
+    texts[Quality::VoxelDamageOff] = {
+        tr("Voxel damage effects off"),
+        tr("Gives the voxel effect emitter no effect to play when terrain is damaged (its "
+           "\"Damage\" key made empty). For finding out which effects these are.")};
+    texts[Quality::VoxelDestructionOff] = {
+        tr("Voxel destruction effects off"),
+        tr("Gives the voxel effect emitter no effect to play when terrain is destroyed (its "
+           "\"Destruction\" key made empty): the pieces that fly off, most likely.")};
     texts[Quality::MeshSimplify] = {
         tr("Terrain mesh simplification"),
         tr("How the game simplifies the destructible terrain's meshes: 1 Normal (the game's "

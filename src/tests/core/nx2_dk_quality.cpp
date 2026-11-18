@@ -31,7 +31,7 @@ constexpr size_t DepthGetter = 0x290, RadiusGetter = 0x2a0, PolygonGetter = 0x2b
 constexpr size_t MeshStore = 0x500;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
 constexpr size_t Voxel = 0x400;
-constexpr size_t DebrisSite = 0x780, LodSite = 0x7a0;
+constexpr size_t DebrisSite = 0x780, LodSite = 0x7a0, KeySite = 0x7c0;
 constexpr size_t BorderSite = 0x740, ShadowMaskGetter = 0x760,
     FlagSite = 0x800;
 
@@ -79,6 +79,8 @@ struct Text {
         std::copy(std::begin(second), std::end(second), &words[FarB]);
         std::copy(std::begin(third), std::end(third), &words[FarC]);
         words[DebrisSite] = 0x528001E8;      // mov w8, #0xf
+        const u32 keys[]{0x9105B908, 0x90009F29, 0x911D5D29, 0x39011A7F, 0xA9032668, 0x52804008};
+        std::copy(std::begin(keys), std::end(keys), &words[KeySite]);
         for (size_t i = 0; i < 3; ++i) {
             words[LodSite + i * 4] = LdrS(0, 20, 0xac + static_cast<u32>(i) * 4);
             words[LodSite + i * 4 + 1] = 0xF9413668;               // ldr x8, [x19, #0x268]
@@ -301,6 +303,24 @@ TEST_CASE("Nx2DkQuality: the actors' far clip distances", "[core]") {
     Text plain;
     REQUIRE(Apply(plain.Bytes(), TextSize, AlignedSize, Only(ActorDrawDistance, 50))[ActorDrawDistance] ==
             State::Missed);
+}
+
+TEST_CASE("Nx2DkQuality: the voxel damage and destruction keys", "[core]") {
+    Text text;
+    std::vector<u32> expected = text.words;
+    Values values{};
+    values[VoxelDestructionOff] = 1;
+    Result result = Apply(text.Bytes(), TextSize, AlignedSize, values);
+    REQUIRE(result[VoxelDestructionOff] == State::Applied);
+    REQUIRE(result[VoxelDamageOff] == State::Unset);
+    expected[KeySite + 2] = 0x911D8929; // add x9, x9, #0x762: the zero after "Destruction"
+    REQUIRE(text.words == expected);
+    values[VoxelDamageOff] = 1;
+    Text both;
+    result = Apply(both.Bytes(), TextSize, AlignedSize, values);
+    REQUIRE(result[VoxelDamageOff] == State::Applied);
+    REQUIRE(both.words[KeySite] == 0x9105D108); // add x8, x8, #0x174: the zero after "Damage"
+    REQUIRE(both.words[KeySite + 2] == 0x911D8929);
 }
 
 TEST_CASE("Nx2DkQuality: debris off", "[core]") {

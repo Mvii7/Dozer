@@ -231,6 +231,7 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Terrain LOD 1 / LOD 2 distance | 100% | the distance at which the destructible terrain switches to its first (200) and its farthest (420) coarser mesh, each its own row; lower: coarser sooner |
 | Terrain LOD 1 / LOD 2 value | 100% | the value each of the two terrain LOD steps carries (180 and 1000); higher may mean coarser (not known; for testing) |
 | Actor draw distance | 100% | scales the distances at which actors (objects, enemies, scenery pieces; over 2000 use them) are clipped, from the game's own 50-1200 (200 by default), 10-100%; actors marked never to clip stay |
+| Voxel damage / destruction effects off | off | the voxel effect emitter's "Damage" / "Destruction" effect key made empty: no effect when terrain is damaged / destroyed |
 | Character LOD bias | 100% | scales the screen sizes at which models with LOD thresholds of their own (Donkey Kong: 0.57 and 0.42; other characters) switch to simpler meshes, 25-400%; higher: simpler sooner |
 | Object LOD bias | 100% | the same for every other model, through the game's graphics settings file (0.1875, 0.093, 0.045) |
 | Terrain mesh simplification | Normal | the type of mesh simplification the game's terrain fields use (Normal, High, SuperHigh, NoSimplify, Low); which one simplifies the most is not known, so try them; it is applied to every field |

@@ -44,6 +44,8 @@ enum Id : size_t {
     MeshSimplify,      ///< terrain MeshSimplifyType: 1 Normal, 2 High, 3 SuperHigh, 4 NoSimplify, 5 Low
     CharacterLod,      ///< each model's own LodThreshold0-2 (characters), % of the game's
     ActorDrawDistance, ///< the actors' far clip distances (FarClipLevel), % of the game's
+    VoxelDamageOff,    ///< the voxel effect emitter's DamageKey made empty
+    VoxelDestructionOff, ///< the voxel effect emitter's DestructionKey made empty
     GgxFilterOff,      ///< IsUseGGXFilter forced off (reflection cube map filtering)
     CubeMapOcclusionOff, ///< IsUseCubeMapOcclusionCheck forced off
     OcclusionDepth,    ///< OcclusionQueryThresholdDepth, % of the game's
@@ -121,6 +123,8 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"mesh_simplify", "EDEN_NX2_DKQ_MESH_SIMPLIFY", 1, 5, 1},
     {"character_lod", "EDEN_NX2_DKQ_CHARACTER_LOD", 25, 400, 100},
     {"actor_draw_distance", "EDEN_NX2_DKQ_ACTOR_DRAW_DISTANCE", 10, 100, 100},
+    {"voxel_damage_off", "EDEN_NX2_DKQ_VOXEL_DAMAGE_OFF", 1, 1, 0},
+    {"voxel_destruction_off", "EDEN_NX2_DKQ_VOXEL_DESTRUCTION_OFF", 1, 1, 0},
     {"ggx_filter_off", "EDEN_NX2_DKQ_GGX_FILTER_OFF", 1, 1, 0},
     {"cubemap_occlusion_off", "EDEN_NX2_DKQ_CUBEMAP_OCCLUSION_OFF", 1, 1, 0},
     {"occlusion_depth", "EDEN_NX2_DKQ_OCCLUSION_DEPTH", 10, 400, 100},
@@ -778,6 +782,32 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 std::memcpy(text.data() + at + i * sizeof(float), &scaled, sizeof(scaled));
             }
             result[ActorDrawDistance] = State::Applied;
+        }
+    }
+
+    // The voxel effect emitter's settings start with the effect keys it emits when terrain is
+    // damaged and destroyed ("Damage", "Destruction"; the effect settings file sets neither):
+    //   add x8, x8, #0x16e ("Damage"); adrp x9; add x9, x9, #0x757 ("Destruction");
+    //   strb wzr, [x19, #0x46]; stp x8, x9, [x19, #0x30]; mov w8, #0x200
+    // A key off points at its own string's terminating zero instead: an empty key, no effect.
+    if (set(VoxelDamageOff) != 0 || set(VoxelDestructionOff) != 0) {
+        constexpr u32 AddDamage = 0x9105B908U, AddDestruction = 0x911D5D29U;
+        constexpr u32 StrbFlag = 0x39011A7FU, MovBuffer = 0x52804008U;
+        std::array<size_t, 1> at{};
+        if (find({{0, AddDamage}, {2, AddDestruction}, {3, StrbFlag}, {5, MovBuffer}}, at)) {
+            const auto empty = [&](size_t index, u32 length) {
+                // The add's immediate moves past the string's characters
+                const u32 add = word(index);
+                put(index, (add & ~(0xFFFU << 10)) | ((((add >> 10) & 0xFFFU) + length) << 10));
+            };
+            if (set(VoxelDamageOff) != 0) {
+                empty(at[0], 6); // "Damage"
+                result[VoxelDamageOff] = State::Applied;
+            }
+            if (set(VoxelDestructionOff) != 0) {
+                empty(at[0] + 2, 11); // "Destruction"
+                result[VoxelDestructionOff] = State::Applied;
+            }
         }
     }
 
