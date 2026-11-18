@@ -271,8 +271,9 @@ void ConfigureBananza::RetranslateUI() {
     texts[Quality::FoliageCap] = {
         tr("Foliage models at once"),
         tr("Scales how many foliage models (grass, weeds, plants) the game draws and keeps alive "
-           "at once (its own caps are 25000 and 50000). Done in the game's settings files as "
-           "they are read, so it needs a restart.")};
+           "at once: its global caps (25000 and 50000) and each stage's own draw buffer (1200 "
+           "to 6000, the limit a stage actually draws with). Done in the game's settings files "
+           "as they are read, so it needs a restart.")};
     texts[Quality::FoliageFrustumOff] = {
         tr("Foliage view margin off"),
         tr("Sets the extra margin the game adds around the view for foliage (50%) to 0: less "

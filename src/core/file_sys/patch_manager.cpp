@@ -51,7 +51,7 @@ VirtualDir MakeFoliageLayer(const VirtualDir& extracted) {
         return nullptr;
     }
     std::vector<std::pair<std::string, VirtualFile>> files;
-    const auto patch = [&](std::string_view path, auto&& patcher) {
+    const auto patch = [&](std::string_view path, auto&& patcher, s32 level = 19) {
         const auto file = extracted->GetFileRelative(path);
         if (file == nullptr) {
             return;
@@ -60,7 +60,7 @@ VirtualDir MakeFoliageLayer(const VirtualDir& extracted) {
         if (data.empty() || !patcher(std::span<u8>{data}, settings)) {
             return;
         }
-        auto packed = Common::Compression::CompressDataZSTD(data.data(), data.size(), 19);
+        auto packed = Common::Compression::CompressDataZSTD(data.data(), data.size(), level);
         const auto split = path.find_last_of('/');
         files.emplace_back(std::string{path.substr(0, split)},
                            std::make_shared<VectorVfsFile>(
@@ -73,23 +73,43 @@ VirtualDir MakeFoliageLayer(const VirtualDir& extracted) {
     patch(Loader::Nx2DkFoliage::EffectSettingsPath, Loader::Nx2DkFoliage::PatchEffectSettings);
     patch(Loader::Nx2DkFoliage::SettingUnitPath, Loader::Nx2DkFoliage::PatchSettingUnits);
     patch(Loader::Nx2DkFoliage::GraphicsParamPath, Loader::Nx2DkFoliage::PatchGraphicsParam);
+    // Each stage's own foliage draw buffer (its scene's ClusteredRenderingSettings), when a row
+    // scales it: a faster compression, as there are some 200 of them
+    if (Loader::Nx2DkFoliage::ScenesWanted(settings)) {
+        if (const auto scenes = extracted->GetDirectoryRelative(
+                Loader::Nx2DkFoliage::SceneParamFolder)) {
+            for (const auto& scene : scenes->GetFiles()) {
+                if (scene->GetName().ends_with(".pack.zs")) {
+                    patch(std::string{Loader::Nx2DkFoliage::SceneParamFolder} + "/" +
+                              scene->GetName(),
+                          Loader::Nx2DkFoliage::PatchSceneParam, 3);
+                }
+            }
+        }
+    }
     if (files.empty()) {
         return nullptr;
     }
-    // Each file goes in a directory of its own path (the folders of the paths above)
-    std::vector<VirtualDir> dirs;
+    // Each file goes in the directories of its path
+    auto root = std::make_shared<VectorVfsDirectory>();
     for (auto& [folder, file] : files) {
-        const auto found = std::find_if(dirs.begin(), dirs.end(), [&](const VirtualDir& dir) {
-            return dir->GetName() == folder;
-        });
-        if (found != dirs.end()) {
-            std::static_pointer_cast<VectorVfsDirectory>(*found)->AddFile(std::move(file));
-        } else {
-            dirs.push_back(std::make_shared<VectorVfsDirectory>(
-                std::vector<VirtualFile>{std::move(file)}, std::vector<VirtualDir>{}, folder));
+        std::shared_ptr<VectorVfsDirectory> dir = root;
+        std::string_view rest{folder};
+        while (!rest.empty()) {
+            const auto slash = rest.find('/');
+            const std::string name{rest.substr(0, slash)};
+            auto sub = std::static_pointer_cast<VectorVfsDirectory>(dir->GetSubdirectory(name));
+            if (sub == nullptr) {
+                sub = std::make_shared<VectorVfsDirectory>(std::vector<VirtualFile>{},
+                                                           std::vector<VirtualDir>{}, name);
+                dir->AddDirectory(sub);
+            }
+            dir = std::move(sub);
+            rest = slash == std::string_view::npos ? std::string_view{} : rest.substr(slash + 1);
         }
+        dir->AddFile(std::move(file));
     }
-    return std::make_shared<VectorVfsDirectory>(std::vector<VirtualFile>{}, std::move(dirs));
+    return root;
 }
 
 constexpr std::array<const char*, 14> EXEFS_FILE_NAMES{

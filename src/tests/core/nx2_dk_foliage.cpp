@@ -300,3 +300,16 @@ TEST_CASE("Nx2DkFoliage: voxel debris off", "[core]") {
     REQUIRE(Read32(effects, root + 4) == 0);
     REQUIRE(Read32(effects, root + 8 + 4) == 192); // the other buffers are left alone
 }
+
+TEST_CASE("Nx2DkFoliage: each stage's foliage draw buffer", "[core]") {
+    auto scene = Sarc(Byml({{"DrawBufferSize", 0xD1, 4000}}));
+    Settings settings;
+    settings.off = true; // foliage off leaves it alone
+    REQUIRE_FALSE(ScenesWanted(settings));
+    REQUIRE_FALSE(PatchSceneParam(scene, settings));
+    settings.off = false;
+    settings.cap = 25;
+    REQUIRE(ScenesWanted(settings));
+    REQUIRE(PatchSceneParam(scene, settings));
+    REQUIRE(Read32(scene, 0x60 + Read32(scene, 12 + 0x60) + 4 + 4) == 1000);
+}

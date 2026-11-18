@@ -87,6 +87,8 @@ constexpr std::string_view MaterialSettingsPath = "ClusteredRendering/MaterialSe
 constexpr std::string_view EffectSettingsPath = "SystemData/EffectSettings.alsarc.zs";
 constexpr std::string_view SettingUnitPath = "MaterialEffect/SettingUnit.alsarc.zs";
 constexpr std::string_view GraphicsParamPath = "SystemData/ProjectGraphicsParam.alsarc.zs";
+/// Each stage's scene settings (a SARC of components, ClusteredRenderingSettings among them)
+constexpr std::string_view SceneParamFolder = "Pack/SceneParam";
 
 namespace Detail {
 
@@ -409,6 +411,33 @@ inline bool PatchGraphicsParam(std::span<u8> archive, const Settings& settings) 
                 Detail::Put(in, at,
                             Detail::AsBits(Detail::AsFloat(in.U32(at)) *
                                            static_cast<float>(settings.object_lod) / 100.0f));
+                changed = true;
+            }
+        });
+    });
+    return changed;
+}
+
+/// Whether a row asks for the stages' scene settings (PatchSceneParam) to be changed.
+inline bool ScenesWanted(const Settings& settings) {
+    return settings.cap != 0;
+}
+
+/// Scales each stage's own foliage draw buffer (ClusteredRenderingSettings' DrawBufferSize,
+/// 1200 to 6000; it is the limit a stage draws with, not SystemSettings' caps) of a decompressed
+/// Pack/SceneParam archive in place, by the foliage cap. Foliage off does not change it.
+inline bool PatchSceneParam(std::span<u8> archive, const Settings& settings) {
+    if (settings.cap == 0) {
+        return false;
+    }
+    Detail::Reader in{archive};
+    bool changed = false;
+    Detail::ForEachSarcFile(in, [&](size_t base) {
+        Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
+            if (key == "DrawBufferSize" &&
+                (type == Detail::TypeInt || type == Detail::TypeUInt)) {
+                Detail::Put(in, at, std::max<u32>(in.U32(at) *
+                                                      static_cast<u32>(settings.cap) / 100, 1));
                 changed = true;
             }
         });
