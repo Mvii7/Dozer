@@ -106,6 +106,20 @@ public:
         releases_full = false;
     }
 
+    /// Whether the last release the puller queued to `address` since the last drain writes a
+    /// value that meets the acquire (false: none queued, or its value unknown).
+    [[nodiscard]] bool QueuedMeets(u64 address, u32 operation, u32 value) const {
+        if (releases_full) {
+            return false;
+        }
+        for (auto it = releases.rbegin(); it != releases.rend(); ++it) {
+            if (it->address == address) {
+                return it->known && Matches(operation, it->payload, value);
+            }
+        }
+        return false;
+    }
+
     /// Guest memory held `value` at `address` (reads in time order: before and after drains).
     void Observe(u64 address, u32 value) {
         const auto it = words.find(address);
