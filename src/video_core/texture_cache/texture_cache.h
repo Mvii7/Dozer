@@ -557,6 +557,39 @@ typename P::ImageView& TextureCache<P>::GetImageView(ImageViewId id) noexcept {
 }
 
 template <class P>
+bool TextureCache<P>::ColorTargetWrittenBeforeThisFrame(u32 index) {
+    const auto& regs = maxwell3d->regs;
+    const auto& rt = regs.rt[index];
+    const GPUVAddr gpu_addr = rt.Address();
+    if (gpu_addr == 0 || rt.format == Tegra::RenderTargetFormat::NONE) {
+        return false;
+    }
+    const ImageInfo info(rt, regs.anti_alias_samples_mode);
+    if (info.format == PixelFormat::Invalid || info.size.width == 0 || info.size.height == 0) {
+        return false;
+    }
+    const ImageId image_id = FindImage(info, gpu_addr, RelaxedOptions{});
+    if (!image_id) {
+        return false;
+    }
+    const ImageBase& image = slot_images[image_id];
+    return image.first_gpu_write_frame != 0 && image.first_gpu_write_frame <= frame_tick;
+}
+
+template <class P>
+bool TextureCache<P>::HoldsGpuData(ImageViewId id) const noexcept {
+    const ImageId image_id = slot_image_views[id].image_id;
+    if (!image_id || image_id == NULL_IMAGE_ID) {
+        return true;
+    }
+    // Written in an earlier frame: an image first written this frame (or built once) would keep
+    // nothing useful if the write were skipped.
+    const ImageBase& image = slot_images[image_id];
+    return True(image.flags & ImageFlagBits::GpuModified) && image.first_gpu_write_frame != 0 &&
+           image.first_gpu_write_frame <= frame_tick;
+}
+
+template <class P>
 bool TextureCache<P>::PublishComputeCollisionImage(u32 index) {
     const auto view_id = VisitImageView(index, true);
     if (view_id == NULL_IMAGE_VIEW_ID || !slot_image_views[view_id].image_id) {
@@ -1782,6 +1815,7 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         // Only upload modified images
         return;
     }
+    image.first_gpu_write_frame = 0;
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::TextureUpload};
 
     if (!image.partial_dirty_pages.empty() || !image.partial_remapped.empty()) {
@@ -3767,6 +3801,9 @@ void TextureCache<P>::FlushDeferredViewRemovals() {
 template <class P>
 void TextureCache<P>::MarkModification(ImageBase& image) noexcept {
     image.flags |= ImageFlagBits::GpuModified;
+    if (image.first_gpu_write_frame == 0) {
+        image.first_gpu_write_frame = frame_tick + 1;
+    }
     image.modification_tick = ++modification_tick;
     if (Nx2Stages::GpuPages().Live() && !image.nx2_pages_set) [[unlikely]] {
         Nx2MarkImagePages(image, [&](auto&& func) { ForEachSparseSegment(image, func); });
