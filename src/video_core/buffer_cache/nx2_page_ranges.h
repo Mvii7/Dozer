@@ -57,10 +57,36 @@ public:
             if (entry.state == Unused) {
                 MakeRegion(region, Mixed);
             }
-            ForEachPage(begin, stop, [&](u32 page, u32 lo, u32 hi) {
-                SetBits(entry, page, lo, hi);
-                return true;
-            });
+            // The partial pages at the ends, and a plain loop over the whole ones between (a
+            // storage binding added again each draw: its pages mostly whole already).
+            const u64 first_whole = (begin + PAGE_BYTES - 1) & ~(PAGE_BYTES - 1);
+            const u64 last_whole = stop & ~(PAGE_BYTES - 1);
+            if (first_whole >= last_whole) {
+                ForEachPage(begin, stop, [&](u32 page, u32 lo, u32 hi) {
+                    SetBits(entry, page, lo, hi);
+                    return true;
+                });
+            } else {
+                ForEachPage(begin, first_whole, [&](u32 page, u32 lo, u32 hi) {
+                    SetBits(entry, page, lo, hi);
+                    return true;
+                });
+                const u32 first = PageIndex(first_whole);
+                const u32 last = PageIndex(last_whole - 1) + 1;
+                u32* const slots = entry.slots.get();
+                for (u32 page = first; page < last; ++page) {
+                    if (slots[page] != FullSlot) {
+                        SetBits(entry, page, 0, static_cast<u32>(PAGE_BYTES));
+                    }
+                }
+                ForEachPage(last_whole, stop, [&](u32 page, u32 lo, u32 hi) {
+                    SetBits(entry, page, lo, hi);
+                    return true;
+                });
+            }
+            if (entry.full == PAGES_PER_REGION) {
+                MakeRegion(region, Full);
+            }
             return true;
         });
     }
@@ -207,6 +233,7 @@ private:
     struct Region {
         State state = Unused;
         u32 used = 0; ///< Mixed: slots not empty
+        u32 full = 0; ///< Mixed: slots whole
         std::unique_ptr<u32[]> slots;
     };
 
@@ -234,6 +261,10 @@ private:
             }
         }
     };
+
+    static u32 PageIndex(u64 addr) noexcept {
+        return static_cast<u32>((addr >> PAGE_BITS) & (PAGES_PER_REGION - 1));
+    }
 
     static u64 End(u64 addr, size_t size) noexcept {
         const u64 end = addr + size;
@@ -288,12 +319,14 @@ private:
         }
         entry.state = state;
         entry.used = 0;
+        entry.full = 0;
         if (state == Mixed) {
             if (!entry.slots) {
                 entry.slots = std::make_unique<u32[]>(PAGES_PER_REGION);
             }
             std::fill_n(entry.slots.get(), PAGES_PER_REGION, full_slots ? FullSlot : EmptySlot);
             entry.used = full_slots ? PAGES_PER_REGION : 0;
+            entry.full = entry.used;
         }
     }
 
@@ -328,6 +361,7 @@ private:
             }
             FreeSlot(slot);
             slot = FullSlot;
+            ++entry.full;
             return;
         }
         if (slot == EmptySlot) {
@@ -342,16 +376,23 @@ private:
         if (slot == EmptySlot) {
             return;
         }
+        if (slot == FullSlot) {
+            --entry.full;
+        }
         if (lo == 0 && hi == PAGE_BYTES) {
             FreeSlot(slot);
             --entry.used;
             return;
         }
-        if (slot == FullSlot) {
+        const bool was_full = slot == FullSlot;
+        if (was_full) {
             slot = NewBitmap(true);
         }
         Bitmap& bits = bitmaps[slot - FirstBitmap];
         ForEachWord(lo, hi, [&](u32 word, u64 mask) { bits[word] &= ~mask; });
+        if (was_full) {
+            return; // Part of the page was cleared
+        }
         for (const u64 word : bits) {
             if (word != 0) {
                 return;
