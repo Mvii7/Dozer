@@ -247,6 +247,31 @@ TextureCache<P>::TextureCache(Runtime& runtime_, Tegra::MaxwellDeviceMemoryManag
 }
 
 template <class P>
+bool TextureCache<P>::EvictionFreesNothing() {
+    // VMA hands an image's space back to the device only once its whole block is empty. After a
+    // burst of evictions the blocks keep that space as holes (a Mario Kart World race: 13 GB of
+    // blocks for 8.5 GB of allocations for two minutes), new images fill them, and deleting more
+    // only adds holes: the collector went on deleting and remaking hundreds of ASTC images each
+    // 600 frames without lowering the heap. While at least 1 GiB of holes is left and the heap
+    // itself (usage plus holes) stays under the budget, there is nothing to free.
+    // EDEN_NX2_TC_HOLE_SKIP=0 collects as before.
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_TC_HOLE_SKIP");
+        return value == nullptr || value[0] != '0';
+    }();
+    if (!enabled || heap_ceiling == 0) {
+        return false;
+    }
+    if constexpr (requires { runtime.GetDeviceMemorySlack(); }) {
+        constexpr u64 MinHoles = 1_GiB;
+        const u64 holes = runtime.GetDeviceMemorySlack();
+        return holes >= MinHoles && total_used_memory + holes < heap_ceiling;
+    } else {
+        return false;
+    }
+}
+
+template <class P>
 void TextureCache<P>::RunGarbageCollector() {
     bool high_priority_mode = false;
     bool aggressive_mode = false;
@@ -443,6 +468,7 @@ void TextureCache<P>::TickFrame() {
                     // images unused for 10 frames and made them again. The critical line keeps
                     // its reserve for slack not yet measured; this limit has the slack itself.
                     const u64 room = budget - margin;
+                    heap_ceiling = budget - 256_MiB;
                     retention_limit =
                         (std::max)(room > raw_slack ? room - raw_slack : 0, critical_memory);
                     // Log the first values and real changes (the budget moves by a few MiB all
@@ -498,9 +524,9 @@ void TextureCache<P>::TickFrame() {
         if constexpr (requires { runtime.LogMemoryStatistics(); }) {
             runtime.LogMemoryStatistics();
         }
-        LOG_INFO(HW_GPU, "Texture cache last 600 frames: created {} images, deleted {} (collector {}, {} costly, {} downloaded), {} async decodes, ASTC {} opaque / {} alpha",
+        LOG_INFO(HW_GPU, "Texture cache last 600 frames: created {} images, deleted {} (collector {}, {} costly, {} downloaded, {} frames skipped for heap holes), {} async decodes, ASTC {} opaque / {} alpha",
                  images_created, images_deleted, gc_deletes + gc_costly_deletes, gc_costly_deletes,
-                 gc_download_deletes,
+                 gc_download_deletes, gc_hole_skips,
                  async_decodes_queued, astc_opaque_images, astc_alpha_images);
         LOG_INFO(HW_GPU, "Texture cache last 600 frames: {} uploads from guest memory, {} MiB (largest {} MiB, {} by layer)",
                  images_uploaded, uploaded_bytes >> 20, largest_upload >> 20, layer_uploads);
@@ -517,14 +543,19 @@ void TextureCache<P>::TickFrame() {
                      created_shapes[key].second);
         }
         created_shapes.clear();
-        gc_deletes = gc_costly_deletes = gc_download_deletes = async_decodes_queued = 0;
+        gc_deletes = gc_costly_deletes = gc_download_deletes = gc_hole_skips = 0;
+        async_decodes_queued = 0;
         images_created = images_deleted = 0;
         LOG_INFO(HW_GPU, "Texture cache last 600 frames: alias checks {} walked, {} skipped, {} synchronized",
                  alias_checks_walked, alias_checks_skipped, alias_syncs);
         alias_checks_walked = alias_checks_skipped = alias_syncs = 0;
     }
     if (total_used_memory > minimum_memory) {
-        RunGarbageCollector();
+        if (EvictionFreesNothing()) {
+            ++gc_hole_skips;
+        } else {
+            RunGarbageCollector();
+        }
     }
     sentenced_images.Tick();
     sentenced_framebuffers.Tick();
