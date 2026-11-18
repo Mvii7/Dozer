@@ -8,6 +8,9 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Diagnostic: `EDEN_NX2_BATCH_CENSUS=1` logs how long the runs of draws on one setup are, and
+  whether the draws in them change only draw parameters, uniforms too, or vertex and index
+  buffers: how many draws one multi draw could take.
 - Split GPU thread: an equal semaphore acquire goes on without draining the back when the last
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are

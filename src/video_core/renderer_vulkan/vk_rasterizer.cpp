@@ -36,6 +36,7 @@
 #include "video_core/gpu_logging/gpu_logging.h"
 #include "video_core/control/channel_state.h"
 #include "video_core/native_query_trace.h"
+#include "video_core/nx2_batch_census.h"
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/textures/texture.h"
@@ -480,7 +481,14 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, bool indirect, Func&& draw_f
         // Same-value constant buffer writes matter to a plain light draw only.
         light.armed = light_follows == LightLevel::Full;
     };
+    const u32 census_changes = maxwell3d->light.changes;
     if (LightDrawEnabled() && TryLightDraw(is_indexed, indirect, invalidated, draw_func)) {
+        if (VideoCommon::Nx2BatchCensus::Enabled()) [[unlikely]] {
+            using LightChange = Tegra::Engines::Maxwell3D::LightChange;
+            VideoCommon::Nx2BatchCensus::Draw(
+                true, (census_changes & (LightChange::UniformData | LightChange::UniformBind)) == 0,
+                (census_changes & (LightChange::VertexStreams | LightChange::IndexBuffer)) != 0);
+        }
         // A light draw leaves the setup it followed: what may follow that may follow it.
         submitted = true;
         anchor.pipeline = light_anchor.pipeline;
@@ -488,6 +496,9 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, bool indirect, Func&& draw_f
         return;
     }
 
+    if (VideoCommon::Nx2BatchCensus::Enabled()) [[unlikely]] {
+        VideoCommon::Nx2BatchCensus::Draw(false, false, false);
+    }
     const auto report_failure = [&](std::string_view reason) {
         thread_local std::set<std::tuple<u64, u64, std::string_view>> seen;
         const auto& regs = maxwell3d->regs;
