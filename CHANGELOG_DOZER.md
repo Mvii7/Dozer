@@ -12,11 +12,11 @@ and `=0` brings back the 2.0.0 code path.
   GPU-written range set already holds whole, with no subtract reaching it since, is no longer
   added to the set again (about 4% of the memory stage in Donkey Kong Bananza).
   `EDEN_NX2_ADD_MEMO=0` turns it off; start-safe.bat turns it off.
-- Buffer cache: a subtract from a range set (an inline write into a GPU-written range) waits until
-  a query or an add reaches it, and an add that covers it whole drops it, so the next draw
-  adding the written storage binding again no longer splits and rejoins the tree (about 5% of
-  the memory stage in Donkey Kong Bananza). `EDEN_NX2_LAZY_SUBTRACT=0` turns it off;
-  start-safe.bat turns it off.
+- Buffer cache: the GPU-written range set (about 20000 ranges in Donkey Kong Bananza, added to
+  and subtracted from by every draw's written storage bindings and inline writes) is a bitmap by
+  4 KiB page instead of a tree, so each change costs its pages instead of a tree walk (about 10%
+  of the memory stage went to the tree). `EDEN_NX2_PAGE_RANGES=0` brings back the tree;
+  start-safe.bat does.
 
 ## Dozer 0.1.6 (`v0.1.6`)
 

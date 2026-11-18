@@ -452,7 +452,7 @@ inline constexpr std::array<std::string_view, 66> SafeOff{
     "EDEN_NX2_HSETP2_REG",       "EDEN_NX2_DIRTY_THUNK_SKIP",  "EDEN_NX2_FAST_PRIORITY_SCAN",
     "EDEN_NX2_PBFLUSH_WINDOW_KIB", "EDEN_NX2_UPSCALE_SCAN",    "EDEN_NX2_UPSCALE_LEARN",
     "EDEN_NX2_UPSCALE_HEADER",   "EDEN_NX2_FRONT_RUNS",        "EDEN_NX2_UBO_KEEP",
-    "EDEN_NX2_RX_ONE_SUBMIT",    "EDEN_NX2_ADD_MEMO",          "EDEN_NX2_LAZY_SUBTRACT",
+    "EDEN_NX2_RX_ONE_SUBMIT",    "EDEN_NX2_ADD_MEMO",          "EDEN_NX2_PAGE_RANGES",
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.

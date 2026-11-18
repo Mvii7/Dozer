@@ -15,6 +15,7 @@
 
 #include "common/common_types.h"
 #include "common/range_sets.h"
+#include "video_core/buffer_cache/nx2_page_ranges.h"
 
 namespace VideoCommon {
 
@@ -167,6 +168,57 @@ private:
     u32 next{};
 };
 
+/// EDEN_NX2_PAGE_RANGES (on unless =0): a PageRangeSet in place of a Common::RangeSet. The
+/// GPU-written set holds about 20000 ranges in Donkey Kong Bananza, and each draw's written
+/// storage bindings and inline writes add and subtract some, a tree walk each.
+class PageOrTreeRangeSet {
+public:
+    [[nodiscard]] static bool UsePages() {
+        static const bool use = [] {
+            const char* const value = std::getenv("EDEN_NX2_PAGE_RANGES");
+            return value == nullptr || value[0] != '0';
+        }();
+        return use;
+    }
+
+    void Add(u64 addr, size_t size) {
+        pages_used ? pages.Add(addr, size) : tree.Add(addr, size);
+    }
+    void Subtract(u64 addr, size_t size) {
+        pages_used ? pages.Subtract(addr, size) : tree.Subtract(addr, size);
+    }
+    [[nodiscard]] bool Intersects(u64 addr, size_t size) const {
+        return pages_used ? pages.Intersects(addr, size) : tree.Intersects(addr, size);
+    }
+    template <typename Func>
+    void ForEachInRange(u64 addr, size_t size, Func&& func) const {
+        if (pages_used) {
+            pages.ForEachInRange(addr, size, std::forward<Func>(func));
+        } else {
+            tree.ForEachInRange(addr, size, std::forward<Func>(func));
+        }
+    }
+    template <typename Func>
+    void ForEach(Func&& func) const {
+        if (pages_used) {
+            pages.ForEach(std::forward<Func>(func));
+        } else {
+            tree.ForEach(std::forward<Func>(func));
+        }
+    }
+    void Clear() {
+        pages_used ? pages.Clear() : tree.Clear();
+    }
+    [[nodiscard]] bool Empty() const {
+        return pages_used ? pages.Empty() : tree.Empty();
+    }
+
+private:
+    bool pages_used = UsePages();
+    PageRangeSet pages;
+    Common::RangeSet<u64> tree;
+};
+
 /// EDEN_NX2_GPU_WRITTEN_FILTER: a Common::RangeSet (boost::icl, a tree under a pool allocator
 /// with a global lock) with a summary of where its ranges may lie, so that queries far from all
 /// of them answer without the tree: the hull of every range added since the last Clear or
@@ -200,13 +252,11 @@ public:
     SummarizedRangeSet() = default;
     SummarizedRangeSet(SummarizedRangeSet&& other) noexcept
         : set{std::move(other.set)}, mode{other.mode}, low{other.low}, high{other.high},
-          stats{other.stats}, added{other.added}, next_added{other.next_added},
-          pending{other.pending}, pending_count{other.pending_count} {
+          stats{other.stats}, added{other.added}, next_added{other.next_added} {
         static_assert(!PageBits, "moving the page summary is not supported");
         other.low = ~u64{0};
         other.high = 0;
         other.added.fill({});
-        other.pending_count = 0;
     }
     SummarizedRangeSet& operator=(SummarizedRangeSet&&) = delete;
 
@@ -223,9 +273,6 @@ public:
             const char* const value = std::getenv("EDEN_NX2_ADD_MEMO");
             return value == nullptr || value[0] != '0';
         }();
-        if (pending_count != 0 && size != 0) {
-            ResolvePending(addr, addr + size < addr ? ~u64{0} : addr + size);
-        }
         if (add_memo && size != 0) {
             const u64 end = addr + size;
             for (const Added& range : added) {
@@ -249,60 +296,36 @@ public:
     }
 
     void Subtract(u64 addr, size_t size) {
+        ForgetAdded(addr, size);
         if (mode != 0) {
             ++stats.subtracts;
             if (Missed(addr, size)) {
                 ++stats.subtract_misses;
-                ForgetAdded(addr, size);
                 return;
             }
-        }
-        // EDEN_NX2_LAZY_SUBTRACT (on unless =0): kept until a query or an Add reaches it, so that
-        // one an Add covers whole is dropped instead (an inline write into a written storage
-        // binding, which the next draw adds again).
-        static const bool lazy = [] {
-            const char* const value = std::getenv("EDEN_NX2_LAZY_SUBTRACT");
-            return value == nullptr || value[0] != '0';
-        }();
-        if (lazy && size != 0 && addr + size > addr) {
-            // Touching ones are joined (an inline run writes consecutive ranges).
-            Added range{addr, addr + size};
-            for (u32 i = 0; i < pending_count;) {
-                const Added other = pending[i];
-                if (other.begin <= range.end && range.begin <= other.end) {
-                    range = Added{(std::min)(range.begin, other.begin),
-                                  (std::max)(range.end, other.end)};
-                    pending[i] = pending[--pending_count];
-                } else {
-                    ++i;
-                }
+            if constexpr (PageBits) {
+                ClearWholePages(addr, size);
             }
-            if (pending_count == pending.size()) {
-                ApplyPending(0);
-            }
-            pending[pending_count++] = range;
-            return;
         }
-        ApplySubtract(addr, size);
+        set.Subtract(addr, size);
     }
 
     [[nodiscard]] bool Intersects(u64 addr, size_t size) {
         if (mode == 0) {
-            return TreeIntersects(addr, size);
+            return set.Intersects(addr, size);
         }
         ++stats.queries;
         if (Missed(addr, size)) {
             ++stats.query_misses;
             return false;
         }
-        const bool result = TreeIntersects(addr, size);
+        const bool result = set.Intersects(addr, size);
         stats.false_positives += result ? 0 : 1;
         return result;
     }
 
     template <typename Func>
     void ForEachInRange(u64 addr, size_t size, Func&& func) const {
-        FlushPending(addr, size);
         if (mode != 0 && Missed(addr, size)) {
             return;
         }
@@ -311,25 +334,21 @@ public:
 
     template <typename Func>
     void ForEach(Func&& func) const {
-        FlushPending(0, ~size_t{0});
         set.ForEach(std::forward<Func>(func));
     }
 
     void Clear() {
         set.Clear();
         added.fill({});
-        pending_count = 0;
         Reset();
     }
 
     [[nodiscard]] bool Empty() const {
-        FlushPending(0, ~size_t{0});
         return set.Empty();
     }
 
     /// Makes the summary exact again (the ranges as they are now).
     void Rebuild() {
-        FlushPending(0, ~size_t{0});
         Reset();
         if (mode == 0) {
             return;
@@ -350,7 +369,6 @@ public:
     }
 
     [[nodiscard]] size_t Count() const {
-        FlushPending(0, ~size_t{0});
         size_t count = 0;
         set.ForEach([&count](u64, u64) { ++count; });
         return count;
@@ -400,94 +418,6 @@ private:
         u64 begin;
         u64 end; ///< Equal to begin: empty
     };
-
-    void ApplySubtract(u64 addr, size_t size) {
-        ForgetAdded(addr, size);
-        if constexpr (PageBits) {
-            if (mode != 0) {
-                ClearWholePages(addr, size);
-            }
-        }
-        set.Subtract(addr, size);
-    }
-
-    void ApplyPending(u32 index) {
-        const Added range = pending[index];
-        pending[index] = pending[--pending_count];
-        ApplySubtract(range.begin, range.end - range.begin);
-    }
-
-    /// The tree less the pending subtracts, which stay pending (the next inline write's query
-    /// reaches the page of the one before).
-    bool TreeIntersects(u64 addr, size_t size) const {
-        if (pending_count == 0 || !PendingReaches(addr, size)) {
-            return set.Intersects(addr, size);
-        }
-        bool result = false;
-        set.ForEachInRange(addr, size, [&](u64 begin, u64 end) {
-            result = result || !PendingCovers(begin, end);
-        });
-        return result;
-    }
-
-    bool PendingReaches(u64 addr, size_t size) const noexcept {
-        const u64 end = addr + size < addr ? ~u64{0} : addr + size;
-        for (u32 i = 0; i < pending_count; ++i) {
-            if (pending[i].begin < end && addr < pending[i].end) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// Whether the pending subtracts together cover [begin, end).
-    bool PendingCovers(u64 begin, u64 end) const noexcept {
-        for (u32 step = 0; step <= pending_count && begin < end; ++step) {
-            bool advanced = false;
-            for (u32 i = 0; i < pending_count; ++i) {
-                if (pending[i].begin <= begin && begin < pending[i].end) {
-                    begin = pending[i].end;
-                    advanced = true;
-                }
-            }
-            if (!advanced) {
-                return false;
-            }
-        }
-        return begin >= end;
-    }
-
-    /// Before an Add of [addr, end): drops the pending subtracts inside it and applies the others
-    /// that reach it.
-    void ResolvePending(u64 addr, u64 end) {
-        for (u32 i = 0; i < pending_count;) {
-            const Added range = pending[i];
-            if (range.end <= addr || end <= range.begin) {
-                ++i;
-            } else if (addr <= range.begin && range.end <= end) {
-                pending[i] = pending[--pending_count];
-            } else {
-                ApplyPending(i);
-            }
-        }
-    }
-
-    /// Applies the pending subtracts that reach [addr, addr + size) (queries see them).
-    void FlushPending(u64 addr, size_t size) const {
-        if (pending_count == 0) {
-            return;
-        }
-        auto* const self = const_cast<SummarizedRangeSet*>(this);
-        const u64 end = addr + size < addr ? ~u64{0} : addr + size;
-        for (u32 i = 0; i < pending_count;) {
-            const Added range = pending[i];
-            if (range.begin < end && addr < range.end) {
-                self->ApplyPending(i);
-            } else {
-                ++i;
-            }
-        }
-    }
 
     void ForgetAdded(u64 addr, size_t size) noexcept {
         const u64 end = addr + size < addr ? ~u64{0} : addr + size;
@@ -577,7 +507,7 @@ private:
 
     struct NoPages {};
 
-    Common::RangeSet<u64> set;
+    std::conditional_t<PageBits, PageOrTreeRangeSet, Common::RangeSet<u64>> set;
     int mode = 0;
     u64 low = ~u64{0};
     u64 high = 0;
@@ -585,8 +515,6 @@ private:
     u64 rebuild_false_positives = 0;
     std::array<Added, 4> added{}; ///< EDEN_NX2_ADD_MEMO: ranges the set holds whole
     u32 next_added = 0;
-    std::array<Added, 8> pending{}; ///< EDEN_NX2_LAZY_SUBTRACT: subtracts not applied yet
-    u32 pending_count = 0;
     [[no_unique_address]] std::conditional_t<PageBits, std::unique_ptr<u64[]>, NoPages> pages{};
     [[no_unique_address]] std::conditional_t<PageBits, std::array<u64, REGION_WORDS>, NoPages>
         regions{};

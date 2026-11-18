@@ -181,9 +181,9 @@
 # ADD_MEMO=0: a GPU-written range already held whole is added to the range set again (default:
 # skipped while no subtract reached it).
 #EDEN_NX2_ADD_MEMO=0
-# LAZY_SUBTRACT=0: a subtract from a range set is applied at once (default: kept until a query or
-# an add reaches it, and dropped when an add covers it whole).
-#EDEN_NX2_LAZY_SUBTRACT=0
+# PAGE_RANGES=0: the GPU-written range set is a tree again (default: a bitmap by 4 KiB page, so
+# adding and removing a range costs its pages, not a walk among some 20000 others).
+#EDEN_NX2_PAGE_RANGES=0
 #EDEN_NX2_MARK_WORDS=0
 #EDEN_NX2_INVAL_HULL=0
 #EDEN_NX2_INVAL_SKIP=0
