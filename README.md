@@ -262,6 +262,7 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Effect starts / Emitter particles / Alive effects / Terrain material effects off | off | one box per effect cap; ticked sets that cap to 1 (the game's: 156 / 512 / 64 / its own); something that expects an effect may break |
 | Debris off | off | gives every terrain material the no-fragments setting (`FragmentType` DisableForce) some already have; may change how terrain breaks apart; for testing |
 | Voxel debris buffer / Voxel surface effect buffer | 100% | scales the buffers of the game's voxel effect emitter (1024) and voxel surface effects (5000), found in the effect settings; for finding out which is the debris |
+| Voxel debris off | off | sets the voxel effect emitter's buffer to 0: no room for the voxel pieces at all; if the game does not cope, use the buffer row at 1% |
 | Voxel surface effects off / Depth collision effects off | off | turn those effect systems off in the effect settings; not tested yet |
 | Effects alive per rule / Terrain material effects | 100% | scales how many effects the emission rules keep alive and how many terrain material effects (dust, smoke, snow) are active at once |
 | Shadow masks off | on | turns off the game's shadow masks (volume shadows); shadows may go missing (for testing) |

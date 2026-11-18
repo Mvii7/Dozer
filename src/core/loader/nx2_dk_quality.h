@@ -81,6 +81,7 @@ enum Id : size_t {
     EffectAliveOff,    ///< effects alive per rule at 1
     EffectMaterialOff, ///< terrain material effects at 1
     VoxelEmitterBuffer, ///< buffer of the voxel effect emitter (voxel debris), %
+    VoxelEmitterOff,   ///< the voxel effect emitter's buffer set to 0
     VoxelSurfaceBuffer, ///< buffer of the voxel surface effects, %
     VoxelSurfaceEffectOff, ///< voxel surface effects off
     DepthCollisionEffectOff, ///< depth collision effects off
@@ -157,6 +158,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"effect_alive_off", "EDEN_NX2_DKQ_EFFECT_ALIVE_OFF", 1, 1, 0},
     {"effect_material_off", "EDEN_NX2_DKQ_EFFECT_MATERIAL_OFF", 1, 1, 0},
     {"voxel_emitter_buffer", "EDEN_NX2_DKQ_VOXEL_EMITTER_BUFFER", 1, 100, 100},
+    {"voxel_emitter_off", "EDEN_NX2_DKQ_VOXEL_EMITTER_OFF", 1, 1, 0},
     {"voxel_surface_buffer", "EDEN_NX2_DKQ_VOXEL_SURFACE_BUFFER", 1, 100, 100},
     {"voxel_surface_effect_off", "EDEN_NX2_DKQ_VOXEL_SURFACE_EFFECT_OFF", 1, 1, 0},
     {"depth_collision_effect_off", "EDEN_NX2_DKQ_DEPTH_COLLISION_EFFECT_OFF", 1, 1, 0},

@@ -41,12 +41,14 @@ struct Settings {
     bool voxel_surface_off = false;
     bool depth_collision_off = false;
     int object_lod = 0;        ///< % of the graphics parameters' model LOD thresholds
+    bool voxel_emitter_off = false; ///< the voxel effect emitter's buffer at 0
 
     [[nodiscard]] bool Active() const {
         return off || cap != 0 || frustum_off || density != 0 || far_clip != 0 || lod != 0 || emit != 0 || particles != 0 ||
                alive != 0 || material != 0 || emit_off ||
                particles_off || alive_off || material_off || voxel_emitter != 0 ||
-               voxel_surface != 0 || voxel_surface_off || depth_collision_off || object_lod != 0;
+               voxel_surface != 0 || voxel_surface_off || depth_collision_off || object_lod != 0 ||
+               voxel_emitter_off;
     }
 };
 
@@ -76,7 +78,7 @@ inline Settings FromEnvironment() {
             ReadEnv(Id::EffectMaterialOff) != 0,
             ReadEnv(Id::VoxelEmitterBuffer), ReadEnv(Id::VoxelSurfaceBuffer),
             ReadEnv(Id::VoxelSurfaceEffectOff) != 0, ReadEnv(Id::DepthCollisionEffectOff) != 0,
-            ReadEnv(Id::ObjectLod)};
+            ReadEnv(Id::ObjectLod), ReadEnv(Id::VoxelEmitterOff) != 0};
 }
 
 constexpr std::string_view SystemSettingsPath = "ClusteredRendering/SystemSettings.alsarc.zs";
@@ -349,7 +351,12 @@ inline bool PatchEffectSettings(std::span<u8> archive, const Settings& settings)
             if (!(type == Detail::TypeInt || type == Detail::TypeUInt)) {
                 return;
             }
-            if (off) {
+            if (key == "BufferSize" && settings.voxel_emitter_off) {
+                // No room at all: no voxel effect can be emitted (if the game does not cope, the
+                // buffer row at 1% is the closest it gets)
+                Detail::Put(in, at, 0);
+                changed = true;
+            } else if (off) {
                 // One at most (not 0, which a buffer size might not allow)
                 Detail::Put(in, at, 1);
                 changed = true;

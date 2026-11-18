@@ -318,6 +318,12 @@ void ConfigureBananza::RetranslateUI() {
         tr("Terrain material effects off"),
         tr("Lets one terrain material effect (dust, smoke, snow) be active at most. Needs a "
            "restart.")};
+    texts[Quality::VoxelEmitterOff] = {
+        tr("Voxel debris off"),
+        tr("Sets the voxel effect emitter's buffer to nothing, so it has no room for any of the "
+           "voxel pieces that fly off when terrain breaks. For finding out whether that buffer "
+           "is the debris; if the game crashes or misbehaves, use the buffer row at 1% instead. "
+           "Needs a restart.")};
     texts[Quality::VoxelEmitterBuffer] = {
         tr("Voxel debris buffer"),
         tr("Scales the buffer of the voxel effect emitter, which the game uses for the voxel "

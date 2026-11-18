@@ -289,3 +289,14 @@ TEST_CASE("Nx2DkFoliage: the object LOD thresholds", "[core]") {
     REQUIRE(Read32(archive, root + 8 + 4) == Bits(0.25f));
     REQUIRE(Read32(archive, root + 16 + 4) == Bits(1.0f)); // the others are left alone
 }
+
+TEST_CASE("Nx2DkFoliage: voxel debris off", "[core]") {
+    auto effects = Sarc(Byml({{"BufferSize", 0xD1, 1024}, {"OneEmitterBufferSize", 0xD1, 192}}));
+    Settings settings;
+    settings.voxel_emitter_off = true;
+    REQUIRE(settings.Active());
+    REQUIRE(PatchEffectSettings(effects, settings));
+    const size_t root = 0x60 + Read32(effects, 12 + 0x60) + 4;
+    REQUIRE(Read32(effects, root + 4) == 0);
+    REQUIRE(Read32(effects, root + 8 + 4) == 192); // the other buffers are left alone
+}
