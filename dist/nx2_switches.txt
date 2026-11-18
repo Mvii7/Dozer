@@ -113,6 +113,10 @@
 # ACQUIRE_PEEK: a semaphore acquire whose value memory already holds goes on without
 # draining the back. 0 off (default), 1 on (recommended), 2 drains and logs where 1 would not.
 #EDEN_NX2_ACQUIRE_PEEK=1
+# ACQUIRE_QUEUED=0 (with ACQUIRE_PEEK=1): an acquire memory does not meet yet drains the back
+# (default: goes on when the last report semaphore or puller release queued to its word meets
+# it and the back has not run it).
+#EDEN_NX2_ACQUIRE_QUEUED=0
 # FRONT_RUNS=0: increasing runs of 3D state methods go to the front word by word, as before.
 #EDEN_NX2_FRONT_RUNS=0
 # JIT_SAME: the front's macro JIT drops state writes that would change nothing. 0 off

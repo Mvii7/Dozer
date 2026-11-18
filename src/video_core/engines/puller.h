@@ -44,6 +44,10 @@ class RasterizerInterface;
 
 namespace Tegra::Engines {
 
+/// Front: a Maxwell3D report semaphore release of `payload` just sent to the split GPU thread's
+/// back (EDEN_NX2_ACQUIRE_PEEK's queued releases; `timestamp`: the 16-byte form).
+void NotePeekReportRelease(MemoryManager& memory, GPUVAddr address, u32 payload, bool timestamp);
+
 class Puller final {
 public:
     struct MethodCall {

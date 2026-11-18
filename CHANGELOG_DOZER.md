@@ -17,6 +17,11 @@ and `=0` brings back the 2.0.0 code path.
   4 KiB page instead of a tree, so each change costs its pages instead of a tree walk (about 10%
   of the memory stage went to the tree). `EDEN_NX2_PAGE_RANGES=0` brings back the tree;
   start-safe.bat does.
+- Split GPU thread: with `EDEN_NX2_ACQUIRE_PEEK=1`, a semaphore acquire whose value memory does
+  not hold yet no longer drains the back when the last report semaphore or puller release the
+  front queued to the word meets it and the back has not run it (in Donkey Kong Bananza about
+  200 of 400 acquires a second, each a stall of the front for the whole back pipeline).
+  `EDEN_NX2_ACQUIRE_QUEUED=0` drains as before; start-safe.bat turns it off.
 
 ## Dozer 0.1.6 (`v0.1.6`)
 

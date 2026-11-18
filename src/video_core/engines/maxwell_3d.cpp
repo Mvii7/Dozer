@@ -21,6 +21,7 @@
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/engines/nx2_reg_replica.h"
+#include "video_core/engines/puller.h"
 #include "video_core/gpu.h"
 #include "video_core/gpu_split.h"
 #include "video_core/memory_manager.h"
@@ -1578,6 +1579,24 @@ bool FrontSkipSame() {
     return skip;
 }
 
+// A report semaphore the front just sent: a release of the payload (ProcessQueryGet) is noted
+// for the acquires that wait for it (NotePeekReportRelease). A short one writes the payload, a
+// long one the payload as 64 bits and the timestamp.
+YUZU_NO_INLINE void FrontNoteReport(Tegra::MemoryManager& memory,
+                                    const std::array<u32, Maxwell3D::Regs::NUM_REGS>& regs) {
+    const u32 query = regs[MAXWELL3D_REG_INDEX(report_semaphore.query)];
+    const bool release = (query & 3) == 0;
+    const bool payload_report = ((query >> 23) & 0x1f) == 0;
+    if (!release || !payload_report) {
+        return;
+    }
+    const GPUVAddr address =
+        (GPUVAddr{regs[MAXWELL3D_REG_INDEX(report_semaphore.address_high)]} << 32) |
+        GPUVAddr{regs[MAXWELL3D_REG_INDEX(report_semaphore.address_low)]};
+    NotePeekReportRelease(memory, address, regs[MAXWELL3D_REG_INDEX(report_semaphore.payload)],
+                          ((query >> 28) & 1) == 0);
+}
+
 // Front diag (EDEN_NX2_GPU_PROFILE, nx2_front_diag_hooks.h): the guest memory a method the front
 // just sent writes on the back, from the front's registers, or the work it starts. `words`: the
 // constant buffer words written; `executable`: in the execution mask; `instance_loop`: a method
@@ -1827,6 +1846,9 @@ void Maxwell3D::FrontWrite(VideoCommon::GpuSplit& split, FrontState& fs, u32 met
     } else {
         split.Method(this, method, argument, is_last_call, nullptr);
     }
+    if (method == MAXWELL3D_REG_INDEX(report_semaphore.query)) {
+        FrontNoteReport(memory_manager, fs.regs);
+    }
     if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
         FrontDiagNote(memory_manager, fs.regs, method, 1, execution_mask[method],
                       DrawManager::IsInstanceLoopMethod(method));
@@ -1954,6 +1976,9 @@ void Maxwell3D::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit
         fs.NoteGapMethod(2, method);
     }
     split.MultiMethod(this, method, base_start, amount, methods_pending, nullptr);
+    if (method == MAXWELL3D_REG_INDEX(report_semaphore.query) && amount != 0) {
+        FrontNoteReport(memory_manager, fs.regs);
+    }
     if (VideoCommon::Nx2FrontDiag::On() && amount != 0) [[unlikely]] {
         FrontDiagNote(memory_manager, fs.regs, method, amount, execution_mask[method],
                       DrawManager::IsInstanceLoopMethod(method));

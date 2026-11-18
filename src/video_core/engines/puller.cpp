@@ -123,11 +123,24 @@ void NoteRelease(DmaPusher& dma_pusher, GPUVAddr address, u32 payload, bool time
     }
     auto& tracker = PeekTracker();
     const s32 channel = dma_pusher.channel_state.bind_id;
+    const u64 bound = VideoCommon::Nx2FrontDiag::Bound();
     for (u32 word = 0; word < (timestamp ? 4U : 1U); ++word) {
         if (const auto device = dma_pusher.memory_manager.GpuToCpuAddress(address + word * 4)) {
-            tracker.NoteRelease(*device, channel, word == 0 ? payload : 0, word < 2);
+            tracker.NoteRelease(*device, channel, word == 0 ? payload : 0, word < 2, bound);
         }
     }
+}
+
+// EDEN_NX2_ACQUIRE_QUEUED (on unless =0, with ACQUIRE_PEEK=1): an acquire memory does not meet
+// yet goes on without a drain when the last release queued to its word (a Maxwell3D report
+// semaphore's or the puller's) meets it and the back has not run it: the back runs it before
+// the work after the acquire, as the drain would have.
+bool QueuedSkip() {
+    static const bool enabled = [] {
+        const char* const value = std::getenv("EDEN_NX2_ACQUIRE_QUEUED");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
 }
 
 // The acquire peek line (EDEN_NX2_GPU_PROFILE): counted on the front, logged for the front's
@@ -153,7 +166,8 @@ struct PeekStats {
     std::array<u64, NothingPending + 1> unmet{};
     std::array<u64, NothingPending + 1> unmet_met_after{};
     std::array<u64, static_cast<size_t>(Diag::WorkKind::Count)> unmet_work{}; ///< NoWriteWork's
-    u64 unmet_queued_meets{};    ///< A release the puller queued to the word meets it
+    u64 queued_skipped{};        ///< Went on without a drain: a queued release meets it
+    u64 unmet_queued_meets{};    ///< A release queued to the word meets it
     u64 unmet_queued_met_after{};
 };
 
@@ -176,7 +190,8 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
              "{:.0f}): may skip {:.0f}, skipped {:.0f}; drain kept for mask {:.0f}, wrapped "
              "{:.0f}, queued release {:.0f}, not monotonic {:.0f}, new {:.0f}, not advanced "
              "{:.0f}, untracked {:.0f}; "
-             "met in memory but not after the drain {:.0f} (may skip {:.0f}) | resume checks {:.0f} "
+             "met in memory but not after the drain {:.0f} (may skip {:.0f}); skipped as a queued "
+             "release meets it {:.0f} | resume checks {:.0f} "
              "(met in memory {:.0f}, may skip {:.0f}; skipped: latched {:.0f}, met {:.0f}) | "
              "sem execute acquires deferred {:.0f} | words {} ({} went down), releases queued {}",
              rate(stats.acquires[0] + stats.acquires[1] + stats.acquires[2]),
@@ -188,7 +203,8 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
              verdict(Peek::Verdict::QueuedRelease), verdict(Peek::Verdict::NotMonotonic),
              verdict(Peek::Verdict::New), verdict(Peek::Verdict::NotAdvanced),
              verdict(Peek::Verdict::Untracked),
-             rate(stats.met_then_unmet), rate(stats.may_skip_unmet), rate(stats.resumes),
+             rate(stats.met_then_unmet), rate(stats.may_skip_unmet), rate(stats.queued_skipped),
+             rate(stats.resumes),
              rate(stats.resumes_met), rate(stats.resumes_may_skip), rate(stats.resumes_latched),
              rate(stats.resumes_skipped), rate(stats.sem_execute_deferred), tracker.Words(),
              tracker.WordsNotMonotonic(), tracker.QueuedReleases());
@@ -210,8 +226,8 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
     }
     LOG_INFO(HW_GPU,
              "GPU thread acquires unmet before the drain per second, by what was pending over the "
-             "word: {} | work pending of the no-write ones: {} | a puller release queued to the "
-             "word meets it {:.0f} ({:.0f} met after)",
+             "word: {} | work pending of the no-write ones: {} | a release queued to the word "
+             "meets it {:.0f} ({:.0f} met after)",
              by_kind, work, rate(stats.unmet_queued_meets), rate(stats.unmet_queued_met_after));
 }
 
@@ -346,7 +362,7 @@ UnmetClass ClassifyUnmet(const PeekRead& read, u32 operation, u32 value) {
             break;
         }
     }
-    result.queued_meets = PeekTracker().QueuedMeets(*read.device, operation, value);
+    result.queued_meets = PeekTracker().QueuedMeets(*read.device, operation, value, consumed);
     return result;
 }
 
@@ -403,6 +419,20 @@ void PeekSkipped() {
 }
 
 } // Anonymous namespace
+
+void NotePeekReportRelease(MemoryManager& memory, GPUVAddr address, u32 payload,
+                           bool timestamp) {
+    if (!PeekTracking()) {
+        return;
+    }
+    auto& tracker = PeekTracker();
+    const u64 bound = VideoCommon::Nx2FrontDiag::Bound();
+    for (u32 word = 0; word < (timestamp ? 4U : 1U); ++word) {
+        if (const auto device = memory.GpuToCpuAddress(address + word * 4)) {
+            tracker.NoteRelease(*device, -1, word == 0 ? payload : 0, word < 2, bound);
+        }
+    }
+}
 
 bool Puller::PendingAcquire::Matches(u32 current) const {
     switch (static_cast<GpuSemaphoreOperation>(operation)) {
@@ -634,6 +664,15 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
                        PeekSite::Acquire);
         if (peek.verdict == Peek::Verdict::Skip && PeekMode() == Peek::Mode::Skip) {
             CountPeek(&PeekStats::skipped);
+            PeekMet(dma_pusher, peek, acquire.value);
+            PeekSkipped();
+            return;
+        }
+        if (peek.verdict == Peek::Verdict::Unmet && peek.device && PeekMode() == Peek::Mode::Skip &&
+            QueuedSkip() &&
+            PeekTracker().QueuedMeets(*peek.device, acquire.operation, acquire.value,
+                                      VideoCommon::GpuSplit::Get().DiagConsumed())) {
+            CountPeek(&PeekStats::queued_skipped);
             PeekMet(dma_pusher, peek, acquire.value);
             PeekSkipped();
             return;
