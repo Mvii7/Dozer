@@ -158,6 +158,7 @@ struct PeekStats {
     u64 resumes_may_skip{};
     u64 resumes_latched{}; ///< Resumed without a drain, latched by a release (=1)
     u64 resumes_skipped{}; ///< Resumed without a drain, met in memory (=1)
+    u64 resumes_queued{};  ///< Resumed without a drain, a queued release meets it (=1)
     u64 sem_execute_deferred{}; ///< SEM_EXECUTE acquires checked on the back (SEMEXEC_DEFER)
     // Acquires memory did not meet before their drain (front diag), by what was pending for the
     // back over the word: a write of each kind, no write but work, nothing. Of them, met after.
@@ -192,7 +193,8 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
              "{:.0f}, untracked {:.0f}; "
              "met in memory but not after the drain {:.0f} (may skip {:.0f}); skipped as a queued "
              "release meets it {:.0f} | resume checks {:.0f} "
-             "(met in memory {:.0f}, may skip {:.0f}; skipped: latched {:.0f}, met {:.0f}) | "
+             "(met in memory {:.0f}, may skip {:.0f}; skipped: latched {:.0f}, met {:.0f}, queued "
+             "release {:.0f}) | "
              "sem execute acquires deferred {:.0f} | words {} ({} went down), releases queued {}",
              rate(stats.acquires[0] + stats.acquires[1] + stats.acquires[2]),
              rate(stats.acquires[0]), rate(stats.acquires[1]), rate(stats.acquires[2]),
@@ -206,7 +208,8 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
              rate(stats.met_then_unmet), rate(stats.may_skip_unmet), rate(stats.queued_skipped),
              rate(stats.resumes),
              rate(stats.resumes_met), rate(stats.resumes_may_skip), rate(stats.resumes_latched),
-             rate(stats.resumes_skipped), rate(stats.sem_execute_deferred), tracker.Words(),
+             rate(stats.resumes_skipped), rate(stats.resumes_queued),
+             rate(stats.sem_execute_deferred), tracker.Words(),
              tracker.WordsNotMonotonic(), tracker.QueuedReleases());
     if (!Diag::On()) {
         return;
@@ -472,6 +475,16 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         }
         if (peek.verdict == Peek::Verdict::Skip) {
             CountPeek(&PeekStats::resumes_skipped);
+            PeekSkipped();
+            return true;
+        }
+        // A release queued since the acquire went pending that meets it (ACQUIRE_QUEUED).
+        if (peek.verdict == Peek::Verdict::Unmet && peek.device && QueuedSkip() &&
+            PeekTracker().QueuedMeets(*peek.device, pending_acquire->operation,
+                                      pending_acquire->value,
+                                      VideoCommon::GpuSplit::Get().DiagConsumed())) {
+            CountPeek(&PeekStats::resumes_queued);
+            PeekMet(dma_pusher, peek, pending_acquire->value);
             PeekSkipped();
             return true;
         }
