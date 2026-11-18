@@ -715,7 +715,7 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
     // Each store becomes a jump to a routine that scales s0 first (s1 is not used there):
     //   ldr s1, <scale>; fmul s0, s0, s1; str s0, [x8, #k]; b back; <scale>
     // A threshold is the screen size above which the finer mesh is used: higher, coarser sooner.
-    if (const int lod = set(CharacterLod); lod != 0) {
+    if (const int character_lod = set(CharacterLod); character_lod != 0) {
         constexpr u32 LdrX8X19Lods = 0xF9413668U;     // ldr x8, [x19, #0x268]
         constexpr u32 LdrS1Literal = 0x1C000081U;     // ldr s1, #16: the word after the b
         constexpr u32 FmulS0S0S1 = 0x1E210800U;
@@ -731,7 +731,7 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                           at[i]);
         }
         if (found) {
-            const float factor = percent(lod);
+            const float factor = percent(character_lod);
             u32 scale;
             std::memcpy(&scale, &factor, sizeof(scale));
             for (size_t i = 0; i < sites.size(); ++i) {
