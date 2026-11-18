@@ -272,3 +272,18 @@ TEST_CASE("Nx2DkFoliage: each stage's foliage draw buffer", "[core]") {
     REQUIRE(PatchSceneParam(scene, settings));
     REQUIRE(Read32(scene, 0x60 + Read32(scene, 12 + 0x60) + 4 + 4) == 1000);
 }
+
+TEST_CASE("Nx2DkFoliage: object clipping in every stage", "[core]") {
+    auto scene = Sarc(Byml({{"FarClippingDistanceOffset", 0xD2, Bits(2000.0f)},
+                            {"IsEnabledFarClipping", 0xD0, 0},
+                            {"DrawBufferSize", 0xD1, 4000}}));
+    Settings settings;
+    settings.scene_clip = true;
+    REQUIRE(settings.Active());
+    REQUIRE(ScenesWanted(settings));
+    REQUIRE(PatchSceneParam(scene, settings));
+    const size_t root = 0x60 + Read32(scene, 12 + 0x60) + 4;
+    REQUIRE(Read32(scene, root + 4) == Bits(0.0f));
+    REQUIRE(Read32(scene, root + 8 + 4) == 1);
+    REQUIRE(Read32(scene, root + 16 + 4) == 4000); // the draw buffer only with the cap
+}

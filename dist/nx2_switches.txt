@@ -361,6 +361,9 @@
 # the game's: effects started per frame (156), particles per emitter (512), effects alive per
 # emission rule (64) and terrain material effects active at once. Same mechanism as FOLIAGE_*.
 # EFFECT_EMIT_OFF / EFFECT_PARTICLE_OFF / EFFECT_ALIVE_OFF / EFFECT_MATERIAL_OFF=1: that effect cap at 1.
+# SCENE_CLIP_ON=1: actor far clipping on in every stage (SceneClippingParam: 135 stages have it
+# off, two add 2000 to every distance), in Pack/SceneParam as it is read.
+#EDEN_NX2_DKQ_SCENE_CLIP_ON=1
 # DEBRIS_OFF=1: every terrain material gets FragmentType DisableForce (no fragments when broken).
 #EDEN_NX2_DKQ_DEBRIS_OFF=1
 #EDEN_NX2_DKQ_EFFECT_EMIT_OFF=1

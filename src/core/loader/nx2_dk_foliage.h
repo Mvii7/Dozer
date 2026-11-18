@@ -35,11 +35,12 @@ struct Settings {
     bool particles_off = false;
     bool alive_off = false;
     bool material_off = false;
+    bool scene_clip = false; ///< actor far clipping on in every stage
 
     [[nodiscard]] bool Active() const {
         return off || cap != 0 || frustum_off || density != 0 || far_clip != 0 || emit != 0 ||
                particles != 0 || alive != 0 || material != 0 || emit_off || particles_off ||
-               alive_off || material_off;
+               alive_off || material_off || scene_clip;
     }
 };
 
@@ -65,7 +66,7 @@ inline Settings FromEnvironment() {
             ReadEnv(Id::EffectParticleCap), ReadEnv(Id::EffectAliveCap),
             ReadEnv(Id::EffectMaterialCap), ReadEnv(Id::EffectEmitOff) != 0,
             ReadEnv(Id::EffectParticleOff) != 0, ReadEnv(Id::EffectAliveOff) != 0,
-            ReadEnv(Id::EffectMaterialOff) != 0};
+            ReadEnv(Id::EffectMaterialOff) != 0, ReadEnv(Id::SceneClipOn) != 0};
 }
 
 constexpr std::string_view SystemSettingsPath = "ClusteredRendering/SystemSettings.alsarc.zs";
@@ -361,22 +362,35 @@ inline bool PatchSettingUnits(std::span<u8> archive, const Settings& settings) {
 
 /// Whether a row asks for the stages' scene settings (PatchSceneParam) to be changed.
 inline bool ScenesWanted(const Settings& settings) {
-    return settings.cap != 0;
+    return settings.cap != 0 || settings.scene_clip;
 }
 
 /// Scales each stage's own foliage draw buffer (ClusteredRenderingSettings' DrawBufferSize,
 /// 1200 to 6000; it is the limit a stage draws with, not SystemSettings' caps) of a decompressed
-/// Pack/SceneParam archive in place, by the foliage cap. Foliage off does not change it.
+/// Pack/SceneParam archive in place, by the foliage cap; foliage off does not change it. With
+/// scene_clip, turns the stage's actor far clipping on (SceneClippingParam: 135 stages have it
+/// off) and its offset to every actor's far clip distance (+2000 in two) to 0.
 inline bool PatchSceneParam(std::span<u8> archive, const Settings& settings) {
-    if (settings.cap == 0) {
+    if (!ScenesWanted(settings)) {
         return false;
     }
     Detail::Reader in{archive};
     bool changed = false;
     Detail::ForEachSarcFile(in, [&](size_t base) {
         Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
-            if (key == "DrawBufferSize" &&
-                (type == Detail::TypeInt || type == Detail::TypeUInt)) {
+            if (settings.scene_clip && key == "IsEnabledFarClipping" && type == Detail::TypeBool) {
+                if (in.U32(at) == 0) {
+                    Detail::Put(in, at, 1);
+                    changed = true;
+                }
+            } else if (settings.scene_clip && key == "FarClippingDistanceOffset" &&
+                       type == Detail::TypeFloat) {
+                if (in.U32(at) != 0) {
+                    Detail::Put(in, at, Detail::AsBits(0.0f));
+                    changed = true;
+                }
+            } else if (settings.cap != 0 && key == "DrawBufferSize" &&
+                       (type == Detail::TypeInt || type == Detail::TypeUInt)) {
                 Detail::Put(in, at, std::max<u32>(in.U32(at) *
                                                       static_cast<u32>(settings.cap) / 100, 1));
                 changed = true;

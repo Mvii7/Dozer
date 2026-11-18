@@ -68,6 +68,7 @@ enum Id : size_t {
     EffectParticleOff, ///< particles per emitter at 1
     EffectAliveOff,    ///< effects alive per rule at 1
     EffectMaterialOff, ///< terrain material effects at 1
+    SceneClipOn,       ///< each stage's IsEnabledFarClipping on and FarClippingDistanceOffset 0
     DebrisOff,         ///< every voxel material's FragmentType forced to DisableForce
     Count,
 };
@@ -128,6 +129,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"effect_particle_off", "EDEN_NX2_DKQ_EFFECT_PARTICLE_OFF", 1, 1, 0},
     {"effect_alive_off", "EDEN_NX2_DKQ_EFFECT_ALIVE_OFF", 1, 1, 0},
     {"effect_material_off", "EDEN_NX2_DKQ_EFFECT_MATERIAL_OFF", 1, 1, 0},
+    {"scene_clip_on", "EDEN_NX2_DKQ_SCENE_CLIP_ON", 1, 1, 0},
     {"debris_off", "EDEN_NX2_DKQ_DEBRIS_OFF", 1, 1, 0},
 }};
 

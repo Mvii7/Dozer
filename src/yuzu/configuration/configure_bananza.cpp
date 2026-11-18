@@ -267,6 +267,12 @@ void ConfigureBananza::RetranslateUI() {
         tr("Terrain material effects off"),
         tr("Lets one terrain material effect (dust, smoke, snow) be active at most. Needs a "
            "restart.")};
+    texts[Quality::SceneClipOn] = {
+        tr("Object clipping in every level"),
+        tr("Turns the objects' far clipping on in the levels that have it off (135 of them, "
+           "mostly special and challenge stages, where nothing is ever clipped) and removes "
+           "the extra +2000 two levels add to every distance, so the actor draw distance rows "
+           "work there too. On its own the game's distances apply. Needs a restart.")};
     texts[Quality::DebrisOff] = {
         tr("Debris off"),
         tr("Gives every terrain material the setting some of them (trees, iron mesh) already "

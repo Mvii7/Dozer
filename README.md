@@ -230,6 +230,7 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Radial blur render scale / samples | 50% / 20 | the radial blur's buffer size and samples |
 | Actor draw distance | 100% | scales the distances at which actors (objects, enemies, scenery pieces; over 2000 use them) are clipped, from the game's own 50-1200 (200 by default), 10-100%; actors marked never to clip stay |
 | Never-clipped object distance | never | gives the actors the game never clips (about 220 kinds: big level models, landmarks, backdrop effects) a draw distance, 100-3000 units; the actor draw distance leaves them alone |
+| Object clipping in every level | off | turns the actors' far clipping on in the 135 levels (mostly special and challenge stages) that have it off, and drops the +2000 two levels add, so the draw distance rows work there; in the stages' scene settings as they are read |
 | Sun shadow cascades | 4 | the most cascades the sun's shadow is drawn in, 1-4; each draws the shadow casters again, so fewer means fewer draws and blurrier shadows |
 | Sun shadow distance | 100% | scales how far the sun's shadow reaches (the end of its last cascade), 10-100%; lower: fewer casters drawn into it |
 | Camera far distance | 100% | scales the distance beyond which the game draws nothing: a big cut roughly doubled the frame rate in a busy area, but scenery stops being drawn fairly close (from the Selevet fork's far clip scale) |
