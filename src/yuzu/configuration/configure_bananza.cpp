@@ -159,6 +159,12 @@ void ConfigureBananza::RetranslateUI() {
         tr("Scales how far away actors (objects, enemies, scenery pieces: over 2000 of them use "
            "it) stop being drawn, from the game's own distances (50 to 1200 by actor, 200 by "
            "default). Lower: they are clipped closer to you. Actors marked never to clip stay.")};
+    texts[Quality::NonClipDistance] = {
+        tr("Never-clipped object distance"),
+        tr("Gives the objects the game never clips (about 220 kinds: big level models, "
+           "landmarks, backdrop effects; the actor draw distance leaves them alone) a draw "
+           "distance, in units (the actors' own go from 50 to 1200). Lower: big scenery "
+           "disappears at a distance. For testing.")};
     texts[Quality::ShadowCascades] = {
         tr("Sun shadow cascades"),
         tr("The most cascades the sun's shadow is drawn in (the game's: up to 4). Each cascade "
@@ -311,6 +317,9 @@ void ConfigureBananza::ShowValue(std::size_t index) {
     switch (static_cast<Quality::Id>(index)) {
     case Quality::CubeMapInterval:
         text = tr("%n frame(s)", nullptr, value);
+        break;
+    case Quality::NonClipDistance:
+        text = on ? tr("%1 units").arg(value * 10) : tr("never");
         break;
     case Quality::RadialBlurSamples:
     case Quality::ShadowCascades:

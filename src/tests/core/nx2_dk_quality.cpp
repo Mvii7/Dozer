@@ -226,6 +226,17 @@ TEST_CASE("Nx2DkQuality: the actors' far clip distances", "[core]") {
     REQUIRE(now[1] == 100.0f);
     REQUIRE(now[2] == 25.0f);
     REQUIRE(now[9] == 600.0f);
+    // The never clipped ones get a distance of their own only when asked
+    std::vector<u32> image2 = text.words;
+    image2.resize(image2.size() + 0x40, 0);
+    std::memcpy(&image2[at], table.data(), sizeof(table));
+    std::span<u8> bytes2{reinterpret_cast<u8*>(image2.data()), image2.size() * 4};
+    const Result both = Apply(bytes2, TextSize, AlignedSize, Only(NonClipDistance, 80));
+    REQUIRE(both[NonClipDistance] == State::Applied);
+    REQUIRE(both[ActorDrawDistance] == State::Unset);
+    std::memcpy(now.data(), &image2[at], sizeof(now));
+    REQUIRE(now[0] == 800.0f);
+    REQUIRE(now[1] == 200.0f);
     // Without the table (or with two) it is not applied
     Text plain;
     REQUIRE(Apply(plain.Bytes(), TextSize, AlignedSize, Only(ActorDrawDistance, 50))[ActorDrawDistance] ==

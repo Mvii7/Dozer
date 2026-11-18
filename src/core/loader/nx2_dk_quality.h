@@ -38,6 +38,7 @@ enum Id : size_t {
     CameraFar,         ///< the camera's far distance, % (EDEN_NX2_FAR_SCALE of the Selevet fork)
     ColorDecalMax,     ///< ColorDecalMaxNum
     ActorDrawDistance, ///< the actors' far clip distances (FarClipLevel), % of the game's
+    NonClipDistance,   ///< a far clip distance for the never clipped actors (NonClip), x10 units
     ShadowCascades,    ///< the most sun shadow cascades (depth_shadow_cascade_num)
     ShadowDistance,    ///< the sun shadow's far distance (depth_shadow_far), % of the game's
     GgxFilterOff,      ///< IsUseGGXFilter forced off (reflection cube map filtering)
@@ -97,6 +98,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"camera_far", "EDEN_NX2_DKQ_CAMERA_FAR", 10, 100, 100},
     {"color_decal_max", "EDEN_NX2_DKQ_COLOR_DECAL_MAX", 1, 660, 660},
     {"actor_draw_distance", "EDEN_NX2_DKQ_ACTOR_DRAW_DISTANCE", 10, 100, 100},
+    {"nonclip_distance", "EDEN_NX2_DKQ_NONCLIP_DISTANCE", 10, 300, 300},
     {"shadow_cascades", "EDEN_NX2_DKQ_SHADOW_CASCADES", 1, 4, 4},
     {"shadow_distance", "EDEN_NX2_DKQ_SHADOW_DISTANCE", 10, 100, 100},
     {"ggx_filter_off", "EDEN_NX2_DKQ_GGX_FILTER_OFF", 1, 1, 0},
@@ -557,8 +559,10 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
     // An actor's ClippingParam names a FarClipLevel (NonClip, Default, EasyClipLv1-3,
     // HardClipLv1-5); the distance of each level is a table of the read-only data:
     //   -1 (never clipped), 200, 50, 100, 150, 300, 450, 700, 900, 1200
-    // Each distance but NonClip's is scaled in place.
-    if (const int distance = set(ActorDrawDistance); distance != 0) {
+    // Each distance but NonClip's is scaled in place; NonClip's -1 can be given a distance of its
+    // own (the big level models and landmarks use it).
+    const int actor_distance = set(ActorDrawDistance), nonclip = set(NonClipDistance);
+    if (actor_distance != 0 || nonclip != 0) {
         constexpr std::array<float, 10> Table{-1.0f, 200.0f, 50.0f,  100.0f, 150.0f,
                                               300.0f, 450.0f, 700.0f, 900.0f, 1200.0f};
         std::array<u8, sizeof(Table)> bytes{};
@@ -573,11 +577,18 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
             }
         }
         if (found == 1) {
-            for (size_t i = 1; i < Table.size(); ++i) {
-                const float scaled = Table[i] * percent(distance);
-                std::memcpy(text.data() + at + i * sizeof(float), &scaled, sizeof(scaled));
+            if (actor_distance != 0) {
+                for (size_t i = 1; i < Table.size(); ++i) {
+                    const float scaled = Table[i] * percent(actor_distance);
+                    std::memcpy(text.data() + at + i * sizeof(float), &scaled, sizeof(scaled));
+                }
+                result[ActorDrawDistance] = State::Applied;
             }
-            result[ActorDrawDistance] = State::Applied;
+            if (nonclip != 0) {
+                const float far = static_cast<float>(nonclip) * 10.0f;
+                std::memcpy(text.data() + at, &far, sizeof(far));
+                result[NonClipDistance] = State::Applied;
+            }
         }
     }
 
