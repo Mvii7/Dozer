@@ -620,7 +620,7 @@ TEST_CASE("SummarizedRangeSet pending subtracts", "[video_core][nx2]") {
         const u64 window = windows[rng() % 2];
         const u64 offset = rng() % 0x80'0000;
         const u64 size = 1 + rng() % 0x1000;
-        switch (rng() % 7) {
+        switch (rng() % 8) {
         case 0:
         case 1:
             summarized.Subtract(window + offset, size);
@@ -646,6 +646,16 @@ TEST_CASE("SummarizedRangeSet pending subtracts", "[video_core][nx2]") {
             REQUIRE(summarized.Empty() == tree.Empty());
             break;
         }
+        case 5:
+            // An inline run: consecutive writes, each after a query of its page.
+            for (u64 i = 0; i < 6; ++i) {
+                const u64 addr = window + (offset & ~u64{0xFFF}) + i * 0x40;
+                REQUIRE(summarized.Intersects(addr & ~u64{0xFFF}, 0x1000) ==
+                        tree.Intersects(addr & ~u64{0xFFF}, 0x1000));
+                summarized.Subtract(addr, 0x40);
+                tree.Subtract(addr, 0x40);
+            }
+            break;
         default:
             summarized.Add(window, 0x80'0000);
             tree.Add(window, 0x80'0000);

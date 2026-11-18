@@ -265,26 +265,37 @@ public:
             return value == nullptr || value[0] != '0';
         }();
         if (lazy && size != 0 && addr + size > addr) {
+            // Touching ones are joined (an inline run writes consecutive ranges).
+            Added range{addr, addr + size};
+            for (u32 i = 0; i < pending_count;) {
+                const Added other = pending[i];
+                if (other.begin <= range.end && range.begin <= other.end) {
+                    range = Added{(std::min)(range.begin, other.begin),
+                                  (std::max)(range.end, other.end)};
+                    pending[i] = pending[--pending_count];
+                } else {
+                    ++i;
+                }
+            }
             if (pending_count == pending.size()) {
                 ApplyPending(0);
             }
-            pending[pending_count++] = Added{addr, addr + size};
+            pending[pending_count++] = range;
             return;
         }
         ApplySubtract(addr, size);
     }
 
     [[nodiscard]] bool Intersects(u64 addr, size_t size) {
-        FlushPending(addr, size);
         if (mode == 0) {
-            return set.Intersects(addr, size);
+            return TreeIntersects(addr, size);
         }
         ++stats.queries;
         if (Missed(addr, size)) {
             ++stats.query_misses;
             return false;
         }
-        const bool result = set.Intersects(addr, size);
+        const bool result = TreeIntersects(addr, size);
         stats.false_positives += result ? 0 : 1;
         return result;
     }
@@ -404,6 +415,46 @@ private:
         const Added range = pending[index];
         pending[index] = pending[--pending_count];
         ApplySubtract(range.begin, range.end - range.begin);
+    }
+
+    /// The tree less the pending subtracts, which stay pending (the next inline write's query
+    /// reaches the page of the one before).
+    bool TreeIntersects(u64 addr, size_t size) const {
+        if (pending_count == 0 || !PendingReaches(addr, size)) {
+            return set.Intersects(addr, size);
+        }
+        bool result = false;
+        set.ForEachInRange(addr, size, [&](u64 begin, u64 end) {
+            result = result || !PendingCovers(begin, end);
+        });
+        return result;
+    }
+
+    bool PendingReaches(u64 addr, size_t size) const noexcept {
+        const u64 end = addr + size < addr ? ~u64{0} : addr + size;
+        for (u32 i = 0; i < pending_count; ++i) {
+            if (pending[i].begin < end && addr < pending[i].end) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Whether the pending subtracts together cover [begin, end).
+    bool PendingCovers(u64 begin, u64 end) const noexcept {
+        for (u32 step = 0; step <= pending_count && begin < end; ++step) {
+            bool advanced = false;
+            for (u32 i = 0; i < pending_count; ++i) {
+                if (pending[i].begin <= begin && begin < pending[i].end) {
+                    begin = pending[i].end;
+                    advanced = true;
+                }
+            }
+            if (!advanced) {
+                return false;
+            }
+        }
+        return begin >= end;
     }
 
     /// Before an Add of [addr, end): drops the pending subtracts inside it and applies the others
@@ -534,7 +585,7 @@ private:
     u64 rebuild_false_positives = 0;
     std::array<Added, 4> added{}; ///< EDEN_NX2_ADD_MEMO: ranges the set holds whole
     u32 next_added = 0;
-    std::array<Added, 4> pending{}; ///< EDEN_NX2_LAZY_SUBTRACT: subtracts not applied yet
+    std::array<Added, 8> pending{}; ///< EDEN_NX2_LAZY_SUBTRACT: subtracts not applied yet
     u32 pending_count = 0;
     [[no_unique_address]] std::conditional_t<PageBits, std::unique_ptr<u64[]>, NoPages> pages{};
     [[no_unique_address]] std::conditional_t<PageBits, std::array<u64, REGION_WORDS>, NoPages>
