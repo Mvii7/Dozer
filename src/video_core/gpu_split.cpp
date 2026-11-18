@@ -177,6 +177,7 @@ void GpuSplit::Stop() {
     semaphore_writes.clear();
     semaphore_writes_limit = 1024;
     unknown_write_position = 0;
+    compute_launch_position = 0;
     back_engine = nullptr;
     front_macros = false;
     published.store(0, std::memory_order_relaxed);
@@ -282,7 +283,8 @@ std::optional<GpuSplit::QueuedSemaphoreWrite> GpuSplit::QueuedSemaphoreWriteAt(
         it->second.position <= consumed.load(std::memory_order_acquire)) {
         return std::nullopt;
     }
-    return QueuedSemaphoreWrite{it->second.payload, it->second.known};
+    return QueuedSemaphoreWrite{it->second.payload, it->second.known,
+                                compute_launch_position > it->second.position};
 }
 
 void GpuSplit::SwitchEngine(Tegra::Engines::EngineInterface* engine) {

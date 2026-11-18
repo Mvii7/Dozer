@@ -1313,6 +1313,15 @@ void KeplerCompute::FrontCallMethod(Core::System& system, VideoCommon::GpuSplit&
     if (method == 0x6c3) {
         FrontNoteReport(split, fs, argument);
     }
+    FrontNoteLaunch(split, method);
+}
+
+void KeplerCompute::FrontNoteLaunch(VideoCommon::GpuSplit& split, u32 method) {
+    // The QMD control methods and the inline QMD (ProcessNativeMethod): the QMD's releases are
+    // read on the back.
+    if (method == 0xae || method == 0xaf || method == 0xb0 || method == 0x107) {
+        split.NoteComputeLaunch();
+    }
 }
 
 void KeplerCompute::FrontNoteReport(VideoCommon::GpuSplit& split, const FrontState& fs,
@@ -1358,6 +1367,9 @@ void KeplerCompute::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuS
             FrontNoteReport(split, fs, base_start[i]);
         }
     }
+    if (amount != 0) {
+        FrontNoteLaunch(split, method);
+    }
 }
 
 void KeplerCompute::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split,
@@ -1389,6 +1401,7 @@ void KeplerCompute::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& s
             if (address == 0x6c3) {
                 FrontNoteReport(split, fs, value);
             }
+            FrontNoteLaunch(split, address);
             return true;
         });
     if (!result.success) {
