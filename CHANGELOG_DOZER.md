@@ -12,6 +12,7 @@ and `=0` brings back the 2.0.0 code path.
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are
   equal ones; an earlier version of this skip gave it 1-2 fps in heavy areas with read traps off.
+  A compute launch sent after that release still drains it (its QMD may release the word).
   `EDEN_NX2_ACQUIRE_NODRAIN_EQUAL=0` drains them as before; start-safe.bat sets it.
 - Buffer cache: a GPU-written range (each written storage binding, every draw) that the
   GPU-written range set already holds whole, with no subtract reaching it since, is no longer

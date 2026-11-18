@@ -263,6 +263,7 @@ private:
     /// The release SET_REPORT_SEMAPHORE_D (`control`) makes on the back
     /// (GpuSplit::NoteSemaphoreWrite).
     void FrontNoteReport(VideoCommon::GpuSplit& split, const FrontState& state, u32 control);
+    void FrontNoteLaunch(VideoCommon::GpuSplit& split, u32 method);
     std::unique_ptr<FrontState> front;
     bool front_macros{}; ///< The front owns the macro code and bindings (the back skips them)
 

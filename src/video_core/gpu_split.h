@@ -192,9 +192,14 @@ public:
     void NoteUnknownSemaphoreWrite() {
         unknown_write_position = WritePosition();
     }
+    /// A compute launch was just sent: its QMD may release semaphores the front can't see.
+    void NoteComputeLaunch() {
+        compute_launch_position = WritePosition();
+    }
     struct QueuedSemaphoreWrite {
         u32 payload;
         bool known;
+        bool launch_after; ///< A compute launch was sent after it (NoteComputeLaunch)
     };
     /// The last write sent to the semaphore word at `device_address`, if the back may not have run
     /// it yet.
@@ -370,6 +375,7 @@ private:
     std::unordered_map<u64, SemaphoreWrite> semaphore_writes;
     size_t semaphore_writes_limit{1024}; ///< Forget what the back ran past this many
     u64 unknown_write_position{};
+    u64 compute_launch_position{};
 
     // Back side.
     Tegra::Engines::EngineInterface* back_engine{};

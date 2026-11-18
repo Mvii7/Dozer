@@ -471,6 +471,7 @@ struct NoDrainStats {
     u64 drain_word{};
     u64 drain_queued{};
     u64 drain_not_met{};
+    u64 drain_compute{}; ///< Equal, a compute launch sent after the queued release
     u64 polls{};     ///< Polls that kept waiting without a drain
     u64 valve{};     ///< Polls that kept waiting and drained (once per 1 ms)
     u64 mismatches{}; ///< Verify: passed, yet the word after a drain doesn't meet it
@@ -495,12 +496,14 @@ void CountNoDrain(u64 NoDrainStats::*counter) {
     LOG_INFO(HW_GPU,
              "Acquires without a drain in 10 s: {} passed ({} by a queued release), {} drained "
              "({} equal or mask, {} settings, {} back engine release queued, {} unmapped or "
-             "GPU-written word, {} queued release unknown or short, {} not met), {} polls kept "
+             "GPU-written word, {} queued release unknown or short, {} not met, {} equal with a "
+             "compute launch after the release), {} polls kept "
              "waiting, {} polls drained by the 1 ms valve; verify: {} passed but not met after a "
              "drain, {} kept waiting but met after it",
              stats.passed, stats.by_queued, stats.drained, stats.drain_operation,
              stats.drain_settings, stats.drain_unknown, stats.drain_word, stats.drain_queued,
-             stats.drain_not_met, stats.polls, stats.valve, stats.mismatches, stats.late);
+             stats.drain_not_met, stats.drain_compute, stats.polls, stats.valve, stats.mismatches,
+             stats.late);
     stats = NoDrainStats{};
     stats.next = now + std::chrono::seconds{10};
 }
@@ -535,6 +538,11 @@ AcquireCheck CheckWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcqui
         return AcquireCheck::Drain;
     }
     if (const auto queued = split.QueuedSemaphoreWriteAt(*device)) {
+        // A QMD the front can't read may release the word after it (NVN2's maxima).
+        if (equal && queued->launch_after) {
+            CountNoDrain(&NoDrainStats::drain_compute);
+            return AcquireCheck::Drain;
+        }
         if (queued->known && acquire.Matches(queued->payload)) {
             return AcquireCheck::MetByQueued;
         }
