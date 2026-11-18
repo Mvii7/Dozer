@@ -119,6 +119,9 @@
 # reads the drain changed. The front then notes the methods that write memory or start work
 # other than draws.
 #EDEN_NX2_DMA_READ_PEEK=0
+# ACQUIRE_NODRAIN_EQUAL=0: an equal semaphore acquire drains the back even when the last release
+# sent to its word carries its value (default: it goes on, as greater-or-equal ones do).
+#EDEN_NX2_ACQUIRE_NODRAIN_EQUAL=0
 # FRONT_RUNS=0: increasing runs of 3D state methods go to the front word by word, as before.
 #EDEN_NX2_FRONT_RUNS=0
 # JIT_SAME: the front's macro JIT drops state writes that would change nothing. 0 off
