@@ -428,6 +428,18 @@ NoDrainMode NoDrain() {
     return mode;
 }
 
+// EDEN_NX2_ACQUIRE_NODRAIN_EQUAL (on unless =0, with ACQUIRE_NODRAIN): an equal acquire goes on
+// without a drain when the last release sent to its word carries its value and the back has not
+// run it yet. The word holds that release's payload once the back ran it, as a drain would have
+// left it. Donkey Kong Bananza's acquires are ~80% equal ones.
+bool NoDrainEqual() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_ACQUIRE_NODRAIN_EQUAL");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
 // Whether the back writes a payload release to memory when it runs it: below High GPU accuracy,
 // with fences that run their operations at once (FenceManager::SignalFence).
 bool ReleasesLandAtOnce() {
@@ -493,7 +505,7 @@ void CountNoDrain(u64 NoDrainStats::*counter) {
     stats.next = now + std::chrono::seconds{10};
 }
 
-// Checks a greater-or-equal acquire without draining the split. The words Switch 2 syncs on only
+// Checks a greater-or-equal acquire (or an equal one, NoDrainEqual) without draining the split. The words Switch 2 syncs on only
 // advance (NVN2 releases QMD completions as maxima), so a value that meets one now still does
 // once the back ran the queued work. Only the last release the front sent to the word decides
 // instead, while the back may not have run it (GpuSplit::NoteSemaphoreWrite: the puller's, the
@@ -503,7 +515,8 @@ AcquireCheck CheckWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcqui
     if (NoDrain() == NoDrainMode::Off) {
         return AcquireCheck::Drain;
     }
-    if (acquire.operation != Peek::OpGequal) {
+    const bool equal = acquire.operation == Peek::OpEqual && NoDrainEqual();
+    if (acquire.operation != Peek::OpGequal && !equal) {
         CountNoDrain(&NoDrainStats::drain_operation);
         return AcquireCheck::Drain;
     }
@@ -526,6 +539,11 @@ AcquireCheck CheckWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcqui
             return AcquireCheck::MetByQueued;
         }
         CountNoDrain(&NoDrainStats::drain_queued);
+        return AcquireCheck::Drain;
+    }
+    // Without a queued release the word in memory decides only for the words that only advance.
+    if (equal) {
+        CountNoDrain(&NoDrainStats::drain_operation);
         return AcquireCheck::Drain;
     }
     return acquire.Matches(dma_pusher.memory_manager.Read<u32>(acquire.address))
