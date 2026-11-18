@@ -113,10 +113,6 @@
 # ACQUIRE_PEEK: a semaphore acquire whose value memory already holds goes on without
 # draining the back. 0 off (default), 1 on (recommended), 2 drains and logs where 1 would not.
 #EDEN_NX2_ACQUIRE_PEEK=1
-# ACQUIRE_QUEUED=0 (with ACQUIRE_PEEK=1): an acquire memory does not meet yet drains the back
-# (default: goes on when the last report semaphore or puller release queued to its word meets
-# it and the back has not run it).
-#EDEN_NX2_ACQUIRE_QUEUED=0
 # DMA_READ_PEEK (with ACQUIRE_PEEK=1): an MME DMA read goes on without draining the back when no
 # write the front sent and the back has not run reaches its words, no work but draws is queued
 # and the buffer cache holds no newer data of them. 0 off, 1 on (default), 2 drains and logs
@@ -214,8 +210,12 @@
 # GOB order, as before (default: the Switch 2 order, from the Orchid fork). The old order wrote
 # small mips as a weave of misplaced 4x4 blocks, which shows as stripes on far, minified terrain.
 #EDEN_NX2_BLIT_NATIVE_TILING=0
-# ASYNC_SKIP=1: skip draws whose pipeline is still compiling (things pop in; off).
-#EDEN_NX2_ASYNC_SKIP=1
+# ASYNC_SKIP: a depth-tested draw into color targets drawn in earlier frames, or a dispatch whose outputs already hold GPU writes, whose
+# pipeline is still compiling waits for it within a budget per frame (ASYNC_DRAW_WAIT_MS, default
+# 8), then is skipped and catches up once built. =0 waits in full
+# (before 0.1.7; freezes on new scenery), =1 skips at once (more pop-in).
+#EDEN_NX2_ASYNC_SKIP=0
+#EDEN_NX2_ASYNC_DRAW_WAIT_MS=8
 # ASTC_BC1=1|0: re-compressed ASTC images with no alpha go to BC1 (half the memory of BC3), found by
 # reading every block of each new image on the GPU thread (hitches when many textures stream in).
 # Unset: on only when the driver's memory budget is under 12 GiB.
@@ -279,6 +279,13 @@
 # DK_DYN_MIN_FPS=<1-60>: with DK_DYN, move the game's 40 fps floor (unset: 40; 30 measured
 # worse on our machine).
 #EDEN_NX2_DK_DYN_MIN_FPS=40
+
+# --- Donkey Kong Bananza foliage off (game-specific; core/loader/nx2_dk_foliage.h) ---
+# DK_FOLIAGE_OFF=1: as Bananza's RomFS is read, its foliage settings files (ClusteredRendering) get
+# no dynamic placement, a draw distance of nothing per model and draw caps of 1 (a mod layer made
+# in memory; nothing is written to disk): no grass, flowers or plants. Set by the Performance and
+# Experimental presets and launchers; Balanced and Safe leave the foliage on.
+#EDEN_NX2_DK_FOLIAGE_OFF=1
 
 # --- Mario Kart World dynamic frame rate (game-specific; core/loader/nx2_mkw_dynamic_fps.h) ---
 # MKW_DYN=1: while Mario Kart World's main module loads, patch its frame mode choice in memory

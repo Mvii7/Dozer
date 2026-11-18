@@ -997,6 +997,34 @@ bool BufferCache<P>::IsRegionGpuModified(DAddr addr, size_t size) {
 }
 
 template <class P>
+bool BufferCache<P>::IsRegionFullyGpuModified(DAddr addr, size_t size) const {
+    size_t covered = 0;
+    gpu_modified_ranges.ForEachInRange(addr, size,
+                                       [&](DAddr start, DAddr end) { covered += end - start; });
+    return covered >= size;
+}
+
+template <class P>
+bool BufferCache<P>::ComputeWritesHoldGpuData() const {
+    bool holds = true;
+    const auto check = [&](const Binding& binding) {
+        if (binding.size == 0) {
+            return;
+        }
+        // A binding over several device ranges has no single range to ask about.
+        holds &= binding.segment_count < 2 &&
+                 IsRegionFullyGpuModified(binding.device_addr, binding.size);
+    };
+    ForEachEnabledBit(channel_state->enabled_compute_storage_buffers &
+                          channel_state->written_compute_storage_buffers,
+                      [&](u32 index) { check(channel_state->compute_storage_buffers[index]); });
+    ForEachEnabledBit(channel_state->enabled_compute_texture_buffers &
+                          channel_state->written_compute_texture_buffers,
+                      [&](u32 index) { check(channel_state->compute_texture_buffers[index]); });
+    return holds;
+}
+
+template <class P>
 bool BufferCache<P>::NoteCpuRead(DAddr addr, size_t size) {
     if (AsyncBufferDownloads()) {
         return false;

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <set>
@@ -121,8 +122,12 @@ TEST_CASE("Nx2PerfSettings: every setting reads back what was written", "[core]"
         REQUIRE(ini.Read() == switches);
         REQUIRE(ini.values.at(std::string{key.name}) == false);
     }
-    // The game-specific settings are stored like the others, but are no part of any preset.
+    // The game-specific settings are stored like the others, but are no part of any preset
+    // (but for Bananza's foliage off, below).
     for (const Key& key : GameKeys) {
+        if (key.field == &Switches::dk_foliage_off) {
+            continue;
+        }
         for (const Preset preset :
              {Preset::Balanced, Preset::Performance, Preset::Reactive, Preset::Safe}) {
             Switches switches = FromPreset(preset, Balanced());
@@ -225,8 +230,9 @@ TEST_CASE("Nx2PerfSettings: a box changed by hand makes it Custom", "[core]") {
 }
 
 TEST_CASE("Nx2PerfSettings: presets set the launchers' variables", "[core]") {
-    // Performance: Balanced's, and read traps off (start-performance.bat).
+    // Performance: Balanced's, Bananza's foliage off and read traps off (start-performance.bat).
     auto performance = BalancedBananza;
+    performance.insert(performance.begin() + 8, {"EDEN_NX2_DK_FOLIAGE_OFF", "1"});
     performance.push_back({"EDEN_NX2_READ_TRAPS", "0"});
     REQUIRE(Wanted(FromPreset(Preset::Performance, Balanced()), Game::Bananza) == performance);
     // Experimental: Performance's and RX_RT_FIT=3 (start-reactive-experimental.bat).
@@ -264,7 +270,7 @@ TEST_CASE("Nx2PerfSettings: keys are distinct and cover every field", "[core]") 
     for (const Key& key : GameKeys) {
         names.insert(key.name);
         Switches one = Balanced();
-        one.*key.field = false;
+        one.*key.field = !(one.*key.field);
         REQUIRE(one != Balanced());
     }
     REQUIRE(names.size() == Keys.size() + GameKeys.size());
@@ -601,4 +607,42 @@ TEST_CASE("Nx2PerfSettings: a game with its own preset can follow the global one
     });
     REQUIRE(loaded == stored);
     REQUIRE(!loaded.preset);
+}
+
+TEST_CASE("Nx2PerfSettings: Bananza's foliage off follows the preset", "[core]") {
+    // On in Performance and Experimental, off in Balanced and Safe; Custom keeps it.
+    REQUIRE(FromPreset(Preset::Performance, Balanced()).dk_foliage_off);
+    REQUIRE(FromPreset(Preset::Reactive, Balanced()).dk_foliage_off);
+    REQUIRE_FALSE(FromPreset(Preset::Balanced, Performance()).dk_foliage_off);
+    REQUIRE_FALSE(FromPreset(Preset::Safe, Performance()).dk_foliage_off);
+    REQUIRE(FromPreset(Preset::Custom, Performance()).dk_foliage_off);
+    REQUIRE_FALSE(FromPreset(Preset::Custom, Balanced()).dk_foliage_off);
+    // Only Bananza gets the variable.
+    const Var off{"EDEN_NX2_DK_FOLIAGE_OFF", "1"};
+    const auto has = [&](const std::vector<Var>& vars) {
+        return std::find(vars.begin(), vars.end(), off) != vars.end();
+    };
+    REQUIRE(has(Wanted(Performance(), Game::Bananza)));
+    REQUIRE_FALSE(has(Wanted(Performance(), Game::MarioKartWorld)));
+    REQUIRE_FALSE(has(Wanted(Performance(), Game::Other)));
+    REQUIRE_FALSE(has(Wanted(Balanced(), Game::Bananza)));
+    REQUIRE_FALSE(has(Wanted(AllOff(), Game::Bananza)));
+    // Bananza starts with Performance: foliage off with a Balanced global preset; following the
+    // global preset, or a box of its own, decides otherwise.
+    REQUIRE(ForGame(Balanced(), Game::Bananza, {}).dk_foliage_off);
+    Overrides global;
+    global.global_preset = true;
+    REQUIRE_FALSE(ForGame(Balanced(), Game::Bananza, global).dk_foliage_off);
+    Overrides own;
+    own.boxes[Keys.size() + 2] = false;
+    REQUIRE_FALSE(ForGame(Balanced(), Game::Bananza, own).dk_foliage_off);
+    REQUIRE(KeyAt(Keys.size() + 2).field == &Switches::dk_foliage_off);
+    // A file from before the setting: the preset's.
+    for (const Preset preset :
+         {Preset::Balanced, Preset::Performance, Preset::Reactive, Preset::Safe}) {
+        Ini old;
+        old.Write(FromPreset(preset, Balanced()));
+        old.values.erase("bananza_foliage_off");
+        REQUIRE(old.Read() == FromPreset(preset, Balanced()));
+    }
 }

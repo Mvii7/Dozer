@@ -401,24 +401,3 @@ TEST_CASE("Nx2AcquirePeek: an unseen reset is caught after its first drain", "[v
         REQUIRE(tracker.Decide(Word, Channel, OpGequal, value, value) == Verdict::NotMonotonic);
     }
 }
-
-TEST_CASE("Nx2AcquirePeek: a queued release meeting an unmet acquire", "[video_core]") {
-    Tracker tracker;
-    REQUIRE(!tracker.QueuedMeets(Word, OpGequal, 5, 0));
-    tracker.NoteRelease(Word, -1, 5, true, 100);
-    REQUIRE(tracker.QueuedMeets(Word, OpGequal, 5, 50));
-    REQUIRE(tracker.QueuedMeets(Word, OpEqual, 5, 50));
-    REQUIRE(!tracker.QueuedMeets(Word, OpEqual, 6, 50));
-    // The back ran it: memory decides.
-    REQUIRE(!tracker.QueuedMeets(Word, OpGequal, 5, 100));
-    REQUIRE(!tracker.QueuedMeets(Word, OpMask, 1, 50));
-    // The last one queued to the word decides.
-    tracker.NoteRelease(Word, -1, 2, true, 120);
-    REQUIRE(!tracker.QueuedMeets(Word, OpGequal, 5, 50));
-    tracker.NoteRelease(Word, -1, 0x80000010U, true, 130);
-    REQUIRE(!tracker.QueuedMeets(Word, OpGequal, 5, 50));
-    tracker.NoteRelease(Word, -1, 7, false, 140);
-    REQUIRE(!tracker.QueuedMeets(Word, OpGequal, 5, 50));
-    tracker.Drained();
-    REQUIRE(!tracker.QueuedMeets(Word, OpGequal, 7, 0));
-}

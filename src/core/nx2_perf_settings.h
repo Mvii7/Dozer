@@ -63,6 +63,8 @@ struct Switches {
     // Game-specific: no preset sets or clears these (the Safe preset leaves them as they are).
     bool dk_dyn = true;            ///< EDEN_NX2_DK_DYN=1, Bananza only
     bool mkw_dyn = true;           ///< EDEN_NX2_MKW_DYN=1, Mario Kart World only
+    // Game-specific, but set by the presets: on in Performance and Experimental, off in the others.
+    bool dk_foliage_off = true;    ///< EDEN_NX2_DK_FOLIAGE_OFF=1, Bananza only
     Preset preset = Preset::Performance;
 
     bool operator==(const Switches&) const = default;
@@ -78,6 +80,7 @@ constexpr Switches Performance() {
 constexpr Switches Balanced() {
     Switches switches{};
     switches.read_traps = true;
+    switches.dk_foliage_off = false;
     switches.preset = Preset::Balanced;
     return switches;
 }
@@ -97,6 +100,7 @@ constexpr Switches AllOff() {
         .front_macro_lean = false,
         .fg_timed = false,
         .osd = false,
+        .dk_foliage_off = false,
         .preset = Preset::Safe,
     };
 }
@@ -116,10 +120,12 @@ inline constexpr std::array<Key, 7> Keys{{
     {"osd", &Switches::osd},
 }};
 
-/// The game-specific keys: stored like the others, but outside the presets.
-inline constexpr std::array<Key, 2> GameKeys{{
+/// The game-specific keys: stored like the others, but outside the presets (but for
+/// bananza_foliage_off, which they set).
+inline constexpr std::array<Key, 3> GameKeys{{
     {"bananza_dynamic_fps", &Switches::dk_dyn},
     {"mariokart_dynamic_fps", &Switches::mkw_dyn},
+    {"bananza_foliage_off", &Switches::dk_foliage_off},
 }};
 
 inline constexpr std::size_t KeyCount = Keys.size() + GameKeys.size();
@@ -215,7 +221,8 @@ constexpr Preset PresetFromInt(int value) {
 
 /// The boxes of a preset (Custom: `current` as it is), with the preset set. The game-specific
 /// boxes are always `current`'s.
-/// Performance and Experimental (Reactive) are Balanced's boxes with read traps off.
+/// Performance and Experimental (Reactive) are Balanced's boxes with read traps off and Bananza's
+/// foliage off.
 constexpr Switches FromPreset(Preset preset, const Switches& current) {
     if (preset == Preset::Custom) {
         Switches switches = current;
@@ -225,6 +232,7 @@ constexpr Switches FromPreset(Preset preset, const Switches& current) {
     Switches switches = preset == Preset::Safe ? AllOff() : Balanced();
     if (preset == Preset::Performance || preset == Preset::Reactive) {
         switches.read_traps = false;
+        switches.dk_foliage_off = true;
     }
     switches.preset = preset;
     switches.dk_dyn = current.dk_dyn;
@@ -357,7 +365,11 @@ Switches Load(Read&& read, ReadPreset&& read_preset) {
         switches.*key.field = read(key.name, fallback);
     }
     for (const Key& key : GameKeys) {
-        switches.*key.field = read(key.name, Balanced().*key.field);
+        // bananza_foliage_off was added after the presets: a file without it gets the preset's
+        const bool fallback = key.field == &Switches::dk_foliage_off
+                                  ? FromPreset(preset, Balanced()).dk_foliage_off
+                                  : Balanced().*key.field;
+        switches.*key.field = read(key.name, fallback);
     }
     switches.preset = preset;
     return AfterBoxChange(switches);
@@ -430,7 +442,7 @@ struct Var {
 
 /// The per-draw shortcuts this fork keeps on by default; the Safe preset turns them off (=0), as
 /// start-safe.bat does.
-inline constexpr std::array<std::string_view, 68> SafeOff{
+inline constexpr std::array<std::string_view, 67> SafeOff{
     "EDEN_NX2_LIGHT_DRAW",       "EDEN_NX2_LIGHT_UNIFORM",     "EDEN_NX2_LIGHT_UNIFORM_VALUES",
     "EDEN_NX2_LIGHT_STORAGE",    "EDEN_NX2_UNIFORM_SYNC_SKIP", "EDEN_NX2_STORAGE_KEEP",
     "EDEN_NX2_UBO_REUSE",        "EDEN_NX2_UBO_DIRECT",        "EDEN_NX2_UBO_STAGE",
@@ -453,11 +465,11 @@ inline constexpr std::array<std::string_view, 68> SafeOff{
     "EDEN_NX2_PBFLUSH_WINDOW_KIB", "EDEN_NX2_UPSCALE_SCAN",    "EDEN_NX2_UPSCALE_LEARN",
     "EDEN_NX2_UPSCALE_HEADER",   "EDEN_NX2_FRONT_RUNS",        "EDEN_NX2_UBO_KEEP",
     "EDEN_NX2_RX_ONE_SUBMIT",    "EDEN_NX2_ADD_MEMO",          "EDEN_NX2_PAGE_RANGES",
-    "EDEN_NX2_ACQUIRE_QUEUED",   "EDEN_NX2_DMA_READ_PEEK",
+    "EDEN_NX2_DMA_READ_PEEK",
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
-inline constexpr std::array<std::string_view, 14> Names{
+inline constexpr std::array<std::string_view, 15> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
@@ -465,6 +477,7 @@ inline constexpr std::array<std::string_view, 14> Names{
     "EDEN_NX2_PRESENT_INTERVAL_WORD", "EDEN_NX2_MODE_PACE",
     "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
+    "EDEN_NX2_DK_FOLIAGE_OFF",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -505,6 +518,9 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
     if (game == Game::Bananza) {
         if (switches.dk_dyn) {
             vars.push_back({"EDEN_NX2_DK_DYN", "1"});
+        }
+        if (switches.dk_foliage_off) {
+            vars.push_back({"EDEN_NX2_DK_FOLIAGE_OFF", "1"});
         }
         vars.push_back({"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"});
         vars.push_back({"EDEN_NX2_MODE_PACE", "2"});

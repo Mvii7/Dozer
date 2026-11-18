@@ -44,6 +44,7 @@ const Entry* EntryOf(std::size_t key) {
         {&S::osd, Perf::Game::Other, QT_TR_NOOP("FPS overlay in RivaTuner")},
         {&S::dk_dyn, Perf::Game::Bananza, QT_TR_NOOP("Dynamic frame rate")},
         {&S::mkw_dyn, Perf::Game::MarioKartWorld, QT_TR_NOOP("Dynamic frame rate")},
+        {&S::dk_foliage_off, Perf::Game::Bananza, QT_TR_NOOP("Foliage off")},
     };
     return &entries[key];
 }

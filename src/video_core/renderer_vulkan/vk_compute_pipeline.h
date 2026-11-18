@@ -7,8 +7,10 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <span>
 
 #include "common/common_types.h"
 #include "common/thread_worker.h"
@@ -28,6 +30,7 @@ class ShaderNotify;
 namespace Vulkan {
 
 class Device;
+class PipelineCache;
 class PipelineStatistics;
 class Scheduler;
 
@@ -48,15 +51,40 @@ public:
     ComputePipeline& operator=(const ComputePipeline&) = delete;
     ComputePipeline(const ComputePipeline&) = delete;
 
-    [[nodiscard]] bool Configure(Tegra::Engines::KeplerCompute& kepler_compute,
-                                 Tegra::MemoryManager& gpu_memory, Scheduler& scheduler,
-                                 BufferCache& buffer_cache, TextureCache& texture_cache);
+    enum class ConfigureResult {
+        Ready,
+        Failed,
+        Skipped, ///< Still compiling, and its outputs keep what the GPU wrote before.
+    };
+
+    /// With unbuilt_policy, a dispatch whose pipeline is still compiling may be skipped when
+    /// every output already holds GPU writes (PipelineCache::WaitForUnbuiltDispatch).
+    [[nodiscard]] ConfigureResult Configure(Tegra::Engines::KeplerCompute& kepler_compute,
+                                            Tegra::MemoryManager& gpu_memory,
+                                            Scheduler& scheduler, BufferCache& buffer_cache,
+                                            TextureCache& texture_cache,
+                                            PipelineCache* unbuilt_policy = nullptr);
+
+    [[nodiscard]] bool IsBuilt() const noexcept {
+        return is_built.load(std::memory_order::relaxed);
+    }
+
+    /// Waits up to timeout for the build; true if it is done.
+    [[nodiscard]] bool WaitBuilt(std::chrono::microseconds timeout) {
+        std::unique_lock lock{build_mutex};
+        return build_condvar.wait_for(lock, timeout,
+                                      [this] { return is_built.load(std::memory_order::relaxed); });
+    }
 
     bool IsBound() const noexcept {
         return static_cast<bool>(pipeline);
     }
 
 private:
+    [[nodiscard]] bool OutputsHoldGpuData(
+        const BufferCache& buffer_cache, const TextureCache& texture_cache,
+        std::span<const VideoCommon::ImageViewInOut> views) const;
+
     const Device& device;
     vk::PipelineCache& pipeline_cache;
     GuestDescriptorQueue& guest_descriptor_queue;

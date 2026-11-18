@@ -17,12 +17,6 @@ and `=0` brings back the 2.0.0 code path.
   4 KiB page instead of a tree, so each change costs its pages instead of a tree walk (about 10%
   of the memory stage went to the tree). `EDEN_NX2_PAGE_RANGES=0` brings back the tree;
   start-safe.bat does.
-- Split GPU thread: with `EDEN_NX2_ACQUIRE_PEEK=1`, a semaphore acquire whose value memory does
-  not hold yet no longer drains the back when the last report semaphore or puller release the
-  front queued to the word meets it and the back has not run it (in Donkey Kong Bananza about
-  200 of 400 acquires a second, each a stall of the front for the whole back pipeline).
-  Compute report semaphore releases count as such releases too, and a pending acquire resumes
-  the same way. `EDEN_NX2_ACQUIRE_QUEUED=0` drains as before; start-safe.bat turns it off.
 - Split GPU thread: with `EDEN_NX2_ACQUIRE_PEEK=1`, an MME DMA read (600 to 1400 a second in
   Donkey Kong Bananza, 92-98% of them unchanged by their drain) no longer drains the back when
   no write the front sent and the back has not run reaches its words, no work but draws is
@@ -30,6 +24,40 @@ and `=0` brings back the 2.0.0 code path.
   `=2` drains and logs the reads the drain changed; start-safe.bat turns it off.
 
 ## Dozer 0.1.6 (`v0.1.6`)
+
+- Donkey Kong Bananza: a **Foliage off** box in its Properties > Tuning, under Dynamic frame rate
+  (`EDEN_NX2_DK_FOLIAGE_OFF=1`). Its foliage settings files are changed as the RomFS is read (an
+  in-memory mod layer, `core/loader/nx2_dk_foliage.h`): no dynamic placement, no draw distance, draw
+  caps of 1. On in the Performance and Experimental presets and launchers, off in Balanced and Safe.
+- Draw setup looks up a sampler or image view by index in the descriptor table, instead of hashing
+  that index. Deleting an image no longer walks every channel's view ids in a release build.
+- An ASTC texture's opacity scan uses a table of the 2048 block modes, instead of decoding each
+  block's mode bits on the GPU thread.
+- The GPU split's published and consumed counters sit on separate cache lines.
+- A macro DMA read copies its words in one read.
+- A draw or dispatch keeps room for 160 image views and 96 samplers without a heap allocation.
+- Ported from Lichii build 341: fewer shader freezes. Switch 2 draws and compute dispatches no
+  longer wait in full for a pipeline that is still compiling. They wait within 8 ms per frame in
+  all (`EDEN_NX2_ASYNC_DRAW_WAIT_MS`; translation waits count too), then are skipped and catch up
+  once the pipeline is built. A draw is skipped only when it is depth-tested and every color target
+  it writes was drawn in an earlier frame (Mario Kart World bakes its terrain once with depth-tested
+  draws), a dispatch only when everything it writes already holds GPU writes, images from an
+  earlier frame (a skip leaves last frame's results, never garbage); other ones still wait.
+  `EDEN_NX2_ASYNC_SKIP=0` waits in full as before, `=1` skips at once. The driver's pipeline cache
+  is written to a temporary file and renamed over the old one, so a crash while saving keeps the
+  previous cache.
+
+- Switch 2 semaphore acquires that wait for a word to reach a value are checked without draining
+  the GPU split first: a release still queued for the back decides them, else the word in memory
+  does. A suspended acquire that is not met drains at most once per 1 ms. Equal and mask acquires,
+  counter reports, words on GPU-written pages, High GPU accuracy and delayed fences still drain.
+  The front also publishes early to a back that ran dry. `EDEN_NX2_ACQUIRE_NODRAIN=0` drains as
+  before, `=2` drains anyway and logs where the word disagrees. Ported from Lichii.
+- Mario Kart World: the water shader samples a ground-height map that is never bound; where both
+  heights read zero its wave stays at zero, and real shallows and dry ground keep the game's own
+  amplitudes. The water collision map is downloaded on the next fence instead of idling the GPU.
+  From Lichii.
+- macOS: `GPUDirtyMemoryManager` builds again (a `std::min` type mismatch).
 
 - Ported from Lichii: CPU-side performance work. A guest core polls for interrupts in hardware for
   up to 100 us before it idles (`EDEN_NX2_IDLE_SPIN_US=0` blocks at once as before); the GPU

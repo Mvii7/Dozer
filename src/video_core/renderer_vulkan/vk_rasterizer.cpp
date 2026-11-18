@@ -38,6 +38,7 @@
 #include "video_core/native_query_trace.h"
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/engines/kepler_compute.h"
+#include "video_core/textures/texture.h"
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
 #include "video_core/renderer_vulkan/blit_image.h"
@@ -1924,20 +1925,40 @@ void RasterizerVulkan::DispatchCompute() {
     FlushWork();
     gpu_memory->FlushCaching();
 
-    ComputePipeline* const pipeline{pipeline_cache.CurrentComputePipeline()};
+    u64 native_key = 0;
+    ComputePipeline* const pipeline{pipeline_cache.CurrentComputePipeline(&native_key)};
     if (!pipeline) {
         if (kepler_compute->IsNativeMode()) throw Shader::RuntimeError("Native compute pipeline unavailable");
         return;
     }
     CheckBufferLockOffB("RasterizerVulkan::DispatchCompute");
     std::scoped_lock lock{texture_cache.mutex, buffer_cache.mutex};
-    if (!pipeline->Configure(*kepler_compute, *gpu_memory, scheduler, buffer_cache,
-                             texture_cache)) {
+    const auto configured =
+        pipeline->Configure(*kepler_compute, *gpu_memory, scheduler, buffer_cache, texture_cache,
+                            kepler_compute->IsNativeMode() ? &pipeline_cache : nullptr);
+    if (configured == ComputePipeline::ConfigureResult::Skipped) {
+        return;
+    }
+    if (configured == ComputePipeline::ConfigureResult::Failed) {
         if (kepler_compute->IsNativeMode()) throw Shader::RuntimeError("Native compute resources unavailable");
         return;
     }
 
     const auto& qmd{kepler_compute->launch_description};
+    // WaterSurfaceCollisionHeightMap publishes a pitch-linear image. Queue it for the next fence
+    // instead of idling the GPU (Lichii, no runtime.Finish).
+    const auto publish_collision_map = [&] {
+        if (native_key != 0x6e0ae200ee9aa220ULL || (qmd.const_buffer_enable_mask & 1) == 0) {
+            return;
+        }
+        const auto& constants = qmd.const_buffer_config[0];
+        if (constants.size < 0x3c) {
+            return;
+        }
+        const u32 handle = gpu_memory->Read<u32>(constants.Address() + 0x38);
+        const u32 index = Tegra::Texture::TexturePair(handle, qmd.linked_tsc != 0).first;
+        texture_cache.PublishComputeCollisionImage(index);
+    };
     auto indirect_address = kepler_compute->GetIndirectComputeAddress();
     // Earlier writes must be visible to the dispatch. On AMD that includes its indirect arguments,
     // and what it writes must reach the next render pass.
@@ -1978,6 +1999,7 @@ void RasterizerVulkan::DispatchCompute() {
             }
             cmdbuf.DispatchIndirect(indirect_buffer, indirect_offset);
         });
+        publish_collision_map();
         return;
     }
     const std::array<u32, 3> dim{qmd.grid_dim_x, qmd.grid_dim_y, qmd.grid_dim_z};
@@ -1993,6 +2015,7 @@ void RasterizerVulkan::DispatchCompute() {
         }
         cmdbuf.Dispatch(dim[0], dim[1], dim[2]);
     });
+    publish_collision_map();
 
     // Log compute dispatch
     if (GPU::Logging::IsActive() &&
@@ -2691,6 +2714,7 @@ void RasterizerVulkan::TickFrame() {
     }
     NoteLightWork();
     draw_counter = 0;
+    pipeline_cache.TickFrame();
     guest_descriptor_queue.TickFrame();
     compute_pass_descriptor_queue.TickFrame();
     descriptor_buffer_ring.TickFrame();
@@ -5902,7 +5926,7 @@ void RasterizerVulkan::CheckSplitSetup(GraphicsPipeline& pipeline, std::span<con
         raced = texture_cache.WriteHits() != base.image_hits ||
                 texture_cache.ImageViewEpoch() != base.view_epoch ||
                 light_epoch_b.load(std::memory_order_seq_cst) != base.light_epoch;
-        looked_up = pipeline_cache.CurrentGraphicsPipeline();
+        looked_up = pipeline_cache.CurrentGraphicsPipeline(true);
         const u64 render_pass_begins = scheduler.RenderPassBegins();
         // Vertex streams the old setup binds straight to C's command buffer (those B's flags have
         // dirty; none in lockstep): C's mirror does not see them, B's next packet sends them all.

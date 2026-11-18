@@ -110,6 +110,23 @@ void DrainBack(VideoCommon::Nx2Profile::DrainSite site) {
     }
 }
 
+// A release the puller just sent to the split's back (CheckWithoutDrain).
+void NoteSplitRelease(DmaPusher& dma_pusher, GPUVAddr address, u32 payload, bool timestamp) {
+    auto& split = VideoCommon::GpuSplit::Get();
+    if (!split.Active()) {
+        return;
+    }
+    if (const auto device = dma_pusher.memory_manager.GpuToCpuAddress(address)) {
+        split.NoteSemaphoreWrite(*device, payload, true);
+        if (timestamp) {
+            // The payload as 64 bits (a timestamp follows).
+            split.NoteSemaphoreWrite(*device + 4, 0, true);
+        }
+    } else {
+        split.NoteUnknownSemaphoreWrite();
+    }
+}
+
 // A release the puller queued for the back (PeekTracking). A 16-byte one also writes a zero
 // word after the payload and the timestamp after that.
 void NoteRelease(DmaPusher& dma_pusher, GPUVAddr address, u32 payload, bool timestamp) {
@@ -118,29 +135,17 @@ void NoteRelease(DmaPusher& dma_pusher, GPUVAddr address, u32 payload, bool time
                                              VideoCommon::Nx2FrontDiag::WriteKind::Release,
                                              address, timestamp ? 16 : 4);
     }
+    NoteSplitRelease(dma_pusher, address, payload, timestamp);
     if (!PeekTracking()) {
         return;
     }
     auto& tracker = PeekTracker();
     const s32 channel = dma_pusher.channel_state.bind_id;
-    const u64 bound = VideoCommon::Nx2FrontDiag::Bound();
     for (u32 word = 0; word < (timestamp ? 4U : 1U); ++word) {
         if (const auto device = dma_pusher.memory_manager.GpuToCpuAddress(address + word * 4)) {
-            tracker.NoteRelease(*device, channel, word == 0 ? payload : 0, word < 2, bound);
+            tracker.NoteRelease(*device, channel, word == 0 ? payload : 0, word < 2);
         }
     }
-}
-
-// EDEN_NX2_ACQUIRE_QUEUED (on unless =0, with ACQUIRE_PEEK=1): an acquire memory does not meet
-// yet goes on without a drain when the last release queued to its word (a Maxwell3D report
-// semaphore's or the puller's) meets it and the back has not run it: the back runs it before
-// the work after the acquire, as the drain would have.
-bool QueuedSkip() {
-    static const bool enabled = [] {
-        const char* const value = std::getenv("EDEN_NX2_ACQUIRE_QUEUED");
-        return value == nullptr || value[0] != '0';
-    }();
-    return enabled;
 }
 
 // The acquire peek line (EDEN_NX2_GPU_PROFILE): counted on the front, logged for the front's
@@ -158,7 +163,6 @@ struct PeekStats {
     u64 resumes_may_skip{};
     u64 resumes_latched{}; ///< Resumed without a drain, latched by a release (=1)
     u64 resumes_skipped{}; ///< Resumed without a drain, met in memory (=1)
-    u64 resumes_queued{};  ///< Resumed without a drain, a queued release meets it (=1)
     u64 sem_execute_deferred{}; ///< SEM_EXECUTE acquires checked on the back (SEMEXEC_DEFER)
     // Acquires memory did not meet before their drain (front diag), by what was pending for the
     // back over the word: a write of each kind, no write but work, nothing. Of them, met after.
@@ -167,9 +171,6 @@ struct PeekStats {
     std::array<u64, NothingPending + 1> unmet{};
     std::array<u64, NothingPending + 1> unmet_met_after{};
     std::array<u64, static_cast<size_t>(Diag::WorkKind::Count)> unmet_work{}; ///< NoWriteWork's
-    u64 queued_skipped{};        ///< Went on without a drain: a queued release meets it
-    u64 unmet_queued_meets{};    ///< A release queued to the word meets it
-    u64 unmet_queued_met_after{};
 };
 
 thread_local PeekStats t_peek_stats;
@@ -191,10 +192,8 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
              "{:.0f}): may skip {:.0f}, skipped {:.0f}; drain kept for mask {:.0f}, wrapped "
              "{:.0f}, queued release {:.0f}, not monotonic {:.0f}, new {:.0f}, not advanced "
              "{:.0f}, untracked {:.0f}; "
-             "met in memory but not after the drain {:.0f} (may skip {:.0f}); skipped as a queued "
-             "release meets it {:.0f} | resume checks {:.0f} "
-             "(met in memory {:.0f}, may skip {:.0f}; skipped: latched {:.0f}, met {:.0f}, queued "
-             "release {:.0f}) | "
+             "met in memory but not after the drain {:.0f} (may skip {:.0f}) | resume checks {:.0f} "
+             "(met in memory {:.0f}, may skip {:.0f}; skipped: latched {:.0f}, met {:.0f}) | "
              "sem execute acquires deferred {:.0f} | words {} ({} went down), releases queued {}",
              rate(stats.acquires[0] + stats.acquires[1] + stats.acquires[2]),
              rate(stats.acquires[0]), rate(stats.acquires[1]), rate(stats.acquires[2]),
@@ -205,11 +204,9 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
              verdict(Peek::Verdict::QueuedRelease), verdict(Peek::Verdict::NotMonotonic),
              verdict(Peek::Verdict::New), verdict(Peek::Verdict::NotAdvanced),
              verdict(Peek::Verdict::Untracked),
-             rate(stats.met_then_unmet), rate(stats.may_skip_unmet), rate(stats.queued_skipped),
-             rate(stats.resumes),
+             rate(stats.met_then_unmet), rate(stats.may_skip_unmet), rate(stats.resumes),
              rate(stats.resumes_met), rate(stats.resumes_may_skip), rate(stats.resumes_latched),
-             rate(stats.resumes_skipped), rate(stats.resumes_queued),
-             rate(stats.sem_execute_deferred), tracker.Words(),
+             rate(stats.resumes_skipped), rate(stats.sem_execute_deferred), tracker.Words(),
              tracker.WordsNotMonotonic(), tracker.QueuedReleases());
     if (!Diag::On()) {
         return;
@@ -229,9 +226,8 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
     }
     LOG_INFO(HW_GPU,
              "GPU thread acquires unmet before the drain per second, by what was pending over the "
-             "word: {} | work pending of the no-write ones: {} | a release queued to the word "
-             "meets it {:.0f} ({:.0f} met after)",
-             by_kind, work, rate(stats.unmet_queued_meets), rate(stats.unmet_queued_met_after));
+             "word: {} | work pending of the no-write ones: {}",
+             by_kind, work);
 }
 
 PeekStats& PeekStatsNow() {
@@ -340,7 +336,6 @@ struct UnmetClass {
     bool counted{};
     size_t bucket{};
     u32 work{};
-    bool queued_meets{};
 };
 
 UnmetClass ClassifyUnmet(const PeekRead& read, u32 operation, u32 value) {
@@ -365,7 +360,6 @@ UnmetClass ClassifyUnmet(const PeekRead& read, u32 operation, u32 value) {
             break;
         }
     }
-    result.queued_meets = PeekTracker().QueuedMeets(*read.device, operation, value, consumed);
     return result;
 }
 
@@ -380,10 +374,6 @@ void CountUnmet(const UnmetClass& unmet, bool met_after) {
         for (size_t i = 0; i < stats.unmet_work.size(); ++i) {
             stats.unmet_work[i] += (unmet.work >> i) & 1;
         }
-    }
-    if (unmet.queued_meets) {
-        ++stats.unmet_queued_meets;
-        stats.unmet_queued_met_after += met_after ? 1 : 0;
     }
 }
 
@@ -421,21 +411,156 @@ void PeekSkipped() {
     std::atomic_thread_fence(std::memory_order_acquire);
 }
 
-} // Anonymous namespace
+// EDEN_NX2_ACQUIRE_NODRAIN (CheckWithoutDrain): unset or 1, greater-or-equal acquires and the
+// polls of suspended ones are checked without draining the split's back where they can be; 0
+// drains as before; 2 decides the same way, then drains anyway and logs where the word after the
+// drain disagrees.
+enum class NoDrainMode : u8 { Off, On, Verify };
 
-void NotePeekReportRelease(const MemoryManager& memory, GPUVAddr address, u32 payload,
-                           bool timestamp) {
-    if (!PeekTracking()) {
+NoDrainMode NoDrain() {
+    static const NoDrainMode mode = [] {
+        const char* value = std::getenv("EDEN_NX2_ACQUIRE_NODRAIN");
+        return value == nullptr        ? NoDrainMode::On
+               : value[0] == '0'       ? NoDrainMode::Off
+               : value[0] == '2'       ? NoDrainMode::Verify
+                                       : NoDrainMode::On;
+    }();
+    return mode;
+}
+
+// Whether the back writes a payload release to memory when it runs it: below High GPU accuracy,
+// with fences that run their operations at once (FenceManager::SignalFence).
+bool ReleasesLandAtOnce() {
+    const bool delay_fence =
+        Settings::IsGPUFenceBehaviorDefault()
+            ? Settings::IsGPULevelHigh()
+            : Settings::IsGPUFenceBehaviorBalanced() || Settings::IsGPUFenceBehaviorAccurate();
+    return !delay_fence && !Settings::IsGPULevelHigh();
+}
+
+enum class AcquireCheck {
+    Met,         ///< By the word in memory
+    MetByQueued, ///< By a release sent to the word that the back has not run yet
+    NotMet,      ///< Nothing sent to the word meets it yet
+    Drain,       ///< Drain the split and read the word as before
+};
+
+// Counted on the front, logged every 10 s with EDEN_NX2_GPU_PROFILE or the verify mode.
+struct NoDrainStats {
+    u64 passed{};    ///< Acquires and polls met without a drain
+    u64 by_queued{}; ///< Of passed: by a release the back had not run yet
+    u64 drained{};   ///< Acquires and polls CheckWithoutDrain sent to the drain
+    // Of drained, why (CheckWithoutDrain): equal or mask; the settings, the split or its front
+    // macros; a release of an engine on the back queued; an unmapped or GPU-written word; a
+    // queued release to the word unknown or not meeting it; an acquire not met yet.
+    u64 drain_operation{};
+    u64 drain_settings{};
+    u64 drain_unknown{};
+    u64 drain_word{};
+    u64 drain_queued{};
+    u64 drain_not_met{};
+    u64 polls{};     ///< Polls that kept waiting without a drain
+    u64 valve{};     ///< Polls that kept waiting and drained (once per 1 ms)
+    u64 mismatches{}; ///< Verify: passed, yet the word after a drain doesn't meet it
+    u64 late{};       ///< Verify: a poll kept waiting, yet the word after a drain meets it
+    std::chrono::steady_clock::time_point next{};
+};
+thread_local NoDrainStats t_no_drain;
+
+void CountNoDrain(u64 NoDrainStats::*counter) {
+    if (NoDrain() != NoDrainMode::Verify && !VideoCommon::Nx2Profile::Enabled()) {
         return;
     }
-    auto& tracker = PeekTracker();
-    const u64 bound = VideoCommon::Nx2FrontDiag::Bound();
-    for (u32 word = 0; word < (timestamp ? 4U : 1U); ++word) {
-        if (const auto device = memory.GpuToCpuAddress(address + word * 4)) {
-            tracker.NoteRelease(*device, -1, word == 0 ? payload : 0, word < 2, bound);
+    auto& stats = t_no_drain;
+    ++(stats.*counter);
+    const auto now = std::chrono::steady_clock::now();
+    if (stats.next == std::chrono::steady_clock::time_point{}) {
+        stats.next = now + std::chrono::seconds{10};
+    }
+    if (now < stats.next) {
+        return;
+    }
+    LOG_INFO(HW_GPU,
+             "Acquires without a drain in 10 s: {} passed ({} by a queued release), {} drained "
+             "({} equal or mask, {} settings, {} back engine release queued, {} unmapped or "
+             "GPU-written word, {} queued release unknown or short, {} not met), {} polls kept "
+             "waiting, {} polls drained by the 1 ms valve; verify: {} passed but not met after a "
+             "drain, {} kept waiting but met after it",
+             stats.passed, stats.by_queued, stats.drained, stats.drain_operation,
+             stats.drain_settings, stats.drain_unknown, stats.drain_word, stats.drain_queued,
+             stats.drain_not_met, stats.polls, stats.valve, stats.mismatches, stats.late);
+    stats = NoDrainStats{};
+    stats.next = now + std::chrono::seconds{10};
+}
+
+// Checks a greater-or-equal acquire without draining the split. The words Switch 2 syncs on only
+// advance (NVN2 releases QMD completions as maxima), so a value that meets one now still does
+// once the back ran the queued work. Only the last release the front sent to the word decides
+// instead, while the back may not have run it (GpuSplit::NoteSemaphoreWrite: the puller's, the
+// 3D and compute report semaphores, the copy engine's). Port of Lichii's #949.
+AcquireCheck CheckWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcquire& acquire) {
+    auto& split = VideoCommon::GpuSplit::Get();
+    if (NoDrain() == NoDrainMode::Off) {
+        return AcquireCheck::Drain;
+    }
+    if (acquire.operation != Peek::OpGequal) {
+        CountNoDrain(&NoDrainStats::drain_operation);
+        return AcquireCheck::Drain;
+    }
+    if (!split.Active() || !split.FrontMacros() || !ReleasesLandAtOnce()) {
+        CountNoDrain(&NoDrainStats::drain_settings);
+        return AcquireCheck::Drain;
+    }
+    if (split.UnknownSemaphoreWriteQueued()) {
+        CountNoDrain(&NoDrainStats::drain_unknown);
+        return AcquireCheck::Drain;
+    }
+    // A word the buffer cache may hold newer than memory is read through the back.
+    const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address);
+    if (!device || Tegra::Nx2IsGpuWritten(*device)) {
+        CountNoDrain(&NoDrainStats::drain_word);
+        return AcquireCheck::Drain;
+    }
+    if (const auto queued = split.QueuedSemaphoreWriteAt(*device)) {
+        if (queued->known && acquire.Matches(queued->payload)) {
+            return AcquireCheck::MetByQueued;
         }
+        CountNoDrain(&NoDrainStats::drain_queued);
+        return AcquireCheck::Drain;
+    }
+    return acquire.Matches(dma_pusher.memory_manager.Read<u32>(acquire.address))
+               ? AcquireCheck::Met
+               : AcquireCheck::NotMet;
+}
+
+// Verify mode: drains anyway and counts where the word after it disagrees with `decided`. A
+// release met while queued may still be behind a fence then, so only Met and NotMet compare.
+void VerifyWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcquire& acquire,
+                        AcquireCheck decided) {
+    if (NoDrain() != NoDrainMode::Verify || decided == AcquireCheck::MetByQueued) {
+        return;
+    }
+    DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerAcquire);
+    const u32 word = ReadSemaphoreWord(dma_pusher, acquire.address);
+    if (acquire.Matches(word)) {
+        if (decided == AcquireCheck::NotMet) {
+            CountNoDrain(&NoDrainStats::late);
+        }
+        return;
+    }
+    if (decided != AcquireCheck::Met) {
+        return;
+    }
+    CountNoDrain(&NoDrainStats::mismatches);
+    if (static u32 logged{}; logged++ < 16) {
+        LOG_WARNING(HW_GPU,
+                    "Acquire verify: channel {} passed semaphore {:#x} (>= {:#x}) without a "
+                    "drain, the word is {:#x} after it",
+                    dma_pusher.channel_state.bind_id, acquire.address, acquire.value, word);
     }
 }
+
+} // Anonymous namespace
 
 bool Puller::PendingAcquire::Matches(u32 current) const {
     switch (static_cast<GpuSemaphoreOperation>(operation)) {
@@ -462,6 +587,37 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
                      pending_acquire->value, now);
         }
     };
+    switch (const AcquireCheck check = CheckWithoutDrain(dma_pusher, *pending_acquire); check) {
+    case AcquireCheck::MetByQueued:
+        CountNoDrain(&NoDrainStats::by_queued);
+        [[fallthrough]];
+    case AcquireCheck::Met:
+        CountNoDrain(&NoDrainStats::passed);
+        VerifyWithoutDrain(dma_pusher, *pending_acquire, check);
+        return true;
+    case AcquireCheck::NotMet: {
+        // A release the back runs latches the waiter or reaches memory on its own: until it runs
+        // one, nothing sent to the word meets it. Work only a drain finishes still lands: a
+        // waiting acquire drains at most once per 1 ms (Lichii, PantACRO4life's valve), and
+        // the drain reports waits over 2 s.
+        if (Nx2SemaphoreWaiters::Get().Latched(this)) {
+            CountNoDrain(&NoDrainStats::passed);
+            return true;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now - pending_acquire->last_drain < std::chrono::milliseconds{1}) {
+            CountNoDrain(&NoDrainStats::polls);
+            VerifyWithoutDrain(dma_pusher, *pending_acquire, check);
+            return false;
+        }
+        pending_acquire->last_drain = now;
+        CountNoDrain(&NoDrainStats::valve);
+        break;
+    }
+    case AcquireCheck::Drain:
+        CountNoDrain(&NoDrainStats::drained);
+        break;
+    }
     const PeekRead peek = PeekBefore(dma_pusher, pending_acquire->address,
                                      pending_acquire->operation, pending_acquire->value,
                                      PeekSite::Resume);
@@ -475,16 +631,6 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         }
         if (peek.verdict == Peek::Verdict::Skip) {
             CountPeek(&PeekStats::resumes_skipped);
-            PeekSkipped();
-            return true;
-        }
-        // A release queued since the acquire went pending that meets it (ACQUIRE_QUEUED).
-        if (peek.verdict == Peek::Verdict::Unmet && peek.device && QueuedSkip() &&
-            PeekTracker().QueuedMeets(*peek.device, pending_acquire->operation,
-                                      pending_acquire->value,
-                                      VideoCommon::GpuSplit::Get().DiagConsumed())) {
-            CountPeek(&PeekStats::resumes_queued);
-            PeekMet(dma_pusher, peek, pending_acquire->value);
             PeekSkipped();
             return true;
         }
@@ -664,6 +810,7 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             .value = regs.semaphore_sequence,
             .operation = static_cast<u32>(op),
             .since = std::chrono::steady_clock::now(),
+            .last_drain = std::chrono::steady_clock::now(),
             .reported = false,
         };
         if (op != GpuSemaphoreOperation::AcquireEqual && op != GpuSemaphoreOperation::AcquireGequal &&
@@ -681,17 +828,20 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             PeekSkipped();
             return;
         }
-        if (peek.verdict == Peek::Verdict::Unmet && peek.device && PeekMode() == Peek::Mode::Skip &&
-            QueuedSkip() &&
-            PeekTracker().QueuedMeets(*peek.device, acquire.operation, acquire.value,
-                                      VideoCommon::GpuSplit::Get().DiagConsumed())) {
-            CountPeek(&PeekStats::queued_skipped);
+        if (const AcquireCheck check = CheckWithoutDrain(dma_pusher, acquire);
+            check == AcquireCheck::Met || check == AcquireCheck::MetByQueued) {
+            if (check == AcquireCheck::MetByQueued) {
+                CountNoDrain(&NoDrainStats::by_queued);
+            }
+            CountNoDrain(&NoDrainStats::passed);
             PeekMet(dma_pusher, peek, acquire.value);
-            PeekSkipped();
+            VerifyWithoutDrain(dma_pusher, acquire, check);
             return;
+        } else if (check == AcquireCheck::NotMet) {
+            CountNoDrain(&NoDrainStats::drain_not_met);
         }
-        const UnmetClass unmet =
-            ClassifyUnmet(peek, acquire.operation, acquire.value);
+        CountNoDrain(&NoDrainStats::drained);
+        const UnmetClass unmet = ClassifyUnmet(peek, acquire.operation, acquire.value);
         DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerAcquire);
         const u32 current = ReadSemaphoreWord(dma_pusher, acquire.address);
         PeekAfter(dma_pusher, peek, acquire.address, acquire.operation, acquire.value, current);
@@ -780,6 +930,7 @@ void Puller::ProcessSemaphoreRelease(DmaPusher& dma_pusher) {
                                              VideoCommon::Nx2FrontDiag::WriteKind::Release,
                                              sequence_address, 4);
     }
+    NoteSplitRelease(dma_pusher, sequence_address, payload, false);
 }
 
 void Puller::ProcessSemaphoreAcquire(DmaPusher& dma_pusher) {

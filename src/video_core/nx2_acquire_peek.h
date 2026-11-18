@@ -86,19 +86,17 @@ enum class Verdict : u8 {
 class Tracker {
 public:
     static constexpr size_t MaxWords = 4096;
-    static constexpr size_t MaxReleases = 4096;
+    static constexpr size_t MaxReleases = 256;
     static constexpr size_t MaxChannels = 4; ///< Channels whose last met acquire a word keeps
 
     /// A release the puller queued for the back: `payload` to the u32 at `address` on `channel`,
     /// or a value it cannot tell (`known` false: the timestamp of a 16-byte release).
-    /// `bound`: the ring position the back has run it by (Nx2FrontDiag::Bound), ~0 unknown.
-    void NoteRelease(u64 address, s32 channel, u32 payload, bool known = true,
-                     u64 bound = ~u64{0}) {
+    void NoteRelease(u64 address, s32 channel, u32 payload, bool known = true) {
         if (releases.size() >= MaxReleases) {
             releases_full = true;
             return;
         }
-        releases.push_back({address, channel, payload, known, bound});
+        releases.push_back({address, channel, payload, known});
     }
 
     /// The puller drained the back: every release noted ran, written or (behind a fence) in
@@ -106,29 +104,6 @@ public:
     void Drained() {
         releases.clear();
         releases_full = false;
-    }
-
-    /// Whether the last release queued to `address` since the last drain writes a value that
-    /// meets an equal or greater-or-equal acquire and the back has not run it yet (`consumed`,
-    /// how far it ran): it runs before the work after the acquire. False when none is queued,
-    /// its value is unknown or it ran (memory has it, or a write since that the front did not
-    /// see, so the drain's read decides).
-    [[nodiscard]] bool QueuedMeets(u64 address, u32 operation, u32 value, u64 consumed) const {
-        if (releases_full || (operation != OpEqual && operation != OpGequal)) {
-            return false;
-        }
-        for (auto it = releases.rbegin(); it != releases.rend(); ++it) {
-            if (it->address == address) {
-                if (!it->known || it->bound <= consumed) {
-                    return false;
-                }
-                if (operation == OpGequal && it->payload - value >= 0x80000000U) {
-                    return false;
-                }
-                return Matches(operation, it->payload, value);
-            }
-        }
-        return false;
     }
 
     /// Guest memory held `value` at `address` (reads in time order: before and after drains).
@@ -236,7 +211,6 @@ private:
         s32 channel;
         u32 payload;
         bool known;
-        u64 bound; ///< The split ring position the back has run it by
     };
 
     std::unordered_map<u64, Word> words;

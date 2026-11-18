@@ -44,11 +44,6 @@ class RasterizerInterface;
 
 namespace Tegra::Engines {
 
-/// Front: a Maxwell3D report semaphore release of `payload` just sent to the split GPU thread's
-/// back (EDEN_NX2_ACQUIRE_PEEK's queued releases; `timestamp`: the 16-byte form).
-void NotePeekReportRelease(const MemoryManager& memory, GPUVAddr address, u32 payload,
-                           bool timestamp);
-
 class Puller final {
 public:
     struct MethodCall {
@@ -83,6 +78,8 @@ public:
         u32 value;
         u32 operation;
         std::chrono::steady_clock::time_point since;
+        /// When a poll that kept waiting last drained the split (CanResumeAcquire)
+        std::chrono::steady_clock::time_point last_drain;
         bool reported;
 
         [[nodiscard]] bool Matches(u32 current) const;

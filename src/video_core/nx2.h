@@ -425,7 +425,7 @@ public:
     void Add(const void* owner, u64 device_address, u32 value, u32 operation,
              u32* word = nullptr) {
         std::scoped_lock lk{mutex};
-        std::erase_if(waiters, [owner](const Waiter& w) { return w.owner == owner; });
+        EraseOwner(owner);
         const u32 seen =
             word != nullptr ? std::atomic_ref<u32>{*word}.load(std::memory_order_relaxed) : 0;
         waiters.push_back({owner, device_address, value, operation, false, word, seen});
@@ -437,12 +437,14 @@ public:
             return;
         }
         std::scoped_lock lk{mutex};
-        std::erase_if(waiters, [owner](const Waiter& w) { return w.owner == owner; });
+        EraseOwner(owner);
         count.store(waiters.size(), std::memory_order_release);
     }
 
     [[nodiscard]] bool Latched(const void* owner) {
-        if (count.load(std::memory_order_acquire) == 0) {
+        // Polled for every suspended channel while OnWrite takes the lock for every release: no
+        // lock while no waiter is latched. A latch missed here is seen at the next poll.
+        if (latched_count.load(std::memory_order_acquire) == 0) {
             return false;
         }
         std::scoped_lock lk{mutex};
@@ -483,6 +485,7 @@ public:
                 if (w.address == device_address && !w.latched && Matches(w, value)) {
                     w.latched = true;
                     latched = true;
+                    latched_count.fetch_add(1, std::memory_order_release);
                 }
             }
         }
@@ -492,6 +495,21 @@ public:
     }
 
 private:
+    struct Waiter;
+
+    /// Removes owner's waiter (the lock held).
+    void EraseOwner(const void* owner) {
+        std::erase_if(waiters, [this, owner](const Waiter& w) {
+            if (w.owner != owner) {
+                return false;
+            }
+            if (w.latched) {
+                latched_count.fetch_sub(1, std::memory_order_relaxed);
+            }
+            return true;
+        });
+    }
+
     struct Waiter {
         const void* owner;
         u64 address;
@@ -518,6 +536,7 @@ private:
     std::mutex mutex;
     std::vector<Waiter> waiters;
     std::atomic<size_t> count{};
+    std::atomic<size_t> latched_count{}; ///< Waiters latched (OnWrite) and not removed yet
 };
 
 } // namespace Tegra

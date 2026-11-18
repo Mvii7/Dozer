@@ -464,7 +464,7 @@ GraphicsPipeline::GraphicsPipeline(
             LOG_CRITICAL(Render_Vulkan, "Graphics pipeline build failed: {}", exception.what());
             std::scoped_lock lock{build_mutex};
             is_built = true;
-            build_condvar.notify_one();
+            build_condvar.notify_all();
             if (shader_notify) {
                 shader_notify->MarkShaderComplete();
             }
@@ -476,7 +476,7 @@ GraphicsPipeline::GraphicsPipeline(
 
         std::scoped_lock lock{build_mutex};
         is_built = true;
-        build_condvar.notify_one();
+        build_condvar.notify_all();
         if (shader_notify) {
             shader_notify->MarkShaderComplete();
         }
@@ -499,8 +499,8 @@ void GraphicsPipeline::AddTransition(GraphicsPipeline* transition) {
 
 template <typename Spec>
 bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
-    boost::container::small_vector<VideoCommon::ImageViewInOut, 64> views;
-    boost::container::small_vector<VideoCommon::SamplerId, 64> samplers;
+    boost::container::small_vector<VideoCommon::ImageViewInOut, 160> views;
+    boost::container::small_vector<VideoCommon::SamplerId, 96> samplers;
     views.reserve(num_image_elements);
     samplers.reserve(num_textures);
 
@@ -1180,8 +1180,8 @@ bool GraphicsPipeline::ConfigureTexturesImpl(const StageDrawReader& in,
     // ConfigureImpl without the buffer cache: B read the handles (in.Handles()) and made the
     // buffer entries (in.StageEntries); C's replica gives the registers.
     ASSERT(in.Head().pipeline == this);
-    boost::container::small_vector<VideoCommon::ImageViewInOut, 64> views;
-    boost::container::small_vector<VideoCommon::SamplerId, 64> samplers;
+    boost::container::small_vector<VideoCommon::ImageViewInOut, 160> views;
+    boost::container::small_vector<VideoCommon::SamplerId, 96> samplers;
     views.reserve(num_image_elements);
     samplers.reserve(num_textures);
 

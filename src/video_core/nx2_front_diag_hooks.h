@@ -39,11 +39,6 @@
 // Front thread only, behind On(); the counters touch nothing the emulation reads, the timed paths
 // are out of line (the untimed ones keep their one call). Also EDEN_NX2_PROBE_FRONT_US=n: the
 // front spins n microseconds per command list (any profile).
-namespace Tegra::Engines {
-void NotePeekReportRelease(const Tegra::MemoryManager& memory, GPUVAddr address, u32 payload,
-                           bool timestamp);
-}
-
 namespace VideoCommon::Nx2FrontDiag {
 
 // EDEN_NX2_FRONT_DIAG=0: these lines off with the profile on (their counters cost the front a few
@@ -552,7 +547,6 @@ inline void NoteEngineMethod(const Tegra::MemoryManager& memory, const void* eng
                 const GPUVAddr report = (GPUVAddr{regs[0x6C0] & 0x1ffffff} << 32) | regs[0x6C1];
                 const bool one_word = ((control >> 28) & 1) != 0;
                 NoteWrite(memory, WriteKind::Report, report, one_word ? 4 : 16);
-                Tegra::Engines::NotePeekReportRelease(memory, report, regs[0x6C2], !one_word);
                 ++g_compute_sends.report_releases;
             } else {
                 NoteWork(WorkKind::Compute);

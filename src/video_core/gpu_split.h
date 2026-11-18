@@ -8,8 +8,10 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 
 #include "common/common_types.h"
 
@@ -182,6 +184,27 @@ public:
     /// Waits until the back executed everything sent so far. Returns whether it had to wait.
     bool Drain();
 
+    /// A semaphore release was just sent: once the back ran it, the word at `device_address` holds
+    /// `payload`, or a value the front can't tell (`known` false: a reduction, a counter report).
+    void NoteSemaphoreWrite(u64 device_address, u32 payload, bool known);
+    /// Something that may release a semaphore the front can't see was just sent (a report
+    /// method or a macro of an engine whose macros run on the back).
+    void NoteUnknownSemaphoreWrite() {
+        unknown_write_position = WritePosition();
+    }
+    struct QueuedSemaphoreWrite {
+        u32 payload;
+        bool known;
+    };
+    /// The last write sent to the semaphore word at `device_address`, if the back may not have run
+    /// it yet.
+    [[nodiscard]] std::optional<QueuedSemaphoreWrite> QueuedSemaphoreWriteAt(
+        u64 device_address) const;
+    /// Whether a write NoteUnknownSemaphoreWrite noted may not have run yet.
+    [[nodiscard]] bool UnknownSemaphoreWriteQueued() const {
+        return unknown_write_position > consumed.load(std::memory_order_acquire);
+    }
+
     /// Whether the back ran everything published (so while the split is off). Any thread.
     [[nodiscard]] bool BackCaughtUp() const {
         return consumed.load(std::memory_order_seq_cst) == published.load(std::memory_order_seq_cst);
@@ -220,6 +243,8 @@ private:
     static constexpr size_t RingMask = RingWords - 1;
     static constexpr u32 MaxMultiWords = 8192;
     static constexpr size_t PublishEvery = 256;
+    /// Words a back waiting for work gets without waiting for publish_every (Commit).
+    static constexpr size_t PublishAfterWait = 8;
     static constexpr u32 MaxPending = 64; ///< Macro writes in one Batch entry at most
 
 public:
@@ -247,6 +272,14 @@ private:
         if (batch_writes) {
             Count(words);
         } else if (write_position - published_local >= publish_every) {
+            Publish();
+            return;
+        }
+        // The back waits for work at the last position published (back_idle_at): it gets these
+        // words after a few, not after publish_every. Acquires that no longer drain left it
+        // spinning until then (Lichii #949, from 62db242b34).
+        if (write_position - published_local >= PublishAfterWait &&
+            back_idle_at.load(std::memory_order_relaxed) == published_local) {
             Publish();
         }
     }
@@ -328,16 +361,30 @@ private:
     /// See Count: the write position and the last published one without batching.
     u64 unbatched_position{};
     u64 unbatched_published{};
+    struct SemaphoreWrite {
+        u64 position; ///< The write position once it was sent
+        u32 payload;
+        bool known;
+    };
+    /// NoteSemaphoreWrite's, by word address.
+    std::unordered_map<u64, SemaphoreWrite> semaphore_writes;
+    size_t semaphore_writes_limit{1024}; ///< Forget what the back ran past this many
+    u64 unknown_write_position{};
 
     // Back side.
     Tegra::Engines::EngineInterface* back_engine{};
 
     static GpuSplit instance;
 
-    alignas(64) std::atomic<u64> published{};
-    alignas(64) std::atomic<u64> consumed{};
-    alignas(64) std::atomic<bool> back_waiting{};
+    // 128 bytes: an x86 prefetcher pulls the next 64-byte line too, so these two counters
+    // (one written by each thread) do not share a prefetched pair. back_waiting and wake are
+    // touched together and stay on one line.
+    alignas(128) std::atomic<u64> published{};
+    alignas(128) std::atomic<u64> consumed{};
+    alignas(128) std::atomic<bool> back_waiting{};
     std::atomic<u32> wake{};
+    /// The back's read position when it last ran out of work, stored before it waits.
+    alignas(128) std::atomic<u64> back_idle_at{~u64{0}};
     std::jthread back_thread;
 };
 

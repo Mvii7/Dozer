@@ -85,17 +85,14 @@ public:
     TextureCacheChannelInfo(const TextureCacheChannelInfo& state) = delete;
     TextureCacheChannelInfo& operator=(const TextureCacheChannelInfo&) = delete;
 
-    DescriptorTable<TICEntry> graphics_image_table;
-    DescriptorTable<TSCEntry> graphics_sampler_table;
-    DescriptorTable<TICEntry> compute_image_table;
-    DescriptorTable<TSCEntry> compute_sampler_table;
+    DescriptorTable<TICEntry, ImageViewId> graphics_image_table;
+    DescriptorTable<TSCEntry, SamplerId> graphics_sampler_table;
+    DescriptorTable<TICEntry, ImageViewId> compute_image_table;
+    DescriptorTable<TSCEntry, SamplerId> compute_sampler_table;
 
     // TODO: still relies on bad iterators :(
     std::unordered_map<TICEntry, ImageViewId> image_views;
     std::unordered_map<TSCEntry, SamplerId> samplers;
-
-    ::Common::unordered_map<u32, SamplerId> sampler_ids;
-    ::Common::unordered_map<u32, ImageViewId> image_view_ids;
 
     TextureCacheGPUMap* gpu_page_table = nullptr;
     TextureCacheGPUMap* sparse_page_table = nullptr;
@@ -238,6 +235,14 @@ public:
     /// Mark an image as modified from the GPU
     void MarkModification(ImageId id) noexcept;
 
+    /// Whether color target `index`'s image was first written by the GPU in an earlier frame.
+    /// The caller holds the mutex.
+    [[nodiscard]] bool ColorTargetWrittenBeforeThisFrame(u32 index);
+
+    /// Whether the view's image holds GPU writes from an earlier frame (a null view has nothing to
+    /// hold).
+    [[nodiscard]] bool HoldsGpuData(ImageViewId id) const noexcept;
+
     /// Fill image_view_ids with the graphics/compute images in indices
     void FillImageViews(std::span<ImageViewInOut> views, bool compute, bool blacklist = true);
 
@@ -369,6 +374,9 @@ public:
     [[nodiscard]] u64 ImageViewEpoch() const noexcept {
         return image_view_epoch;
     }
+
+    /// Queue a compute image for the next fence's download when it is the water collision map.
+    bool PublishComputeCollisionImage(u32 index);
 
     /// Create channel state.
     void CreateChannel(Tegra::Control::ChannelState& channel) final override;

@@ -557,6 +557,61 @@ typename P::ImageView& TextureCache<P>::GetImageView(ImageViewId id) noexcept {
 }
 
 template <class P>
+bool TextureCache<P>::ColorTargetWrittenBeforeThisFrame(u32 index) {
+    const auto& regs = maxwell3d->regs;
+    const auto& rt = regs.rt[index];
+    const GPUVAddr gpu_addr = rt.Address();
+    if (gpu_addr == 0 || rt.format == Tegra::RenderTargetFormat::NONE) {
+        return false;
+    }
+    const ImageInfo info(rt, regs.anti_alias_samples_mode);
+    if (info.format == PixelFormat::Invalid || info.size.width == 0 || info.size.height == 0) {
+        return false;
+    }
+    const ImageId image_id = FindImage(info, gpu_addr, RelaxedOptions{});
+    if (!image_id) {
+        return false;
+    }
+    const ImageBase& image = slot_images[image_id];
+    return image.first_gpu_write_frame != 0 && image.first_gpu_write_frame <= frame_tick;
+}
+
+template <class P>
+bool TextureCache<P>::HoldsGpuData(ImageViewId id) const noexcept {
+    const ImageId image_id = slot_image_views[id].image_id;
+    if (!image_id || image_id == NULL_IMAGE_ID) {
+        return true;
+    }
+    // Written in an earlier frame: an image first written this frame (or built once) would keep
+    // nothing useful if the write were skipped.
+    const ImageBase& image = slot_images[image_id];
+    return True(image.flags & ImageFlagBits::GpuModified) && image.first_gpu_write_frame != 0 &&
+           image.first_gpu_write_frame <= frame_tick;
+}
+
+template <class P>
+bool TextureCache<P>::PublishComputeCollisionImage(u32 index) {
+    const auto view_id = VisitImageView(index, true);
+    if (view_id == NULL_IMAGE_VIEW_ID || !slot_image_views[view_id].image_id) {
+        return false;
+    }
+    const ImageId image_id = slot_image_views[view_id].image_id;
+    Image& image = slot_images[image_id];
+    const auto& info = image.info;
+    if (info.type != ImageType::Linear || info.format != PixelFormat::R16G16B16A16_SNORM ||
+        info.size.width != 256 || info.size.height != 256 || info.size.depth != 1 ||
+        info.pitch != 2048 || info.resources.layers != 1 || info.resources.levels != 1 ||
+        !IsDownloadable(image) ||
+        !gpu_memory->IsFullyMappedRange(image.gpu_addr, image.guest_size_bytes)) {
+        return false;
+    }
+    // The next fence downloads it and writes it back once the GPU reaches that fence, the same
+    // path as a preemptive render-target download. No wait for the GPU here.
+    uncommitted_downloads.emplace_back(PendingImageDownload<Image>{true, 0, image_id});
+    return true;
+}
+
+template <class P>
 typename P::ImageView& TextureCache<P>::GetImageView(u32 index) noexcept {
     // Not compute!
     const auto image_view_id = VisitImageView(index, false);
@@ -697,14 +752,13 @@ SamplerId TextureCache<P>::GetSamplerId(u32 index, bool compute) {
         LOG_TRACE(HW_GPU, "Invalid sampler index={}", index);
         return NULL_SAMPLER_ID;
     }
-    auto const map_index = index | (compute ? Common::SlotId::TAGGED_VALUE : 0);
     auto const [descriptor, is_new] = table.Read(*gpu_memory, index);
     if (is_new) {
-        auto const id = FindSampler(descriptor, compute);
-        channel_state->sampler_ids.insert_or_assign(map_index, id);
+        const auto id = FindSampler(descriptor, compute);
+        table.bound_ids[index] = id;
         return id;
     }
-    return channel_state->sampler_ids.find(map_index)->second;
+    return table.bound_ids[index];
 }
 
 template <class P>
@@ -967,26 +1021,23 @@ ImageViewId TextureCache<P>::VisitImageView(u32 index, bool compute) {
         LOG_TRACE(HW_GPU, "Invalid image view index={}", index);
         return NULL_IMAGE_VIEW_ID;
     }
-    auto const map_index = index | (compute ? Common::SlotId::TAGGED_VALUE : 0);
-    // Is new (on the tegra engine side)?
     auto const [descriptor, is_new] = table.Read(*gpu_memory, index);
     if (is_new) {
         if (IsValidEntry(*gpu_memory, descriptor)) {
-            // Is new (registered view) on the texture cache side?
             const auto [pair, is_new_tc] = channel_state->image_views.try_emplace(descriptor);
             if (is_new_tc)
                 pair->second = CreateImageView(descriptor);
             PrepareImageView(pair->second, false, false);
-            channel_state->image_view_ids.insert_or_assign(map_index, pair->second);
+            table.bound_ids[index] = pair->second;
             return pair->second;
         }
-        channel_state->image_view_ids.insert_or_assign(map_index, NULL_IMAGE_VIEW_ID);
+        table.bound_ids[index] = NULL_IMAGE_VIEW_ID;
         return NULL_IMAGE_VIEW_ID;
     }
-    auto const it = channel_state->image_view_ids.find(map_index);
-    if (it->second != NULL_IMAGE_VIEW_ID)
-        PrepareImageView(it->second, false, false);
-    return it->second;
+    const auto id = table.bound_ids[index];
+    if (id != NULL_IMAGE_VIEW_ID)
+        PrepareImageView(id, false, false);
+    return id;
 }
 
 template <class P>
@@ -1764,6 +1815,7 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         // Only upload modified images
         return;
     }
+    image.first_gpu_write_frame = 0;
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::TextureUpload};
 
     if (!image.partial_dirty_pages.empty() || !image.partial_remapped.empty()) {
@@ -2173,9 +2225,12 @@ void TextureCache<P>::InvalidateScale(Image& image) {
     for (size_t c : active_channel_ids) {
         auto& channel_info = channel_storage[c];
 
-        if constexpr (ENABLE_VALIDATION)
-            for (auto& e : channel_info.image_view_ids)
-                e.second = CORRUPT_ID;
+#ifndef NDEBUG
+        if constexpr (ENABLE_VALIDATION) {
+            std::ranges::fill(channel_info.graphics_image_table.bound_ids, CORRUPT_ID);
+            std::ranges::fill(channel_info.compute_image_table.bound_ids, CORRUPT_ID);
+        }
+#endif
         channel_info.graphics_image_table.Invalidate();
         channel_info.compute_image_table.Invalidate();
     }
@@ -3657,9 +3712,12 @@ void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     }
     for (size_t c : active_channel_ids) {
         auto& channel_info = channel_storage[c];
-        if constexpr (ENABLE_VALIDATION)
-            for (auto& e : channel_info.image_view_ids)
-                e.second = CORRUPT_ID;
+#ifndef NDEBUG
+        if constexpr (ENABLE_VALIDATION) {
+            std::ranges::fill(channel_info.graphics_image_table.bound_ids, CORRUPT_ID);
+            std::ranges::fill(channel_info.compute_image_table.bound_ids, CORRUPT_ID);
+        }
+#endif
         if (!defer_view_removal) {
             channel_info.graphics_image_table.Invalidate();
             channel_info.compute_image_table.Invalidate();
@@ -3743,6 +3801,9 @@ void TextureCache<P>::FlushDeferredViewRemovals() {
 template <class P>
 void TextureCache<P>::MarkModification(ImageBase& image) noexcept {
     image.flags |= ImageFlagBits::GpuModified;
+    if (image.first_gpu_write_frame == 0) {
+        image.first_gpu_write_frame = frame_tick + 1;
+    }
     image.modification_tick = ++modification_tick;
     if (Nx2Stages::GpuPages().Live() && !image.nx2_pages_set) [[unlikely]] {
         Nx2MarkImagePages(image, [&](auto&& func) { ForEachSparseSegment(image, func); });
