@@ -1652,6 +1652,18 @@ void NoteReadPeekVerify(bool differed) {
 // just sent writes on the back, from the front's registers, or the work it starts. `words`: the
 // constant buffer words written; `executable`: in the execution mask; `instance_loop`: a method
 // of an instance loop. Out of line: the front's path keeps a call.
+// EDEN_NX2_DMA_READ_PEEK without the diag lines: the methods whose writes or work an MME DMA read
+// must wait for (FrontDiagNote's). Draw work is not among them (the read's buffer cache check
+// covers it), so other methods are not noted: noting every executable one cost the front more
+// than the drains it saved.
+constexpr bool FrontTrackedMethod(u32 method) {
+    constexpr u32 cb_data = MAXWELL3D_REG_INDEX(const_buffer.buffer);
+    return (method >= cb_data && method < cb_data + 16) ||
+           method == MAXWELL3D_REG_INDEX(report_semaphore.query) ||
+           method == MAXWELL3D_REG_INDEX(sync_info) ||
+           method == MAXWELL3D_REG_INDEX(inline_data) || method == MAXWELL3D_REG_INDEX(draw.end);
+}
+
 YUZU_NO_INLINE void FrontDiagNote(const Tegra::MemoryManager& memory,
                                   const std::array<u32, Maxwell3D::Regs::NUM_REGS>& regs,
                                   u32 method, u32 words, bool executable, bool instance_loop) {
@@ -1900,9 +1912,8 @@ void Maxwell3D::FrontWrite(VideoCommon::GpuSplit& split, FrontState& fs, u32 met
     if (method == MAXWELL3D_REG_INDEX(report_semaphore.query)) {
         FrontNoteReport(split, fs);
     }
-    // Without the diag lines only what writes memory or starts work is noted (ReadPeekMode).
     if (VideoCommon::Nx2FrontDiag::On() ||
-        (execution_mask[method] && VideoCommon::Nx2FrontDiag::Tracking())) [[unlikely]] {
+        (FrontTrackedMethod(method) && VideoCommon::Nx2FrontDiag::Tracking())) [[unlikely]] {
         FrontDiagNote(memory_manager, fs.regs, method, 1, execution_mask[method],
                       DrawManager::IsInstanceLoopMethod(method));
     }
@@ -2054,7 +2065,7 @@ void Maxwell3D::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit
         FrontNoteReport(split, fs);
     }
     if (amount != 0 && (VideoCommon::Nx2FrontDiag::On() ||
-                        (execution_mask[method] && VideoCommon::Nx2FrontDiag::Tracking())))
+                        (FrontTrackedMethod(method) && VideoCommon::Nx2FrontDiag::Tracking())))
         [[unlikely]] {
         FrontDiagNote(memory_manager, fs.regs, method, amount, execution_mask[method],
                       DrawManager::IsInstanceLoopMethod(method));
@@ -2260,7 +2271,7 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
         fs.draw_pending = false;
         split.DeferTo<VideoCommon::DeferTarget::OnA>(
             [this, system_ptr = &system] { FinishFrontMacro(*system_ptr); });
-        if (Diag::Tracking()) [[unlikely]] {
+        if (diag) [[unlikely]] {
             Diag::NoteDeferredDraw(false, false, true);
         }
     }
@@ -2525,7 +2536,7 @@ void Maxwell3D::FrontIndirectDraw(Core::System& system, VideoCommon::GpuSplit& s
     held = {payload, start, split.WritePosition(), split.Session()};
     fs.indirect_interposer = 0;
     fs.gap_methods = 0;
-    if (VideoCommon::Nx2FrontDiag::Tracking()) [[unlikely]] {
+    if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
         VideoCommon::Nx2FrontDiag::NoteWork(VideoCommon::Nx2FrontDiag::WorkKind::Draw);
     }
 }
