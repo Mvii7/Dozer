@@ -6,6 +6,13 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased (Dozer)
+
+- The texture cache asks the driver for the VRAM in use every 4 frames instead of every frame
+  (`EDEN_NX2_VRAM_QUERY_FRAMES`, `=1` every frame), and the buffer cache no longer asks with Switch
+  2 titles, which do not use the figure. The query is a driver call: ~1.7% of Donkey Kong Bananza's
+  GPU memory stage.
+
 ## Dozer 0.1.6 (`v0.1.6`)
 
 - Donkey Kong Bananza: a **Foliage off** box in its Properties > Tuning, under Dynamic frame rate

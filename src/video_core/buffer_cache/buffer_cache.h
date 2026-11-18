@@ -144,11 +144,13 @@ void BufferCache<P>::TickFrame() {
     const bool skip_preferred = hits * 256 < shots * 251;
     channel_state->uniform_buffer_skip_cache_size = skip_preferred ? DEFAULT_SKIP_CACHE_SIZE : 0;
 
-    // If we can obtain the memory info, use it instead of the estimate.
-    if (runtime.CanReportMemoryUsage()) {
+    const bool native_tiling = gpu_memory != nullptr && gpu_memory->UsesNativeTiling();
+    // If we can obtain the memory info, use it instead of the estimate. Not with native tiling,
+    // which collects by the buffers' own size: the query is a driver call (~0.5% of GPUMem).
+    if (!native_tiling && runtime.CanReportMemoryUsage()) {
         total_used_memory = runtime.GetDeviceMemoryUsage();
     }
-    if (gpu_memory != nullptr && gpu_memory->UsesNativeTiling()) {
+    if (native_tiling) {
         // Switch 2 titles fill the device with textures (their collector watches the budget);
         // title 1's buffers were ~200 MiB of an 8 GB GPU's ~6.8 GB in use, yet this collector
         // ran aggressively every frame on the device-wide figure, evicting up to 64 buffers (and

@@ -455,8 +455,15 @@ void TextureCache<P>::TickFrame() {
             }
         }
     }
-    // If we can obtain the memory info, use it instead of the estimate.
-    if (runtime.CanReportMemoryUsage()) {
+    // If we can obtain the memory info, use it instead of the estimate. EDEN_NX2_VRAM_QUERY_FRAMES
+    // (default 4, 1 = every frame): the query is a driver call (~1% of GPUMem in title 1), so it
+    // is made every few frames; the image sizes made and deleted in between move the figure on.
+    static const u64 query_frames = [] {
+        const char* value = std::getenv("EDEN_NX2_VRAM_QUERY_FRAMES");
+        const u64 frames = value != nullptr ? std::strtoull(value, nullptr, 10) : 4ULL;
+        return (std::max)(frames, u64{1});
+    }();
+    if (runtime.CanReportMemoryUsage() && memory_query_frames++ % query_frames == 0) {
         total_used_memory = runtime.GetDeviceMemoryUsage();
     }
     // Every 600 frames: device memory in use against the collector's thresholds, and what the
