@@ -587,8 +587,8 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 result[ActorDrawDistance] = State::Applied;
             }
             if (nonclip != 0) {
-                const float far = static_cast<float>(nonclip) * 10.0f;
-                std::memcpy(text.data() + at, &far, sizeof(far));
+                const float nonclip_far = static_cast<float>(nonclip) * 10.0f;
+                std::memcpy(text.data() + at, &nonclip_far, sizeof(nonclip_far));
                 result[NonClipDistance] = State::Applied;
             }
         }
