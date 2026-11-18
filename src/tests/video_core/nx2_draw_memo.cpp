@@ -347,6 +347,47 @@ TEST_CASE("SummarizedRangeSet answers as the tree", "[video_core][nx2]") {
     RunSummaryAgainstTree<true>(0, 99);
 }
 
+TEST_CASE("SummarizedRangeSet repeated adds", "[video_core][nx2]") {
+    // The same window added every draw (EDEN_NX2_ADD_MEMO), with subtracts inside and around it.
+    std::mt19937_64 rng{7};
+    SummarizedRangeSet<true> summarized;
+    summarized.SetMode(1);
+    Common::RangeSet<u64> tree;
+    const u64 windows[] = {0x1'0000'0000ULL, 0x1'0080'0000ULL, 0x1'0100'0000ULL};
+    for (int step = 0; step < 20000; ++step) {
+        const u64 window = windows[rng() % 3];
+        const u64 offset = rng() % 0x80'0000;
+        const u64 size = 1 + rng() % 0x1000;
+        switch (rng() % 6) {
+        case 0:
+            summarized.Subtract(window + offset, size);
+            tree.Subtract(window + offset, size);
+            break;
+        case 1:
+            summarized.Add(window + offset, size);
+            tree.Add(window + offset, size);
+            break;
+        case 2:
+            REQUIRE(summarized.Intersects(window + offset, size) ==
+                    tree.Intersects(window + offset, size));
+            break;
+        default:
+            summarized.Add(window, 0x80'0000);
+            tree.Add(window, 0x80'0000);
+            break;
+        }
+        if (step == 10000) {
+            summarized.Clear();
+            tree.Clear();
+        }
+    }
+    std::vector<std::pair<u64, u64>> all_summarized;
+    std::vector<std::pair<u64, u64>> all_tree;
+    summarized.ForEach([&](u64 begin, u64 end) { all_summarized.emplace_back(begin, end); });
+    tree.ForEach([&](u64 begin, u64 end) { all_tree.emplace_back(begin, end); });
+    REQUIRE(all_summarized == all_tree);
+}
+
 TEST_CASE("SummarizedRangeSet summary", "[video_core][nx2]") {
     SummarizedRangeSet<true> set;
     set.SetMode(1);

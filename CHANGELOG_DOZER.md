@@ -6,6 +6,24 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased (Dozer)
+
+- Buffer cache: a GPU-written range (each written storage binding, every draw) that the
+  GPU-written range set already holds whole, with no subtract reaching it since, is no longer
+  added to the set again (about 4% of the memory stage in Donkey Kong Bananza).
+  `EDEN_NX2_ADD_MEMO=0` turns it off; start-safe.bat turns it off.
+- Buffer cache: the GPU-written range set (about 20000 ranges in Donkey Kong Bananza, added to
+  and subtracted from by every draw's written storage bindings and inline writes) is a bitmap by
+  4 KiB page instead of a tree, so each change costs its pages instead of a tree walk (about 10%
+  of the memory stage went to the tree). `EDEN_NX2_PAGE_RANGES=0` brings back the tree;
+  start-safe.bat does.
+- Split GPU thread, with `EDEN_NX2_ACQUIRE_PEEK=1` (the Balanced, Performance and Experimental
+  presets, every game): an MME DMA read no longer drains the back when no write the front sent
+  and the back has not run reaches its words, no work but draws is queued and the buffer cache
+  holds no newer data. In Donkey Kong Bananza 76-84% of them go on without one.
+  `EDEN_NX2_DMA_READ_PEEK=0` drains as before, `=2` drains and logs the reads the drain changed
+  (none of 55,084 in Donkey Kong Bananza).
+
 ## Dozer 0.1.6 (`v0.1.6`)
 
 - Donkey Kong Bananza: a **Foliage off** box in its Properties > Tuning, under Dynamic frame rate

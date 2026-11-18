@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <optional>
+#include <string>
 
 #include "common/assert.h"
 #include "common/logging.h"
@@ -35,6 +36,8 @@
 namespace Tegra::Engines {
 
 namespace {
+
+namespace Diag = VideoCommon::Nx2FrontDiag;
 
 constexpr u32 Gf100BindClassMask = 0xffff;
 constexpr u32 Gf100BindValidMask =  0x1f0000 | Gf100BindClassMask;
@@ -127,7 +130,7 @@ void NoteSplitRelease(DmaPusher& dma_pusher, GPUVAddr address, u32 payload, bool
 // A release the puller queued for the back (PeekTracking). A 16-byte one also writes a zero
 // word after the payload and the timestamp after that.
 void NoteRelease(DmaPusher& dma_pusher, GPUVAddr address, u32 payload, bool timestamp) {
-    if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
+    if (VideoCommon::Nx2FrontDiag::Tracking()) [[unlikely]] {
         VideoCommon::Nx2FrontDiag::NoteWrite(dma_pusher.memory_manager,
                                              VideoCommon::Nx2FrontDiag::WriteKind::Release,
                                              address, timestamp ? 16 : 4);
@@ -161,6 +164,13 @@ struct PeekStats {
     u64 resumes_latched{}; ///< Resumed without a drain, latched by a release (=1)
     u64 resumes_skipped{}; ///< Resumed without a drain, met in memory (=1)
     u64 sem_execute_deferred{}; ///< SEM_EXECUTE acquires checked on the back (SEMEXEC_DEFER)
+    // Acquires memory did not meet before their drain (front diag), by what was pending for the
+    // back over the word: a write of each kind, no write but work, nothing. Of them, met after.
+    static constexpr size_t NoWriteWork = static_cast<size_t>(Diag::WriteKind::Count);
+    static constexpr size_t NothingPending = NoWriteWork + 1;
+    std::array<u64, NothingPending + 1> unmet{};
+    std::array<u64, NothingPending + 1> unmet_met_after{};
+    std::array<u64, static_cast<size_t>(Diag::WorkKind::Count)> unmet_work{}; ///< NoWriteWork's
 };
 
 thread_local PeekStats t_peek_stats;
@@ -198,6 +208,26 @@ void LogPeekStats(const PeekStats& stats, u64 window_ns) {
              rate(stats.resumes_met), rate(stats.resumes_may_skip), rate(stats.resumes_latched),
              rate(stats.resumes_skipped), rate(stats.sem_execute_deferred), tracker.Words(),
              tracker.WordsNotMonotonic(), tracker.QueuedReleases());
+    if (!Diag::On()) {
+        return;
+    }
+    std::string by_kind;
+    for (size_t i = 0; i < stats.unmet.size(); ++i) {
+        const char* const name = i < Diag::write_kind_names.size() ? Diag::write_kind_names[i]
+                                 : i == PeekStats::NoWriteWork   ? "no write, work"
+                                                                 : "nothing";
+        by_kind += fmt::format("{}{} {:.0f} ({:.0f} met after)", i == 0 ? "" : ", ", name,
+                               rate(stats.unmet[i]), rate(stats.unmet_met_after[i]));
+    }
+    std::string work;
+    for (size_t i = 0; i < stats.unmet_work.size(); ++i) {
+        work += fmt::format("{}{} {:.0f}", i == 0 ? "" : ", ", Diag::work_kind_names[i],
+                            rate(stats.unmet_work[i]));
+    }
+    LOG_INFO(HW_GPU,
+             "GPU thread acquires unmet before the drain per second, by what was pending over the "
+             "word: {} | work pending of the no-write ones: {}",
+             by_kind, work);
 }
 
 PeekStats& PeekStatsNow() {
@@ -298,6 +328,52 @@ void PeekAfter(DmaPusher& dma_pusher, const PeekRead& read, GPUVAddr address, u3
     } else if ((reported & (reported - 1)) == 0) {
         LOG_WARNING(HW_GPU, "Acquire peek: {} acquires met in memory but not after the drain",
                     reported);
+    }
+}
+
+// An acquire memory did not meet before its drain (front diag): what was pending over the word.
+struct UnmetClass {
+    bool counted{};
+    size_t bucket{};
+    u32 work{};
+};
+
+UnmetClass ClassifyUnmet(const PeekRead& read, u32 operation, u32 value) {
+    UnmetClass result;
+    if (!read.tracked || !read.device || !VideoCommon::Nx2Profile::Enabled() || !Diag::On() ||
+        Peek::Matches(operation, read.raw, value)) {
+        return result;
+    }
+    auto& state = Diag::Window();
+    const u64 consumed = VideoCommon::GpuSplit::Get().DiagConsumed();
+    const auto pending = state.pending.Query(*read.device, *read.device + 4, consumed);
+    result.counted = true;
+    result.work = pending.work;
+    // The kinds that write a semaphore's value first
+    constexpr std::array order{Diag::WriteKind::Release, Diag::WriteKind::Report,
+                               Diag::WriteKind::Dma,     Diag::WriteKind::Inline,
+                               Diag::WriteKind::CbData,  Diag::WriteKind::Download};
+    result.bucket = pending.work != 0 ? PeekStats::NoWriteWork : PeekStats::NothingPending;
+    for (const Diag::WriteKind kind : order) {
+        if ((pending.writes & (1U << static_cast<u32>(kind))) != 0) {
+            result.bucket = static_cast<size_t>(kind);
+            break;
+        }
+    }
+    return result;
+}
+
+void CountUnmet(const UnmetClass& unmet, bool met_after) {
+    if (!unmet.counted) {
+        return;
+    }
+    auto& stats = PeekStatsNow();
+    ++stats.unmet[unmet.bucket];
+    stats.unmet_met_after[unmet.bucket] += met_after ? 1 : 0;
+    if (unmet.bucket == PeekStats::NoWriteWork) {
+        for (size_t i = 0; i < stats.unmet_work.size(); ++i) {
+            stats.unmet_work[i] += (unmet.work >> i) & 1;
+        }
     }
 }
 
@@ -676,7 +752,7 @@ void Puller::ProcessFenceActionMethod(DmaPusher& dma_pusher) {
         // UNIMPLEMENTED_MSG("Channel Scheduling pending.");
         // WaitFence(regs.fence_action.syncpoint_id, regs.fence_value);
         OnBack([rasterizer = dma_pusher.rasterizer] { rasterizer->ReleaseFences(); });
-        if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
+        if (VideoCommon::Nx2FrontDiag::Tracking()) [[unlikely]] {
             VideoCommon::Nx2FrontDiag::NoteWork(VideoCommon::Nx2FrontDiag::WorkKind::Fences);
         }
         break;
@@ -684,7 +760,7 @@ void Puller::ProcessFenceActionMethod(DmaPusher& dma_pusher) {
         OnBack([rasterizer = dma_pusher.rasterizer, id = static_cast<u32>(regs.fence_action.syncpoint_id.Value())] {
             rasterizer->SignalSyncPoint(id);
         });
-        if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
+        if (VideoCommon::Nx2FrontDiag::Tracking()) [[unlikely]] {
             VideoCommon::Nx2FrontDiag::NoteWork(VideoCommon::Nx2FrontDiag::WorkKind::Syncpoint);
         }
         break;
@@ -765,9 +841,11 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             CountNoDrain(&NoDrainStats::drain_not_met);
         }
         CountNoDrain(&NoDrainStats::drained);
+        const UnmetClass unmet = ClassifyUnmet(peek, acquire.operation, acquire.value);
         DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerAcquire);
         const u32 current = ReadSemaphoreWord(dma_pusher, acquire.address);
         PeekAfter(dma_pusher, peek, acquire.address, acquire.operation, acquire.value, current);
+        CountUnmet(unmet, acquire.Matches(current));
         if (acquire.Matches(current)) {
             PeekMet(dma_pusher, peek, acquire.value);
             return;
@@ -847,7 +925,7 @@ void Puller::ProcessSemaphoreRelease(DmaPusher& dma_pusher) {
         rasterizer->Query(sequence_address, VideoCommon::QueryType::Payload,
                           VideoCommon::QueryPropertiesFlags::IsAFence, payload, 0);
     });
-    if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
+    if (VideoCommon::Nx2FrontDiag::Tracking()) [[unlikely]] {
         VideoCommon::Nx2FrontDiag::NoteWrite(dma_pusher.memory_manager,
                                              VideoCommon::Nx2FrontDiag::WriteKind::Release,
                                              sequence_address, 4);
@@ -911,7 +989,7 @@ void Puller::ProcessSemaphoreExecute(DmaPusher& dma_pusher, u32 argument) {
                 rasterizer->ReleaseFences();
                 CheckSemExecute(operation, address, memory_manager->Read<u32>(address), payload);
             });
-            if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
+            if (VideoCommon::Nx2FrontDiag::Tracking()) [[unlikely]] {
                 VideoCommon::Nx2FrontDiag::NoteWork(VideoCommon::Nx2FrontDiag::WorkKind::Fences);
             }
             return;

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstdlib>
 #include <memory>
 #include <span>
 #include <type_traits>
@@ -14,6 +15,7 @@
 
 #include "common/common_types.h"
 #include "common/range_sets.h"
+#include "video_core/buffer_cache/nx2_page_ranges.h"
 
 namespace VideoCommon {
 
@@ -166,6 +168,57 @@ private:
     u32 next{};
 };
 
+/// EDEN_NX2_PAGE_RANGES (on unless =0): a PageRangeSet in place of a Common::RangeSet. The
+/// GPU-written set holds about 20000 ranges in Donkey Kong Bananza, and each draw's written
+/// storage bindings and inline writes add and subtract some, a tree walk each.
+class PageOrTreeRangeSet {
+public:
+    [[nodiscard]] static bool UsePages() {
+        static const bool use = [] {
+            const char* const value = std::getenv("EDEN_NX2_PAGE_RANGES");
+            return value == nullptr || value[0] != '0';
+        }();
+        return use;
+    }
+
+    void Add(u64 addr, size_t size) {
+        pages_used ? pages.Add(addr, size) : tree.Add(addr, size);
+    }
+    void Subtract(u64 addr, size_t size) {
+        pages_used ? pages.Subtract(addr, size) : tree.Subtract(addr, size);
+    }
+    [[nodiscard]] bool Intersects(u64 addr, size_t size) const {
+        return pages_used ? pages.Intersects(addr, size) : tree.Intersects(addr, size);
+    }
+    template <typename Func>
+    void ForEachInRange(u64 addr, size_t size, Func&& func) const {
+        if (pages_used) {
+            pages.ForEachInRange(addr, size, std::forward<Func>(func));
+        } else {
+            tree.ForEachInRange(addr, size, std::forward<Func>(func));
+        }
+    }
+    template <typename Func>
+    void ForEach(Func&& func) const {
+        if (pages_used) {
+            pages.ForEach(std::forward<Func>(func));
+        } else {
+            tree.ForEach(std::forward<Func>(func));
+        }
+    }
+    void Clear() {
+        pages_used ? pages.Clear() : tree.Clear();
+    }
+    [[nodiscard]] bool Empty() const {
+        return pages_used ? pages.Empty() : tree.Empty();
+    }
+
+private:
+    bool pages_used = UsePages();
+    PageRangeSet pages;
+    Common::RangeSet<u64> tree;
+};
+
 /// EDEN_NX2_GPU_WRITTEN_FILTER: a Common::RangeSet (boost::icl, a tree under a pool allocator
 /// with a global lock) with a summary of where its ranges may lie, so that queries far from all
 /// of them answer without the tree: the hull of every range added since the last Clear or
@@ -199,10 +252,11 @@ public:
     SummarizedRangeSet() = default;
     SummarizedRangeSet(SummarizedRangeSet&& other) noexcept
         : set{std::move(other.set)}, mode{other.mode}, low{other.low}, high{other.high},
-          stats{other.stats} {
+          stats{other.stats}, added{other.added}, next_added{other.next_added} {
         static_assert(!PageBits, "moving the page summary is not supported");
         other.low = ~u64{0};
         other.high = 0;
+        other.added.fill({});
     }
     SummarizedRangeSet& operator=(SummarizedRangeSet&&) = delete;
 
@@ -212,6 +266,24 @@ public:
     }
 
     void Add(u64 addr, size_t size) {
+        // EDEN_NX2_ADD_MEMO (on unless =0): a range inside one added earlier, with no Subtract
+        // or Clear reaching it since, is in the set already (each written storage binding adds
+        // the same window every draw).
+        static const bool add_memo = [] {
+            const char* const value = std::getenv("EDEN_NX2_ADD_MEMO");
+            return value == nullptr || value[0] != '0';
+        }();
+        if (add_memo && size != 0) {
+            const u64 end = addr + size;
+            for (const Added& range : added) {
+                if (range.begin <= addr && end <= range.end && addr < end) {
+                    return;
+                }
+            }
+            if (addr < end) {
+                added[next_added++ % added.size()] = Added{addr, end};
+            }
+        }
         if (mode != 0 && size != 0) {
             ++stats.adds;
             low = (std::min)(low, addr);
@@ -224,6 +296,7 @@ public:
     }
 
     void Subtract(u64 addr, size_t size) {
+        ForgetAdded(addr, size);
         if (mode != 0) {
             ++stats.subtracts;
             if (Missed(addr, size)) {
@@ -266,6 +339,7 @@ public:
 
     void Clear() {
         set.Clear();
+        added.fill({});
         Reset();
     }
 
@@ -340,6 +414,20 @@ public:
     }
 
 private:
+    struct Added {
+        u64 begin;
+        u64 end; ///< Equal to begin: empty
+    };
+
+    void ForgetAdded(u64 addr, size_t size) noexcept {
+        const u64 end = addr + size < addr ? ~u64{0} : addr + size;
+        for (Added& range : added) {
+            if (range.begin < end && addr < range.end) {
+                range = {};
+            }
+        }
+    }
+
     static u64 WordMask(u64 page, u64 count) noexcept {
         return (count == 64 ? ~u64{0} : ((u64{1} << count) - 1)) << (page & 63);
     }
@@ -419,12 +507,14 @@ private:
 
     struct NoPages {};
 
-    Common::RangeSet<u64> set;
+    std::conditional_t<PageBits, PageOrTreeRangeSet, Common::RangeSet<u64>> set;
     int mode = 0;
     u64 low = ~u64{0};
     u64 high = 0;
     mutable Stats stats{};
     u64 rebuild_false_positives = 0;
+    std::array<Added, 4> added{}; ///< EDEN_NX2_ADD_MEMO: ranges the set holds whole
+    u32 next_added = 0;
     [[no_unique_address]] std::conditional_t<PageBits, std::unique_ptr<u64[]>, NoPages> pages{};
     [[no_unique_address]] std::conditional_t<PageBits, std::array<u64, REGION_WORDS>, NoPages>
         regions{};
