@@ -2203,6 +2203,60 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
 #endif
 }
 
+namespace {
+
+// EDEN_NX2_DMA_READ_NODRAIN: unset or 1, an MME DMA read of semaphore words goes on without
+// draining the split where DmaReadNeedsNoDrain allows it; 0 drains as before; 2 drains anyway
+// and logs where the words after the drain differ.
+enum class DmaReadMode : u8 { Off, On, Verify };
+
+DmaReadMode DmaReadNoDrain() {
+    static const DmaReadMode mode = [] {
+        const char* value = std::getenv("EDEN_NX2_DMA_READ_NODRAIN");
+        return value == nullptr    ? DmaReadMode::On
+               : value[0] == '0'   ? DmaReadMode::Off
+               : value[0] == '2'   ? DmaReadMode::Verify
+                                   : DmaReadMode::On;
+    }();
+    return mode;
+}
+
+// Whether an MME DMA read of [source, source + bytes) may read guest memory without waiting for
+// the back. In Mario Kart World about 450 reads a second, 6 words each, read semaphore words
+// (pages releases wrote first); with EDEN_NX2_GPU_PROFILE about 92% of them found nothing queued
+// that writes them and the drain never changed them, the rest had a release queued to them. So:
+// only pages written around the caches (releases, reports, downloads: Nx2UntrackedWritten),
+// releases that reach memory when the back runs them, no release of an engine on the back
+// queued, and no release the front sent to these words or a 16-byte one before them queued
+// (GpuSplit::QueuedSemaphoreWriteAt).
+bool DmaReadNeedsNoDrain(const Tegra::MemoryManager& memory, const VideoCommon::GpuSplit& split,
+                         GPUVAddr source, size_t bytes) {
+    const bool delay_fence =
+        Settings::IsGPUFenceBehaviorDefault()
+            ? Settings::IsGPULevelHigh()
+            : Settings::IsGPUFenceBehaviorBalanced() || Settings::IsGPUFenceBehaviorAccurate();
+    if (delay_fence || Settings::IsGPULevelHigh() || split.UnknownSemaphoreWriteQueued() ||
+        bytes > 64 || (source & 3) != 0) {
+        return false;
+    }
+    for (GPUVAddr address = source >= 12 ? source - 12 : 0; address < source + bytes;
+         address += sizeof(u32)) {
+        const auto device = memory.GpuToCpuAddress(address);
+        if (!device) {
+            return false;
+        }
+        if (address >= source && !Tegra::Nx2UntrackedWritten(*device, sizeof(u32))) {
+            return false;
+        }
+        if (split.QueuedSemaphoreWriteAt(*device)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // Anonymous namespace
+
 void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 method,
                              u32 count) {
     namespace Diag = VideoCommon::Nx2FrontDiag;
@@ -2214,16 +2268,51 @@ void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 m
     const bool diag = Diag::On();
     const Diag::ReadProbe probe =
         diag ? Diag::DmaReadBefore(memory_manager, source, words) : Diag::ReadProbe{};
-    // The words may be written by methods still queued for the back (indirect draw arguments
-    // from a culling dispatch), and the caches that may hold newer ones belong to it.
-    const bool waited = Diag::CountDrain(split, VideoCommon::Nx2Profile::DrainSite::FrontDmaRead);
     if (VideoCommon::Nx2Profile::Enabled()) {
         VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::DmaReadBytes, read_bytes);
     }
+    const DmaReadMode mode = DmaReadNoDrain();
+    const bool no_drain = mode != DmaReadMode::Off && !diag &&
+                          DmaReadNeedsNoDrain(memory_manager, split, source, read_bytes);
+    if (no_drain && mode == DmaReadMode::On) {
+        for (u32 i = 0; i < words; ++i) {
+            const u32 word = memory_manager.Read<u32>(source + u64{i} * sizeof(u32));
+            if (method == 0x158) {
+                fs.parameters.push_back(word);
+            } else if (ram + i < native_data_ram.size()) {
+                native_data_ram[ram + i] = word;
+            }
+        }
+        return;
+    }
+    std::array<u32, 16> before{};
+    if (no_drain) {
+        memory_manager.ReadBlockUnsafe(source, before.data(), read_bytes);
+    }
+    // The words may be written by methods still queued for the back (indirect draw arguments
+    // from a culling dispatch), and the caches that may hold newer ones belong to it.
+    const bool waited = Diag::CountDrain(split, VideoCommon::Nx2Profile::DrainSite::FrontDmaRead);
     const bool gpu_dirty =
         memory_manager.IsMemoryDirty(source, read_bytes, VideoCommon::CacheType::BufferCache);
     if (gpu_dirty) {
         memory_manager.FlushRegion(source, read_bytes, VideoCommon::CacheType::BufferCache);
+    }
+    if (no_drain) {
+        // Verify: the words the read would have taken without the drain, against these.
+        static u64 reads{};
+        static u64 differed{};
+        ++reads;
+        std::array<u32, 16> after{};
+        memory_manager.ReadBlockUnsafe(source, after.data(), read_bytes);
+        if (std::memcmp(before.data(), after.data(), read_bytes) != 0 && differed++ < 16) {
+            LOG_WARNING(HW_GPU, "DMA read verify: {} words at {:#x} changed by the drain ({:#x} "
+                        "to {:#x} first); {} of {} reads so far",
+                        words, source, before[0], after[0], differed, reads);
+        }
+        if ((reads & (reads - 1)) == 0 && reads >= 1024) {
+            LOG_INFO(HW_GPU, "DMA read verify: {} of {} reads without a drain differed", differed,
+                     reads);
+        }
     }
     for (u32 i = 0; i < words; ++i) {
         const u32 word = memory_manager.Read<u32>(source + u64{i} * sizeof(u32));
