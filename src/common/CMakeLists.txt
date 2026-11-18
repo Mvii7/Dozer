@@ -46,6 +46,10 @@ add_library(
     display_hdr.h
     div_ceil.h
     dynamic_library.cpp
+    jit_symbols.cpp
+    jit_symbols.h
+    nx2_sampler.cpp
+    nx2_sampler.h
     dynamic_library.h
     elf.h
     error.cpp

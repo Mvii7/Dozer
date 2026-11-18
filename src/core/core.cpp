@@ -12,6 +12,7 @@
 #include "audio_core/audio_core.h"
 #include "common/fs/fs.h"
 #include "common/logging.h"
+#include "common/nx2_sampler.h"
 #include "common/adpf.h"
 #include "common/settings.h"
 #include "common/settings_enums.h"
@@ -481,6 +482,7 @@ struct System::Impl {
             game_info.version = title_version;
             room_member->SendGameInfo(game_info);
         }
+        Nx2Sampler::StartFromEnvironment();
         return SystemResultStatus::Success;
     }
 
