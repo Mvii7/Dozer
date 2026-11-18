@@ -1648,10 +1648,6 @@ void NoteReadPeekVerify(bool differed) {
     }
 }
 
-// Front diag (EDEN_NX2_GPU_PROFILE, nx2_front_diag_hooks.h): the guest memory a method the front
-// just sent writes on the back, from the front's registers, or the work it starts. `words`: the
-// constant buffer words written; `executable`: in the execution mask; `instance_loop`: a method
-// of an instance loop. Out of line: the front's path keeps a call.
 // EDEN_NX2_DMA_READ_PEEK without the diag lines: the methods whose writes or work an MME DMA read
 // must wait for (FrontDiagNote's). Draw work is not among them (the read's buffer cache check
 // covers it), so other methods are not noted: noting every executable one cost the front more
@@ -1664,6 +1660,10 @@ constexpr bool FrontTrackedMethod(u32 method) {
            method == MAXWELL3D_REG_INDEX(inline_data) || method == MAXWELL3D_REG_INDEX(draw.end);
 }
 
+// Front diag (EDEN_NX2_GPU_PROFILE, nx2_front_diag_hooks.h): the guest memory a method the front
+// just sent writes on the back, from the front's registers, or the work it starts. `words`: the
+// constant buffer words written; `executable`: in the execution mask; `instance_loop`: a method
+// of an instance loop. Out of line: the front's path keeps a call.
 YUZU_NO_INLINE void FrontDiagNote(const Tegra::MemoryManager& memory,
                                   const std::array<u32, Maxwell3D::Regs::NUM_REGS>& regs,
                                   u32 method, u32 words, bool executable, bool instance_loop) {
