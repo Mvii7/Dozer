@@ -8,6 +8,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -130,10 +131,19 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         Refresh();
     });
 
+    bool separated = false;
     for (std::size_t key = 0; key < Perf::KeyCount; ++key) {
         const Entry* entry = EntryOf(key);
         if (entry->game != Perf::Game::Other && entry->game != game) {
             continue;
+        }
+        // A line between the settings of every game and this game's own
+        if (entry->game != Perf::Game::Other && !separated) {
+            auto* line = new QFrame(this);
+            line->setFrameShape(QFrame::HLine);
+            line->setFrameShadow(QFrame::Sunken);
+            form->addRow(line);
+            separated = true;
         }
         auto* box = new QCheckBox(this);
         auto* reset = CreateResetButton(this);
