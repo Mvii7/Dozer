@@ -40,12 +40,13 @@ struct Settings {
     int voxel_surface = 0;     ///< % of the voxel surface effects' buffer
     bool voxel_surface_off = false;
     bool depth_collision_off = false;
+    int object_lod = 0;        ///< % of the graphics parameters' model LOD thresholds
 
     [[nodiscard]] bool Active() const {
         return off || cap != 0 || frustum_off || density != 0 || far_clip != 0 || lod != 0 || emit != 0 || particles != 0 ||
                alive != 0 || material != 0 || emit_off ||
                particles_off || alive_off || material_off || voxel_emitter != 0 ||
-               voxel_surface != 0 || voxel_surface_off || depth_collision_off;
+               voxel_surface != 0 || voxel_surface_off || depth_collision_off || object_lod != 0;
     }
 };
 
@@ -74,7 +75,8 @@ inline Settings FromEnvironment() {
             ReadEnv(Id::EffectParticleOff) != 0, ReadEnv(Id::EffectAliveOff) != 0,
             ReadEnv(Id::EffectMaterialOff) != 0,
             ReadEnv(Id::VoxelEmitterBuffer), ReadEnv(Id::VoxelSurfaceBuffer),
-            ReadEnv(Id::VoxelSurfaceEffectOff) != 0, ReadEnv(Id::DepthCollisionEffectOff) != 0};
+            ReadEnv(Id::VoxelSurfaceEffectOff) != 0, ReadEnv(Id::DepthCollisionEffectOff) != 0,
+            ReadEnv(Id::ObjectLod)};
 }
 
 constexpr std::string_view SystemSettingsPath = "ClusteredRendering/SystemSettings.alsarc.zs";
@@ -82,6 +84,7 @@ constexpr std::string_view ModelSettingsPath = "ClusteredRendering/ModelSettings
 constexpr std::string_view MaterialSettingsPath = "ClusteredRendering/MaterialSettings.alsarc.zs";
 constexpr std::string_view EffectSettingsPath = "SystemData/EffectSettings.alsarc.zs";
 constexpr std::string_view SettingUnitPath = "MaterialEffect/SettingUnit.alsarc.zs";
+constexpr std::string_view GraphicsParamPath = "SystemData/ProjectGraphicsParam.alsarc.zs";
 
 namespace Detail {
 
@@ -375,6 +378,30 @@ inline bool PatchSettingUnits(std::span<u8> archive, const Settings& settings) {
                                 ? 1
                                 : std::max<u32>(in.U32(at) *
                                                     static_cast<u32>(settings.material) / 100, 1));
+                changed = true;
+            }
+        });
+    });
+    return changed;
+}
+
+/// Scales the model LOD thresholds (ModelLodThresholdFirst, Second, Third) of every graphics
+/// variant of a decompressed SystemData/ProjectGraphicsParam archive in place: the screen size
+/// above which a model without thresholds of its own uses a finer mesh (higher: coarser sooner).
+inline bool PatchGraphicsParam(std::span<u8> archive, const Settings& settings) {
+    if (settings.object_lod == 0) {
+        return false;
+    }
+    Detail::Reader in{archive};
+    bool changed = false;
+    Detail::ForEachSarcFile(in, [&](size_t base) {
+        Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
+            if (type == Detail::TypeFloat &&
+                (key == "ModelLodThresholdFirst" || key == "ModelLodThresholdSecond" ||
+                 key == "ModelLodThresholdThird")) {
+                Detail::Put(in, at,
+                            Detail::AsBits(Detail::AsFloat(in.U32(at)) *
+                                           static_cast<float>(settings.object_lod) / 100.0f));
                 changed = true;
             }
         });

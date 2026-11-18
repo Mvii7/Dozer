@@ -41,6 +41,7 @@ enum Id : size_t {
     CameraFar,         ///< the camera's far distance, % (EDEN_NX2_FAR_SCALE of the Selevet fork)
     ColorDecalMax,     ///< ColorDecalMaxNum
     MeshSimplify,      ///< terrain MeshSimplifyType: 1 Normal, 2 High, 3 SuperHigh, 4 NoSimplify, 5 Low
+    CharacterLod,      ///< each model's own LodThreshold0-2 (characters), % of the game's
     GgxFilterOff,      ///< IsUseGGXFilter forced off (reflection cube map filtering)
     CubeMapOcclusionOff, ///< IsUseCubeMapOcclusionCheck forced off
     OcclusionDepth,    ///< OcclusionQueryThresholdDepth, % of the game's
@@ -68,6 +69,7 @@ enum Id : size_t {
     FoliageDensity,    ///< foliage dynamic placement chance and rate, %
     FoliageFarClip,    ///< each foliage model's FarClipDistance, % of the game's
     FoliageLod,        ///< each foliage model's LodThreshold0-2, % of the game's (direction not known)
+    ObjectLod,         ///< the graphics parameters' ModelLodThresholdFirst-Third, % of the game's
     EffectEmitCap,     ///< EmitCountPerFrameMax (effects started per frame), % of the game's
     EffectParticleCap, ///< OneEmitterMaxParticleNum, % of the game's
     EffectAliveCap,    ///< the MaxAliveEffectsNum of the effect rules, % of the game's
@@ -114,6 +116,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"camera_far", "EDEN_NX2_DKQ_CAMERA_FAR", 10, 100, 100},
     {"color_decal_max", "EDEN_NX2_DKQ_COLOR_DECAL_MAX", 1, 660, 660},
     {"mesh_simplify", "EDEN_NX2_DKQ_MESH_SIMPLIFY", 1, 5, 1},
+    {"character_lod", "EDEN_NX2_DKQ_CHARACTER_LOD", 25, 400, 100},
     {"ggx_filter_off", "EDEN_NX2_DKQ_GGX_FILTER_OFF", 1, 1, 0},
     {"cubemap_occlusion_off", "EDEN_NX2_DKQ_CUBEMAP_OCCLUSION_OFF", 1, 1, 0},
     {"occlusion_depth", "EDEN_NX2_DKQ_OCCLUSION_DEPTH", 10, 400, 100},
@@ -141,6 +144,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"foliage_density", "EDEN_NX2_DKQ_FOLIAGE_DENSITY", 1, 100, 100},
     {"foliage_far_clip", "EDEN_NX2_DKQ_FOLIAGE_FAR_CLIP", 1, 100, 100},
     {"foliage_lod", "EDEN_NX2_DKQ_FOLIAGE_LOD", 10, 1000, 100},
+    {"object_lod", "EDEN_NX2_DKQ_OBJECT_LOD", 25, 400, 100},
     {"effect_emit_cap", "EDEN_NX2_DKQ_EFFECT_EMIT_CAP", 5, 100, 100},
     {"effect_particle_cap", "EDEN_NX2_DKQ_EFFECT_PARTICLE_CAP", 5, 100, 100},
     {"effect_alive_cap", "EDEN_NX2_DKQ_EFFECT_ALIVE_CAP", 5, 100, 100},
@@ -294,7 +298,9 @@ constexpr size_t DebrisRoutine = FarRoutine + 3 * FarRoutineWords; ///< after th
 constexpr size_t DebrisRoutineWords = 4;
 constexpr size_t DepthRoutine = DebrisRoutine + DebrisRoutineWords; ///< after the debris one
 constexpr size_t DepthRoutineWords = 5;
-constexpr size_t CaveWords = DepthRoutine + DepthRoutineWords;
+constexpr size_t LodRoutine = DepthRoutine + DepthRoutineWords; ///< three, after the depth one
+constexpr size_t LodRoutineWords = 5;
+constexpr size_t CaveWords = LodRoutine + 3 * LodRoutineWords;
 
 /// The upper half of a float, rounded: the constants are put in with one `movz wN, #x, lsl #16`.
 constexpr u32 FloatHigh(float value) {
@@ -699,6 +705,47 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
             put(routine + 4, scale);
             put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
             result[OcclusionDepth] = State::Applied;
+        }
+    }
+
+    // A model's own LOD thresholds (its ModelParam's LodThreshold0-2, which a model with
+    // IsUseUniqueLodThreshold, Donkey Kong's say, uses instead of the graphics parameters') are
+    // copied into the model as it loads; a parent's are loaded at the same three places:
+    //   ldr s0, [x20, #0xac]; ldr x8, [x19, #0x268]; str s0, [x8]      (and #0xb0 / #4, #0xb4 / #8)
+    // Each store becomes a jump to a routine that scales s0 first (s1 is not used there):
+    //   ldr s1, <scale>; fmul s0, s0, s1; str s0, [x8, #k]; b back; <scale>
+    // A threshold is the screen size above which the finer mesh is used: higher, coarser sooner.
+    if (const int lod = set(CharacterLod); lod != 0) {
+        constexpr u32 LdrX8X19Lods = 0xF9413668U;     // ldr x8, [x19, #0x268]
+        constexpr u32 LdrS1Literal = 0x1C000081U;     // ldr s1, #16: the word after the b
+        constexpr u32 FmulS0S0S1 = 0x1E210800U;
+        constexpr std::array<std::pair<u32, u32>, 3> sites{{
+            {0xac, 0xBD000100U}, // str s0, [x8]
+            {0xb0, 0xBD000500U}, // str s0, [x8, #4]
+            {0xb4, 0xBD000900U}, // str s0, [x8, #8]
+        }};
+        std::array<std::array<size_t, 1>, 3> at{};
+        bool found = CaveFree(LodRoutine, 3 * LodRoutineWords);
+        for (size_t i = 0; found && i < sites.size(); ++i) {
+            found = find({{0, LdrS(0, 20, sites[i].first)}, {1, LdrX8X19Lods}, {2, sites[i].second}},
+                          at[i]);
+        }
+        if (found) {
+            const float factor = percent(lod);
+            u32 scale;
+            std::memcpy(&scale, &factor, sizeof(scale));
+            for (size_t i = 0; i < sites.size(); ++i) {
+                const size_t routine = cave + LodRoutine + i * LodRoutineWords;
+                const size_t from = at[i][0] + 2;
+                put(routine, LdrS1Literal);
+                put(routine + 1, FmulS0S0S1);
+                put(routine + 2, sites[i].second);
+                put(routine + 3,
+                    0x14000000U | (static_cast<u32>((from + 1) - (routine + 3)) & 0x3FFFFFFU));
+                put(routine + 4, scale);
+                put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
+            }
+            result[CharacterLod] = State::Applied;
         }
     }
 

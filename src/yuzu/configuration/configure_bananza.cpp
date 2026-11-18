@@ -171,6 +171,11 @@ void ConfigureBananza::RetranslateUI() {
     texts[Quality::ColorDecalMax] = {
         tr("Colour decal limit"),
         tr("The most colour decals (paint marks) the game keeps; its own is 660.")};
+    texts[Quality::CharacterLod] = {
+        tr("Character LOD bias"),
+        tr("Scales the screen sizes at which models with thresholds of their own (Donkey Kong: "
+           "0.57 and 0.42 of the screen; other characters) switch to simpler meshes. Higher: "
+           "simpler meshes sooner, cheaper but coarser.")};
     texts[Quality::MeshSimplify] = {
         tr("Terrain mesh simplification"),
         tr("How the game simplifies the destructible terrain's meshes: 1 Normal (the game's "
@@ -269,6 +274,12 @@ void ConfigureBananza::RetranslateUI() {
            "own distance in the game's data (100 to 300 units). Lower: foliage ends closer to "
            "you but stays near you; 1% is a distance of 1 to 3 units, so about no foliage. "
            "Needs a restart.")};
+    texts[Quality::ObjectLod] = {
+        tr("Object LOD bias"),
+        tr("Scales the screen sizes at which models without thresholds of their own (most "
+           "objects and scenery) switch to simpler meshes (the game's: 0.19, 0.09, 0.05 of the "
+           "screen). Higher: simpler meshes sooner, cheaper but coarser. Changed in the game's "
+           "graphics settings file as it is read; needs a restart.")};
     texts[Quality::FoliageLod] = {
         tr("Foliage LOD bias"),
         tr("Scales when each foliage model switches to a simpler mesh. Which direction is "

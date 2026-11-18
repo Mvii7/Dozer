@@ -274,3 +274,18 @@ TEST_CASE("Nx2DkFoliage: voxel effect rows", "[core]") {
     REQUIRE(Read32(effects, root + 4) == 256);
     REQUIRE(Read32(effects, root + 8 + 4) == 0);
 }
+
+TEST_CASE("Nx2DkFoliage: the object LOD thresholds", "[core]") {
+    auto archive = Sarc(Byml({{"ModelLodThresholdFirst", 0xD2, Bits(0.25f)},
+                              {"ModelLodThresholdSecond", 0xD2, Bits(0.125f)},
+                              {"ShadowLodOffset", 0xD2, Bits(1.0f)}}));
+    Settings settings;
+    REQUIRE_FALSE(PatchGraphicsParam(archive, settings));
+    settings.object_lod = 200;
+    REQUIRE(settings.Active());
+    REQUIRE(PatchGraphicsParam(archive, settings));
+    const size_t root = 0x60 + Read32(archive, 12 + 0x60) + 4;
+    REQUIRE(Read32(archive, root + 4) == Bits(0.5f));
+    REQUIRE(Read32(archive, root + 8 + 4) == Bits(0.25f));
+    REQUIRE(Read32(archive, root + 16 + 4) == Bits(1.0f)); // the others are left alone
+}

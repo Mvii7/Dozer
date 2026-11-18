@@ -16,11 +16,11 @@ namespace {
 using namespace Loader::Nx2DkQuality;
 
 constexpr u32 Filler = 0x12345678;
-// A text segment of 0x2ec0 bytes in 0x3000: the free space starts at word 0xbb0, the terrain
-// LOD routines at 0xbb0 + CaveOffset.
-constexpr u32 TextSize = 0x2ec0;
+// A text segment of 0x2e80 bytes in 0x3000: the free space starts at word 0xba0, the terrain
+// LOD routines at 0xba0 + CaveOffset.
+constexpr u32 TextSize = 0x2e80;
 constexpr u32 AlignedSize = 0x3000;
-constexpr size_t Cave = 0xbb0 + CaveOffset;
+constexpr size_t Cave = 0xba0 + CaveOffset;
 constexpr size_t MinNear = 0x100, MaxFar = 0x120, MaxNear = 0x140, MinFar = 0x160;
 constexpr size_t GpuGetter = 0x200, FrameGetter = 0x210, BlurScaleGetter = 0x220;
 constexpr size_t BlurSamplesGetter = 0x230, CubeMapGetter = 0x240;
@@ -30,7 +30,7 @@ constexpr size_t DepthGetter = 0x290, RadiusGetter = 0x2a0, PolygonGetter = 0x2b
 constexpr size_t MeshStore = 0x500;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
 constexpr size_t Voxel = 0x400;
-constexpr size_t DebrisSite = 0x780;
+constexpr size_t DebrisSite = 0x780, LodSite = 0x7a0;
 constexpr size_t BorderSite = 0x740, ShadowMaskGetter = 0x760,
     FlagSite = 0x800;
 
@@ -78,6 +78,11 @@ struct Text {
         std::copy(std::begin(second), std::end(second), &words[FarB]);
         std::copy(std::begin(third), std::end(third), &words[FarC]);
         words[DebrisSite] = 0x528001E8;      // mov w8, #0xf
+        for (size_t i = 0; i < 3; ++i) {
+            words[LodSite + i * 4] = LdrS(0, 20, 0xac + static_cast<u32>(i) * 4);
+            words[LodSite + i * 4 + 1] = 0xF9413668;               // ldr x8, [x19, #0x268]
+            words[LodSite + i * 4 + 2] = 0xBD000100 + (static_cast<u32>(i) << 10); // str s0, [x8, #4i]
+        }
         words[DebrisSite + 14] = 0x91030288; // add x8, x20, #0xc0
         words[MeshStore] = 0xB90097E8;     // str w8, [sp, #0x94]
         words[MeshStore + 1] = 0xF9403260; // ldr x0, [x19, #0x60]
@@ -251,6 +256,25 @@ TEST_CASE("Nx2DkQuality: the mesh simplification type", "[core]") {
     expected[routine + 2] = 0xF9403260; // ldr x0, [x19, #0x60]
     expected[routine + 3] =
         0x14000000U | (static_cast<u32>((MeshStore + 2) - (routine + 3)) & 0x3FFFFFFU);
+    REQUIRE(text.words == expected);
+}
+
+TEST_CASE("Nx2DkQuality: the character LOD thresholds", "[core]") {
+    Text text;
+    std::vector<u32> expected = text.words;
+    const Result result = Apply(text.Bytes(), TextSize, AlignedSize, Only(CharacterLod, 200));
+    REQUIRE(result[CharacterLod] == State::Applied);
+    for (size_t i = 0; i < 3; ++i) {
+        const size_t routine = Cave + LodRoutine + i * LodRoutineWords;
+        const size_t from = LodSite + i * 4 + 2;
+        expected[from] = 0x14000000U | static_cast<u32>(routine - from);
+        expected[routine] = 0x1C000081;     // ldr s1, #16
+        expected[routine + 1] = 0x1E210800; // fmul s0, s0, s1
+        expected[routine + 2] = 0xBD000100 + (static_cast<u32>(i) << 10);
+        expected[routine + 3] =
+            0x14000000U | (static_cast<u32>((from + 1) - (routine + 3)) & 0x3FFFFFFU);
+        expected[routine + 4] = 0x40000000; // 2.0
+    }
     REQUIRE(text.words == expected);
 }
 
