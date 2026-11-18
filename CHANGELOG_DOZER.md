@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Donkey Kong Bananza: a **Foliage off** box in its Properties > Tuning, under Dynamic frame rate
+  (`EDEN_NX2_DK_FOLIAGE_OFF=1`). Its foliage settings files are changed as the RomFS is read (an
+  in-memory mod layer, `core/loader/nx2_dk_foliage.h`): no dynamic placement, no draw distance, draw
+  caps of 1. On in the Performance and Experimental presets and launchers, off in Balanced and Safe.
 - Draw setup looks up a sampler or image view by index in the descriptor table, instead of hashing
   that index. Deleting an image no longer walks every channel's view ids in a release build.
 - An ASTC texture's opacity scan uses a table of the 2048 block modes, instead of decoding each

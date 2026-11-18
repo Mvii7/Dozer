@@ -183,7 +183,10 @@ the patches check; for any other game they stay off. They are on until unticked,
 changes them (not even Safe), and they have no global setting. For Bananza the
 program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`,
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
-it steers the game when the patch is unticked or finds nothing to patch. The log says which were set ("Dozer settings for <title id>
+it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
+**Foliage off** box under its Dynamic frame rate box (`DK_FOLIAGE_OFF=1`): ticked by the
+Performance and Experimental presets, unticked by Balanced and Safe, and changeable per game; see
+"Donkey Kong Bananza foliage off" below. The log says which were set ("Dozer settings for <title id>
 ...").
 
 **When a change takes effect.** The switches are read once per session. The settings take effect
@@ -341,6 +344,19 @@ program's Tuning tab (the Dynamic frame rate box in Bananza's Properties, on unt
 preset changes it). With it the game's frame time varies by design (any rate between 40 and 60, in
 steps of 2); below 40 fps its target is 30 fps, and its speed stays right down to 24 fps. While it is applied,
 `PRESENT_INTERVAL_WORD` and `MODE_PACE` are set aside and presents are paced to every vblank.
+
+## Donkey Kong Bananza foliage off
+
+`EDEN_NX2_DK_FOLIAGE_OFF=1` turns Bananza's grass, flowers and plants off. As the game's RomFS is
+read, its three foliage settings files (`ClusteredRendering/SystemSettings`, `MaterialSettings`
+and `ModelSettings`) are changed in memory, as a mod layer below your own mods: no dynamic
+placement, every foliage model's draw distance set to nothing, and the draw caps set to 1. Nothing
+is written to disk. Foliage baked into a stage may still be loaded but is not drawn.
+
+`start-performance.bat` and `start-reactive-experimental.bat` set it; `start-balanced.bat` and
+`start-safe.bat` leave the foliage on. In the menu program it is the **Foliage off** box in
+Bananza's Properties > Tuning, which the Performance and Experimental presets tick and Balanced and
+Safe untick. It applies when the game starts.
 
 ## Mario Kart World dynamic frame rate (MKW-DYN)
 

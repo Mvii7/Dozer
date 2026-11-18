@@ -269,6 +269,13 @@
 # worse on our machine).
 #EDEN_NX2_DK_DYN_MIN_FPS=40
 
+# --- Donkey Kong Bananza foliage off (game-specific; core/loader/nx2_dk_foliage.h) ---
+# DK_FOLIAGE_OFF=1: as Bananza's RomFS is read, its foliage settings files (ClusteredRendering) get
+# no dynamic placement, a draw distance of nothing per model and draw caps of 1 (a mod layer made
+# in memory; nothing is written to disk): no grass, flowers or plants. Set by the Performance and
+# Experimental presets and launchers; Balanced and Safe leave the foliage on.
+#EDEN_NX2_DK_FOLIAGE_OFF=1
+
 # --- Mario Kart World dynamic frame rate (game-specific; core/loader/nx2_mkw_dynamic_fps.h) ---
 # MKW_DYN=1: while Mario Kart World's main module loads, patch its frame mode choice in memory
 # (after the Lichii fork's patch): the game picks 1 or 2 vblanks a frame from the real frame
