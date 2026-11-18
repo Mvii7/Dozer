@@ -46,7 +46,7 @@ YUZU_NO_INLINE void DiagNoteEngineSlow(const MemoryManager& memory,
 
 void DiagNoteEngine(const MemoryManager& memory, const Engines::EngineInterface* engine,
                     Engines::EngineTypes type, u32 method, const u32* arguments, u32 count) {
-    if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
+    if (VideoCommon::Nx2FrontDiag::Tracking()) [[unlikely]] {
         DiagNoteEngineSlow(memory, engine, type, method, arguments, count);
     }
 }

@@ -21,7 +21,13 @@ and `=0` brings back the 2.0.0 code path.
   not hold yet no longer drains the back when the last report semaphore or puller release the
   front queued to the word meets it and the back has not run it (in Donkey Kong Bananza about
   200 of 400 acquires a second, each a stall of the front for the whole back pipeline).
-  `EDEN_NX2_ACQUIRE_QUEUED=0` drains as before; start-safe.bat turns it off.
+  Compute report semaphore releases count as such releases too, and a pending acquire resumes
+  the same way. `EDEN_NX2_ACQUIRE_QUEUED=0` drains as before; start-safe.bat turns it off.
+- Split GPU thread: with `EDEN_NX2_ACQUIRE_PEEK=1`, an MME DMA read (600 to 1400 a second in
+  Donkey Kong Bananza, 92-98% of them unchanged by their drain) no longer drains the back when
+  no write the front sent and the back has not run reaches its words, no work but draws is
+  queued and the buffer cache holds no newer data. `EDEN_NX2_DMA_READ_PEEK=0` drains as before,
+  `=2` drains and logs the reads the drain changed; start-safe.bat turns it off.
 
 ## Dozer 0.1.6 (`v0.1.6`)
 

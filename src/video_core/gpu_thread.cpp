@@ -156,7 +156,7 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                 // in order, and so does the signal that the command ran.
                 auto* const rasterizer_ptr = renderer.ReadRasterizer();
                 namespace Diag = VideoCommon::Nx2FrontDiag;
-                const bool diag = Diag::On();
+                const bool diag = Diag::Tracking();
                 if (auto* submit_list = std::get_if<SubmitListCommand>(&next.data)) {
                     Profile::Scope scope{Profile::Zone::Push};
                     // Held-back guest CPU writes first (see the single-thread path below).

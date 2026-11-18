@@ -117,6 +117,11 @@
 # (default: goes on when the last report semaphore or puller release queued to its word meets
 # it and the back has not run it).
 #EDEN_NX2_ACQUIRE_QUEUED=0
+# DMA_READ_PEEK (with ACQUIRE_PEEK=1): an MME DMA read goes on without draining the back when no
+# write the front sent and the back has not run reaches its words, no work but draws is queued
+# and the buffer cache holds no newer data of them. 0 off, 1 on (default), 2 drains and logs
+# reads the drain changed. The front then notes what it sends as the diag lines do.
+#EDEN_NX2_DMA_READ_PEEK=0
 # FRONT_RUNS=0: increasing runs of 3D state methods go to the front word by word, as before.
 #EDEN_NX2_FRONT_RUNS=0
 # JIT_SAME: the front's macro JIT drops state writes that would change nothing. 0 off
