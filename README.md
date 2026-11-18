@@ -188,7 +188,9 @@ it steers the game when the patch is unticked or finds nothing to patch. Bananza
 Performance and Experimental presets, unticked by Balanced and Safe, and changeable per game; see
 "Donkey Kong Bananza foliage off" below. Under it, **Shadow quality** (Low, Medium, High, Very
 high: the sun shadow's 1 to 4 cascades, Very high the game's own; `DK_SHADOW_CASCADES=<1-3>`), which
-no preset changes; see "Donkey Kong Bananza shadow quality" below. The log says which were set ("Dozer settings for <title id>
+no preset changes; see "Donkey Kong Bananza shadow quality" below. Then **Reflections off**
+(`DK_REFLECTIONS_OFF=1`), also no preset's; with it unticked the program sets
+`DK_CUBEMAP_INTERVAL=24` (no box): see "Donkey Kong Bananza reflections" below. The log says which were set ("Dozer settings for <title id>
 ...").
 
 **When a change takes effect.** The switches are read once per session. The settings take effect
@@ -369,6 +371,18 @@ main module is patched as it loads, where the game sets up each shadow; the log 
 was ("sun shadow cascades capped at ..."). In the menu program it is the **Shadow quality** box in
 Bananza's Properties > Tuning: Low (1), Medium (2), High (3) and Very high (the game's own, unset).
 No preset changes it. It applies when the game starts.
+
+## Donkey Kong Bananza reflections
+
+Bananza captures the scene around the camera into a reflection cube map every 8 frames (each
+capture draws the scene again), which its shiny and wet surfaces reflect.
+`EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>` sets the frames between captures: higher means fewer draws
+and reflections that follow changes later. The menu program always sets 24 for Bananza (no box);
+set the variable in `nx2_switches.txt` to try another value, which wins over the program's.
+`EDEN_NX2_DK_REFLECTIONS_OFF=1` turns the cube map off: no captures, no reflections. In the menu
+program it is the **Reflections off** box in Bananza's Properties > Tuning; no preset changes it.
+Both are patched in the main module as it loads; the log says whether they were. They apply when
+the game starts.
 
 ## Mario Kart World dynamic frame rate (MKW-DYN)
 

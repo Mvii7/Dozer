@@ -10,6 +10,7 @@
 
 #include "common/common_types.h"
 #include "core/loader/nx2_dk_dynamic_fps.h"
+#include "core/loader/nx2_dk_reflections.h"
 #include "core/loader/nx2_mkw_dynamic_fps.h"
 
 // Anka's settings in the Qt program (anka.exe): the EDEN_NX2_* switches of the launchers
@@ -69,6 +70,9 @@ struct Switches {
     bool mkw_dyn = true;           ///< EDEN_NX2_MKW_DYN=1, Mario Kart World only
     // Game-specific, but set by the presets: on in Performance and Experimental, off in the others.
     bool dk_foliage_off = true;    ///< EDEN_NX2_DK_FOLIAGE_OFF=1, Bananza only
+    /// Bananza's reflections off (EDEN_NX2_DK_REFLECTIONS_OFF=1); no preset sets it. On or off,
+    /// Bananza also always gets a reflection capture interval (EDEN_NX2_DK_CUBEMAP_INTERVAL).
+    bool dk_reflections_off = false;
     /// Bananza's shadow quality, kept per game only: the sun shadow's most cascades, Low 1 to
     /// Very high 4 (the game's own); below it EDEN_NX2_DK_SHADOW_CASCADES=<n>. No preset sets it.
     int dk_shadow = ShadowVeryHigh;
@@ -129,10 +133,11 @@ inline constexpr std::array<Key, 7> Keys{{
 
 /// The game-specific keys: stored like the others, but outside the presets (but for
 /// bananza_foliage_off, which they set).
-inline constexpr std::array<Key, 3> GameKeys{{
+inline constexpr std::array<Key, 4> GameKeys{{
     {"bananza_dynamic_fps", &Switches::dk_dyn},
     {"mariokart_dynamic_fps", &Switches::mkw_dyn},
     {"bananza_foliage_off", &Switches::dk_foliage_off},
+    {"bananza_reflections_off", &Switches::dk_reflections_off},
 }};
 
 inline constexpr std::size_t KeyCount = Keys.size() + GameKeys.size();
@@ -255,6 +260,7 @@ constexpr Switches FromPreset(Preset preset, const Switches& current) {
     switches.dk_dyn = current.dk_dyn;
     switches.mkw_dyn = current.mkw_dyn;
     switches.dk_shadow = current.dk_shadow;
+    switches.dk_reflections_off = current.dk_reflections_off;
     return switches;
 }
 
@@ -487,7 +493,7 @@ inline constexpr std::array<std::string_view, 68> SafeOff{
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
-inline constexpr std::array<std::string_view, 16> Names{
+inline constexpr std::array<std::string_view, 18> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
@@ -496,6 +502,7 @@ inline constexpr std::array<std::string_view, 16> Names{
     "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
     "EDEN_NX2_DK_FOLIAGE_OFF", "EDEN_NX2_DK_SHADOW_CASCADES",
+    "EDEN_NX2_DK_REFLECTIONS_OFF", "EDEN_NX2_DK_CUBEMAP_INTERVAL",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -545,9 +552,17 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
             vars.push_back({"EDEN_NX2_DK_SHADOW_CASCADES",
                             Cascades[static_cast<std::size_t>(switches.dk_shadow - 1)]});
         }
+        if (switches.dk_reflections_off) {
+            vars.push_back({"EDEN_NX2_DK_REFLECTIONS_OFF", "1"});
+        }
         vars.push_back({"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"});
         vars.push_back({"EDEN_NX2_MODE_PACE", "2"});
         vars.push_back({"EDEN_NX2_PACE_SPIN_US", "1500"});
+        // Fewer reflection captures than the game's every 8 frames (no box: always)
+        if (!switches.dk_reflections_off) {
+            vars.push_back({Loader::Nx2DkReflections::IntervalSwitch,
+                            Loader::Nx2DkReflections::Interval});
+        }
     }
     if (game == Game::MarioKartWorld && switches.mkw_dyn) {
         vars.push_back({"EDEN_NX2_MKW_DYN", "1"});
