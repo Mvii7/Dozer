@@ -64,9 +64,10 @@ inline bool On() {
     return value != 0;
 }
 
-/// EDEN_NX2_DMA_READ_PEEK (with EDEN_NX2_ACQUIRE_PEEK=1; on unless =0, =2 verify): an MME DMA
-/// read goes on without draining the back when no write still queued for it may reach the words
-/// (ReadMayGoOn). The writes the front sends are noted for it as for the diag lines (Tracking).
+/// EDEN_NX2_DMA_READ_PEEK (with EDEN_NX2_ACQUIRE_PEEK=1; =1 on, =2 verify, off otherwise): an
+/// MME DMA read goes on without draining the back when no write still queued for it may reach the
+/// words (ReadMayGoOn). The writes the front sends are noted for it as for the diag lines
+/// (Tracking): in Donkey Kong Bananza that costs the front more than the drains it saves.
 inline int ReadPeekMode() {
     static const int mode = [] {
         const char* const acquire = std::getenv("EDEN_NX2_ACQUIRE_PEEK");
@@ -74,10 +75,10 @@ inline int ReadPeekMode() {
             return 0;
         }
         const char* const value = std::getenv("EDEN_NX2_DMA_READ_PEEK");
-        if (value != nullptr && value[0] == '0') {
+        if (value == nullptr || (value[0] != '1' && value[0] != '2')) {
             return 0;
         }
-        return value != nullptr && value[0] == '2' ? 2 : 1;
+        return value[0] == '2' ? 2 : 1;
     }();
     return mode;
 }
