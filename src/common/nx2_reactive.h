@@ -120,6 +120,7 @@ enum class Counter : u32 {
     CopyBackWaits,          ///< Read traps that waited for copies back (EDEN_NX2_COPYBACK_WAIT)
     CopyBackWaitUs,         ///< Their wait, microseconds
     CopyBackWaitMisses,     ///< Of them, the ones that still sync flushed (timeout, newer write)
+    CoalesceDeferredReads,  ///< EDEN_NX2_RX_COALESCE: reads that fetched data a fence held back
     Count,
 };
 
@@ -128,6 +129,7 @@ enum class Gauge : u32 {
     StagingBytes,          ///< The rasterizer staging pool's cached buffers, all uses
     StagingDownloadBytes,  ///< Of them, download (host memory) buffers
     LatchedImages,         ///< Images latched by a CPU read (tracked by EDEN_NX2_READ_LATCH_AGE)
+    CoalesceLimit,         ///< EDEN_NX2_RX_COALESCE: fences a copy back may wait, at report time
     Count,
 };
 
@@ -283,7 +285,8 @@ struct Window {
                        "feedback {}, target cpu modified {} sparse {} alias {}, image cpu modified "
                        "{} alias {}; masked targets color {} depth {}; draws {}; rt fit in pass "
                        "barriers {} (light {}); fastmem read fallbacks {}, read faults kept {}; traps "
-                       "disarmed at copy back {}; copy back waits {} ({} us, {} missed)",
+                       "disarmed at copy back {}; copy back waits {} ({} us, {} missed); coalesce limit {} ({} "
+                       "reads of held back copies)",
                        w.Get(C::Fences), w.Get(C::FencesSkipped), w.Get(C::FencesReal),
                        w.Get(C::FencesBufferCommit), w.Get(C::FencesTextureCommit),
                        w.Get(C::FencesBufferDeferred), w.Get(C::FenceExtraFlushes),
@@ -297,7 +300,8 @@ struct Window {
                        w.Get(C::FitInPassLightBarriers), w.Get(C::FastmemReadFallbacks),
                        w.Get(C::FastmemFaultsKept), w.Get(C::TrapsDisarmedAtCopyBack),
                        w.Get(C::CopyBackWaits), w.Get(C::CopyBackWaitUs),
-                       w.Get(C::CopyBackWaitMisses));
+                       w.Get(C::CopyBackWaitMisses), w.Get(Gauge::CoalesceLimit),
+                       w.Get(C::CoalesceDeferredReads));
 }
 
 [[nodiscard]] inline std::string FormatWindow(const Window& w) {

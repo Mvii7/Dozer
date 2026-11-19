@@ -60,7 +60,7 @@ public:
         std::unique_lock lock(ring_guard);
         delayed_destruction_ring.Tick();
         // EDEN_NX2_RX_COALESCE: copy backs left uncommitted go with the frame's next fence.
-        if (coalesce_fences > 1) [[unlikely]] {
+        if (coalesce_on) {
             coalesce_force.store(true, std::memory_order_relaxed);
         }
     }
@@ -403,7 +403,7 @@ private:
                 buffer_cache.NoteReadBackPoint();
             }
             if (buffer_cache.HasUncommittedFlushes()) {
-                if (coalesce_fences > 1 && !CommitBufferNow(delay_fence, flushes)) [[unlikely]] {
+                if (coalesce_on && !CommitBufferNow(delay_fence, flushes)) {
                     return flushes;
                 }
                 buffer_cache.CommitAsyncFlushes();
@@ -426,12 +426,27 @@ private:
         const bool made_anyway = Nx2Reactive::CoalesceMadeAnyway(
             coalesce_loose, real_work, [this] { return MadeStubbedAnyway(); });
         const bool force = coalesce_force.exchange(false, std::memory_order_relaxed);
-        if (Nx2Reactive::CommitBufferCopyBack(coalesce_fences, delay_fence, made_anyway, force,
+        u64 limit = coalesce_fences;
+        if (coalesce_auto) {
+            if (force) {
+                coalesce_tuner.EndFrame(buffer_cache.TakeDeferredReads());
+                Common::Nx2Reactive::SetGauge(Common::Nx2Reactive::Gauge::CoalesceLimit,
+                                              coalesce_tuner.Limit());
+            }
+            // Only where a read catches a copy back not landed yet.
+            limit = buffer_cache.ReadTrapsActive() ||
+                            Settings::values.use_reactive_flushing.GetValue()
+                        ? coalesce_tuner.Limit()
+                        : 1;
+        }
+        if (Nx2Reactive::CommitBufferCopyBack(limit, delay_fence, made_anyway, force,
                                               deferred_fences)) {
             deferred_fences = 0;
             return true;
         }
         ++deferred_fences;
+        buffer_cache.DeferCopyBacks();
+        coalesce_tuner.NoteDeferred();
         if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::FencesBufferDeferred, 1);
         }
@@ -505,6 +520,10 @@ private:
     const bool one_submit = Nx2Reactive::OneSubmit();
     /// EDEN_NX2_RX_COALESCE (<= 1: off): fences that may leave the buffer copy backs uncommitted
     const u64 coalesce_fences = Nx2Reactive::CoalesceFences();
+    /// EDEN_NX2_RX_COALESCE unset or =auto: the number adapts (CoalesceTuner)
+    const bool coalesce_auto = Nx2Reactive::CoalesceAuto();
+    const bool coalesce_on = coalesce_auto || coalesce_fences > 1;
+    Nx2Reactive::CoalesceTuner coalesce_tuner;
     /// EDEN_NX2_RX_COALESCE_LOOSE (diagnostic): only a fence real anyway takes the copy backs
     const bool coalesce_loose = Nx2Reactive::CoalesceLoose();
     u64 deferred_fences{}; ///< Fences that left them since the last commit (GPU thread only)

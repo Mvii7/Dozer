@@ -308,7 +308,24 @@ std::optional<VideoCore::RasterizerDownloadArea> BufferCache<P>::GetFlushArea(DA
 }
 
 template <class P>
+void BufferCache<P>::NoteDeferredRead(DAddr addr, u64 size) {
+    const size_t sets = (std::min)(deferred_copy_back_sets, committed_gpu_modified_ranges.size());
+    for (size_t i = 0; i < sets; ++i) {
+        if (committed_gpu_modified_ranges[i].Intersects(addr, size)) {
+            ++deferred_reads;
+            if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
+                Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::CoalesceDeferredReads, 1);
+            }
+            return;
+        }
+    }
+}
+
+template <class P>
 void BufferCache<P>::DownloadMemory(DAddr device_addr, u64 size) {
+    if (deferred_copy_back_sets != 0) [[unlikely]] {
+        NoteDeferredRead(device_addr, size);
+    }
     ForEachBufferInRange(device_addr, size, [&](BufferId, Buffer& buffer) {
         DownloadBufferMemory(buffer, device_addr, size);
     });
@@ -326,6 +343,9 @@ std::optional<VideoCore::ReadPoint> BufferCache<P>::DownloadMemoryForRead(DAddr 
             AsyncReadback::Add(AsyncReadback::g_stats.fallbacks, 1);
             DownloadMemory(device_addr, size);
             return std::nullopt;
+        }
+        if (deferred_copy_back_sets != 0) [[unlikely]] {
+            NoteDeferredRead(device_addr, size);
         }
         WriteRunReadDownloads();
         // Early downloads still to record are of older writes: they go first.
@@ -1389,6 +1409,7 @@ bool BufferCache<P>::ShouldWaitAsyncFlushes() const noexcept {
 template <class P>
 void BufferCache<P>::CommitAsyncFlushesHigh() {
     AccumulateFlushes();
+    deferred_copy_back_sets = 0;
 
     if (committed_gpu_modified_ranges.empty()) {
         async_buffers.emplace_back(std::optional<Async_Buffer>{});
