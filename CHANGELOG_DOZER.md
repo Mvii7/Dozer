@@ -14,6 +14,12 @@ and `=0` brings back the 2.0.0 code path.
 - Frame generation: switching between LSFG and Optical Flow during play rebuilds the chain for
   the new type, a missing Lossless.dll no longer keeps Optical Flow off afterwards, and Optical
   Flow no longer loads the LSFG shaders. From Lichii #1493.
+- Status bar: an **FG** button next to the others. Click turns frame generation on and off,
+  also during play; right click picks Optical Flow or LSFG. It shows the type and multiplier
+  ("FG OPTICAL FLOW 2X", "AUTO" with a target frame rate), and "(IDLE)" while a game runs and
+  no frames were generated in the last half second. The frames frame generation presents through
+  are made at start for the most it can use and parked until needed, so turning it on during
+  play gets the frames it needs instead of the count the game started with. From Lichii #537.
 - Renamed to what they do (labels only; settings and configs keep their values): frame
   generation type "FSR 3" is now **Optical Flow Interpolation**, Eglantine's own optical-flow
   interpolation and not AMD's FSR 3; the window filter "AMD FidelityFX Super Resolution 3" is

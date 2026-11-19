@@ -256,6 +256,7 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
                                present_manager.SwapchainImageCount(), output_format.format, output);
 
 #ifdef HAS_LSFG
+    present_manager.UpdateImageCount();
     void(frame_gen.WantedGenerations(present_manager.MaxExtraFrames()));
 
     frame_gen.Process(device, frame, frame->image_format, GuestExtent(framebuffers));
