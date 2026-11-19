@@ -311,6 +311,24 @@ std::optional<VideoCore::RasterizerDownloadArea> BufferCache<P>::GetFlushArea(DA
 }
 
 template <class P>
+void BufferCache<P>::DeferCopyBacks() {
+    if (uncommitted_gpu_modified_ranges.Empty()) {
+        return;
+    }
+    // Into the last held back set while nothing came after it, so the sets stay few.
+    if (deferred_copy_back_sets != 0 &&
+        deferred_copy_back_sets == committed_gpu_modified_ranges.size()) {
+        auto& held = committed_gpu_modified_ranges.back();
+        uncommitted_gpu_modified_ranges.ForEach(
+            [&held](DAddr start, DAddr end) { held.Add(start, end - start); });
+        uncommitted_gpu_modified_ranges.Clear();
+        return;
+    }
+    AccumulateFlushes();
+    deferred_copy_back_sets = committed_gpu_modified_ranges.size();
+}
+
+template <class P>
 void BufferCache<P>::NoteDeferredRead(DAddr addr, u64 size) {
     const size_t sets = (std::min)(deferred_copy_back_sets, committed_gpu_modified_ranges.size());
     for (size_t i = 0; i < sets; ++i) {
