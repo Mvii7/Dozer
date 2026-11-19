@@ -145,6 +145,12 @@
 # PBFLUSH_WINDOW_KIB=<n>: a GPU-written pushbuffer record is flushed with the n KiB window
 # around it (default 256); 0 flushes the record alone.
 #EDEN_NX2_PBFLUSH_WINDOW_KIB=0
+# WRITTEN_AGE=<n>: a command list or macro parameter block makes the GPU thread wait for the
+# split's back (and is flushed) only when the GPU wrote its page in the last n to 2n frames
+# (default 600). Before, a page the GPU wrote once counted for the whole session: after other
+# worlds, Donkey Kong Bananza's lists landed on pages their buffers had written, and the waits
+# took its lagoon from about 40 to 30 fps. 0: ever written, as before (Safe).
+#EDEN_NX2_WRITTEN_AGE=0
 # SKIP_EMPTY_DRAWS=1: draws without indices, vertices or instances are dropped (off).
 #EDEN_NX2_SKIP_EMPTY_DRAWS=1
 # 3D_HISTORY=1: keep Maxwell3D's register write history in release builds (off).
