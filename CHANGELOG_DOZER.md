@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Buffer cache: the copies back a fence makes of GPU-written buffer memory the guest reads are
+  recorded as one copy command per buffer instead of one per range, and ranges up to 256 bytes
+  apart are copied together (Donkey Kong Bananza with read traps: about 700 ranges a frame, in
+  about 70 fences). `EDEN_NX2_COPYBACK_BATCH=0` records them one by one as before (Safe).
 - Read traps: a copy back at a fence no longer disarms the traps of its pages
   (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
   fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World
