@@ -407,6 +407,21 @@ public:
                              std::unique_lock<Common::SpinRecursiveMutex>* lock = nullptr,
                              u64 max_seq = ~u64{0});
 
+    /// A GPU write the cache doesn't record (a query result copy, QueryCacheRuntime::SyncValues;
+    /// guest memory gets the value when the query cache writes it): read downloads taken before
+    /// it no longer bring the newest bytes, nor are early-landed ones the GPU's any more.
+    void OutdateReadDownloads(DAddr device_addr, u64 size) {
+        if (!read_downloads.empty()) [[unlikely]] {
+            for (ReadDownload& download : read_downloads) {
+                download.clean_ranges.Subtract(device_addr, size);
+            }
+            read_download_ranges.Subtract(device_addr, size);
+        }
+        if (!early_landed_ranges.Empty()) [[unlikely]] {
+            early_landed_ranges.Subtract(device_addr, size);
+        }
+    }
+
     /// A write to guest memory from the GPU's side, after FinishReadDownloads landed what was
     /// under it.
     void NoteGpuSideWrite(DAddr device_addr, u64 size) {

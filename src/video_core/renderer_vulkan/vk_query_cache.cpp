@@ -1690,6 +1690,10 @@ void QueryCacheRuntime::SyncValues(std::span<SyncValuesType> values, VkBuffer ba
             impl->buffers_to_upload_to.emplace_back(buffer->Handle(), offset);
         }
     });
+    // EDEN_NX2_ASYNC_READBACK: the copies below are GPU writes the buffer cache doesn't record.
+    for (const auto& value : values) {
+        impl->buffer_cache.OutdateReadDownloads(value.address, value.size);
+    }
 
     VkBuffer src_buffer;
     [[maybe_unused]] StagingBufferRef ref;
