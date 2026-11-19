@@ -8,8 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
-- Donkey Kong Bananza starts with the **Balanced** preset instead of Performance: with foliage off,
-  read traps on runs it faster than off.
+- Presets: **Performance** (the default again, for a first start too) keeps read traps on: with
+  Bananza's foliage off they run it faster than off. **Balanced** is now **Quality**: Performance's
+  settings with Bananza as the game makes it (foliage, reflections, very high shadows); a stored
+  Balanced reads as Quality, a stored Performance gets read traps on. `start-balanced.bat` is now
+  `start-quality.bat`, and `start-performance.bat` no longer sets `EDEN_NX2_READ_TRAPS=0`.
 - Donkey Kong Bananza: a **Shadow quality** box in its Properties > Tuning, under Foliage off: Low,
   Medium, High and Very high cap the sun shadow's cascades at 1, 2, 3 and the game's own 4
   (`EDEN_NX2_DK_SHADOW_CASCADES=<1-3>`, `core/loader/nx2_dk_shadow.h`). Each cascade draws the
@@ -18,10 +21,8 @@ and `=0` brings back the 2.0.0 code path.
   cube map off (`EDEN_NX2_DK_REFLECTIONS_OFF=1`, `core/loader/nx2_dk_reflections.h`); each capture
   draws the scene again. `EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>` sets the frames between captures
   by hand (the game's 8).
-- Donkey Kong Bananza's presets: Performance, Balanced (read traps still on) and Experimental turn
-  foliage and reflections off and set Medium shadows; Safe leaves the game's own. A new **Quality**
-  preset in Bananza's Properties > Tuning only: Balanced's settings with foliage, reflections and
-  Very high shadows. The launchers set the same.
+- Donkey Kong Bananza's presets: Performance and Experimental turn foliage and dynamic reflections
+  off and set Medium shadows; Quality and Safe leave the game's own. The launchers set the same.
 - Split GPU thread: an equal semaphore acquire goes on without draining the back when the last
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are

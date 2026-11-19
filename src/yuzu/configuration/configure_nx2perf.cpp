@@ -115,20 +115,20 @@ void ConfigureNx2Perf::ShowPreset() {
         ui->preset->setCurrentIndex(Perf::IndexOf(preset));
     }
     switch (preset) {
-    case Perf::Preset::Balanced:
-        ui->preset_text->setText(tr("The balanced settings, with read traps on. Donkey Kong "
-                                    "Bananza: foliage and reflections off, medium shadows. "
-                                    "Reactive Flushing off (Graphics, Advanced). Like "
-                                    "start-balanced.bat."));
-        break;
     case Perf::Preset::Performance:
-        ui->preset_text->setText(tr("The fastest settings, with read traps and Reactive Flushing "
-                                    "off. Donkey Kong Bananza: foliage and reflections off, "
-                                    "medium shadows. Like start-performance.bat."));
+        ui->preset_text->setText(tr("The fastest settings: all on, read traps too, Reactive "
+                                    "Flushing off (Graphics, Advanced). Donkey Kong Bananza: "
+                                    "foliage and dynamic reflections off, medium shadows. Like "
+                                    "start-performance.bat."));
+        break;
+    case Perf::Preset::Quality:
+        ui->preset_text->setText(tr("Performance's settings with Donkey Kong Bananza as the game "
+                                    "makes it: foliage, reflections and very high shadows. Like "
+                                    "start-quality.bat."));
         break;
     case Perf::Preset::Reactive:
         ui->preset_text->setText(
-            tr("The balanced settings with Reactive Flushing instead of read traps (barrier "
+            tr("The performance settings with Reactive Flushing instead of read traps (barrier "
                "feedback loops on, RX_RT_FIT=3). Like start-reactive-experimental.bat."));
         break;
     case Perf::Preset::Safe:
@@ -136,11 +136,6 @@ void ConfigureNx2Perf::ShowPreset() {
                                     "default off too (the variables start-safe.bat sets to 0). "
                                     "Frame generation off; other graphics settings such as "
                                     "Reactive Flushing stay as they are."));
-        break;
-    case Perf::Preset::Quality:
-        ui->preset_text->setText(tr("The balanced settings, with Donkey Kong Bananza as the game "
-                                    "makes it: foliage, reflections and very high shadows. Only "
-                                    "chosen in that game's Properties."));
         break;
     case Perf::Preset::Custom:
         ui->preset_text->setText(tr("Your own choice of the settings below."));

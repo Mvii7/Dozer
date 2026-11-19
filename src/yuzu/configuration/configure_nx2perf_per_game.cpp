@@ -60,8 +60,6 @@ QString PresetName(Perf::Preset preset) {
     switch (preset) {
     case Perf::Preset::Performance:
         return QObject::tr("Performance");
-    case Perf::Preset::Balanced:
-        return QObject::tr("Balanced");
     case Perf::Preset::Reactive:
         return QObject::tr("Experimental");
     case Perf::Preset::Safe:
@@ -98,7 +96,7 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     auto* intro = new QLabel(
         tr("These settings are the Tuning tab's, as this game runs them. A cross next to one resets "
-           "it to the Tuning tab's. Donkey Kong Bananza starts with the Balanced preset instead "
+           "it to the Tuning tab's. Donkey Kong Bananza starts with the Performance preset instead "
            "of the Tuning tab's. They take effect when the game starts. If a game has already run "
            "since Dozer was opened, Dozer will ask to restart before a change applies."),
         this);
@@ -198,10 +196,6 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
 ConfigureNx2PerfPerGame::~ConfigureNx2PerfPerGame() = default;
 
 std::span<const Perf::Preset> ConfigureNx2PerfPerGame::Order() const {
-    // Quality only changes Bananza's own settings
-    if (game == Perf::Game::Bananza) {
-        return Perf::BananzaPresetOrder;
-    }
     return Perf::PresetOrder;
 }
 

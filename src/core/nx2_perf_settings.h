@@ -14,7 +14,7 @@
 
 // Anka's settings in the Qt program (anka.exe): the EDEN_NX2_* switches of the launchers
 // (dist/dozer/start-*.bat), as a preset and on / off settings kept in the [Anka] group of
-// qt-config.ini, the Balanced preset until changed. The program sets the variables in its own
+// qt-config.ini, the Performance preset until changed. The program sets the variables in its own
 // environment before a game boots (yuzu/nx2perf_session.h); anka-cli and the launchers don't read
 // these settings.
 //
@@ -30,22 +30,16 @@ namespace Core::Nx2PerfSettings {
 /// were (Performance is 4) so an existing qt-config.ini keeps its preset. The tab calls Reactive
 /// "Experimental".
 enum class Preset : u8 {
-    Balanced = 0,    ///< start-balanced.bat: all on, read traps on, Reactive Flushing off
+    Quality = 0,     ///< start-quality.bat: Performance, Bananza as the game makes it
     Reactive = 1,    ///< start-reactive-experimental.bat: read traps off, Reactive Flushing on, RX_RT_FIT=3
     Safe = 2,        ///< start-safe.bat: all off, and the shortcuts Dozer keeps on set to 0
     Custom = 3,      ///< the boxes as set, nothing else
-    Performance = 4, ///< start-performance.bat: Balanced with read traps off
-    Quality = 5,     ///< Balanced with Bananza's foliage, shadows and reflections as the game's
+    Performance = 4, ///< start-performance.bat: all on, read traps on, Reactive Flushing off
 };
 
-/// Combo order in the Tuning tab. Not the stored numbers. Quality is only for Bananza's own
-/// (GamePresetOrder): it changes nothing but Bananza's settings.
+/// Combo order in the Tuning tab. Not the stored numbers.
 inline constexpr std::array<Preset, 5> PresetOrder{
-    Preset::Performance, Preset::Balanced, Preset::Reactive, Preset::Safe, Preset::Custom,
-};
-inline constexpr std::array<Preset, 6> BananzaPresetOrder{
-    Preset::Performance, Preset::Balanced, Preset::Quality,
-    Preset::Reactive,    Preset::Safe,     Preset::Custom,
+    Preset::Performance, Preset::Quality, Preset::Reactive, Preset::Safe, Preset::Custom,
 };
 
 /// The combo index of a preset in `order` (Custom, the last, when it is not one of these).
@@ -65,7 +59,7 @@ inline constexpr int ShadowMedium = 2;
 inline constexpr int ShadowVeryHigh = 4;
 
 struct Switches {
-    bool read_traps = false;       ///< on leaves EDEN_NX2_READ_TRAPS unset; off sets it to 0
+    bool read_traps = true;        ///< on leaves EDEN_NX2_READ_TRAPS unset; off sets it to 0
     bool split_gpu_thread = true;  ///< EDEN_NX2_BACK_STAGES=1 + EDEN_NX2_BACK_CUTS=a
     bool acquire_peek = true;      ///< EDEN_NX2_ACQUIRE_PEEK=1
     bool jit_same = true;          ///< EDEN_NX2_JIT_SAME=1
@@ -75,37 +69,30 @@ struct Switches {
     // Game-specific: no preset sets or clears these (the Safe preset leaves them as they are).
     bool dk_dyn = true;            ///< EDEN_NX2_DK_DYN=1, Bananza only
     bool mkw_dyn = true;           ///< EDEN_NX2_MKW_DYN=1, Mario Kart World only
-    // Game-specific, but set by the presets (FromPreset): on in Performance, Balanced and
-    // Experimental, off in Safe and Quality.
+    // Game-specific, but set by the presets (FromPreset): on in Performance and Experimental,
+    // off in Quality and Safe.
     bool dk_foliage_off = true;    ///< EDEN_NX2_DK_FOLIAGE_OFF=1, Bananza only
     /// Bananza's reflections off (EDEN_NX2_DK_REFLECTIONS_OFF=1); unticked, the game's own.
     bool dk_reflections_off = true;
     /// Bananza's shadow quality, kept per game only: the sun shadow's most cascades, Low 1 to
     /// Very high 4 (the game's own); below it EDEN_NX2_DK_SHADOW_CASCADES=<n>. Medium in
-    /// Performance, Balanced and Experimental, Very high in Safe and Quality.
+    /// Performance and Experimental, Very high in Quality and Safe.
     int dk_shadow = ShadowMedium;
     Preset preset = Preset::Performance;
 
     bool operator==(const Switches&) const = default;
 };
 
-/// What the performance launcher sets. A file that stores no choice (`preset\default`) still means
-/// this, as it did before Balanced became the first start's preset (FirstStart).
+/// What the performance launcher sets: everything on, read traps too (with Bananza's foliage off
+/// they are faster than off), Bananza's foliage and dynamic reflections off and medium shadows.
 constexpr Switches Performance() {
     return Switches{};
 }
 
-/// What the balanced launcher sets: Performance with read traps on.
-constexpr Switches Balanced() {
-    Switches switches{};
-    switches.read_traps = true;
-    switches.preset = Preset::Balanced;
-    return switches;
-}
-
-/// Balanced with Bananza as the game makes it: foliage, very high shadows and reflections.
+/// What the quality launcher sets: Performance with Bananza as the game makes it (foliage, very
+/// high shadows and reflections). Stored as 0, the number of the Balanced preset it replaces.
 constexpr Switches Quality() {
-    Switches switches = Balanced();
+    Switches switches{};
     switches.dk_foliage_off = false;
     switches.dk_reflections_off = false;
     switches.dk_shadow = ShadowVeryHigh;
@@ -113,9 +100,9 @@ constexpr Switches Quality() {
     return switches;
 }
 
-/// The settings of a first start (no [Anka] group yet): the balanced launcher's.
+/// The settings of a first start (no [Anka] group yet): the performance launcher's.
 constexpr Switches FirstStart() {
-    return Balanced();
+    return Performance();
 }
 
 /// start-safe.bat's setup: none of the switches, and the per-draw shortcuts off.
@@ -215,7 +202,7 @@ Overrides LoadOverrides(Read&& read) {
     const int preset = read("preset");
     overrides.global_preset = preset == FollowGlobalPreset;
     if (preset != static_cast<int>(Preset::Custom) && preset >= 0 &&
-        preset <= static_cast<int>(Preset::Quality)) {
+        preset <= static_cast<int>(Preset::Performance)) {
         overrides.preset = static_cast<Preset>(preset);
     }
     for (std::size_t i = 0; i < KeyCount; ++i) {
@@ -249,12 +236,11 @@ void SaveOverrides(const Overrides& overrides, Write&& write) {
 /// A stored preset number. Anything else is Custom (a file edited by hand).
 constexpr Preset PresetFromInt(int value) {
     switch (value) {
-    case static_cast<int>(Preset::Balanced):
+    case static_cast<int>(Preset::Quality):
     case static_cast<int>(Preset::Reactive):
     case static_cast<int>(Preset::Safe):
     case static_cast<int>(Preset::Custom):
     case static_cast<int>(Preset::Performance):
-    case static_cast<int>(Preset::Quality):
         return static_cast<Preset>(value);
     default:
         return Preset::Custom;
@@ -263,8 +249,8 @@ constexpr Preset PresetFromInt(int value) {
 
 /// The boxes of a preset (Custom: `current` as it is), with the preset set. The dynamic frame
 /// rate boxes are always `current`'s; Bananza's foliage, shadows and reflections are the preset's.
-/// Performance and Experimental (Reactive) are Balanced's boxes with read traps off; Quality is
-/// Balanced's with Bananza as the game makes it.
+/// Experimental (Reactive) is Performance's boxes with read traps off; Quality is Performance's
+/// with Bananza as the game makes it.
 constexpr Switches FromPreset(Preset preset, const Switches& current) {
     if (preset == Preset::Custom) {
         Switches switches = current;
@@ -273,8 +259,8 @@ constexpr Switches FromPreset(Preset preset, const Switches& current) {
     }
     Switches switches = preset == Preset::Safe      ? AllOff()
                         : preset == Preset::Quality ? Quality()
-                                                    : Balanced();
-    if (preset == Preset::Performance || preset == Preset::Reactive) {
+                                                    : Performance();
+    if (preset == Preset::Reactive) {
         switches.read_traps = false;
     }
     switches.preset = preset;
@@ -380,9 +366,8 @@ constexpr std::optional<bool> BarrierFeedbackLoops(Preset preset) {
 /// (the launchers' safe one leaves the .ini as it is).
 constexpr std::optional<bool> ReactiveFlushing(Preset preset) {
     switch (preset) {
-    case Preset::Balanced:
-    case Preset::Performance:
     case Preset::Quality:
+    case Preset::Performance:
         return false;
     case Preset::Reactive:
         return true;
@@ -398,23 +383,25 @@ template <typename Read, typename ReadPreset>
 Switches Load(Read&& read, ReadPreset&& read_preset) {
     const Preset preset =
         PresetFromInt(read_preset("preset", static_cast<int>(Preset::Performance)));
-    // read_traps was added after the other boxes. A file without the key keeps the preset's
-    // own value (Balanced on, Performance / Experimental / Safe off, Custom on) instead of being
-    // read as Custom.
-    const bool read_traps_fallback = FromPreset(preset, Balanced()).read_traps;
+    // read_traps was added after the other boxes: a file without the key keeps the preset's own
+    // value (Performance and Quality on, Experimental and Safe off, Custom on) instead of being
+    // read as Custom. Performance had them off before: a stored Performance takes the preset's.
+    const Switches preset_switches = FromPreset(preset, Performance());
     Switches switches{};
     for (const Key& key : Keys) {
-        const bool fallback =
-            key.name == "read_traps" ? read_traps_fallback : Balanced().*key.field;
+        const bool fallback = key.name == "read_traps" ? preset_switches.read_traps
+                                                       : Performance().*key.field;
         switches.*key.field = read(key.name, fallback);
     }
-    const Switches preset_switches = FromPreset(preset, Balanced());
+    if (preset == Preset::Performance) {
+        switches.read_traps = preset_switches.read_traps;
+    }
     for (const Key& key : GameKeys) {
         // Bananza's foliage and reflections were added after the presets: a file without them
         // gets the preset's
         const bool by_preset = key.field == &Switches::dk_foliage_off ||
                                key.field == &Switches::dk_reflections_off;
-        const bool fallback = by_preset ? preset_switches.*key.field : Balanced().*key.field;
+        const bool fallback = by_preset ? preset_switches.*key.field : Performance().*key.field;
         switches.*key.field = read(key.name, fallback);
     }
     // Bananza's shadow quality is not stored here: the preset's (games keep their own choice)
@@ -428,10 +415,10 @@ Switches Load(Read&& read, ReadPreset&& read_preset) {
 template <typename Write, typename WritePreset>
 void Save(const Switches& switches, Write&& write, WritePreset&& write_preset) {
     for (const Key& key : Keys) {
-        write(key.name, switches.*key.field, Balanced().*key.field);
+        write(key.name, switches.*key.field, Performance().*key.field);
     }
     for (const Key& key : GameKeys) {
-        write(key.name, switches.*key.field, Balanced().*key.field);
+        write(key.name, switches.*key.field, Performance().*key.field);
     }
     write_preset("preset", static_cast<int>(switches.preset),
                  static_cast<int>(Preset::Performance));
@@ -455,11 +442,11 @@ constexpr Game GameOf(u64 program_id) {
     return Game::Other;
 }
 
-/// The preset a game starts from instead of the global one: Bananza Balanced (read traps on with
-/// foliage off is its fastest). Other games: none, they follow the global preset (Balanced from
+/// The preset a game starts from instead of the global one: Bananza Performance (its fastest),
+/// whatever the global one. Other games: none, they follow the global preset (Performance from
 /// the first start).
 constexpr std::optional<Preset> GamePreset(Game game) {
-    return game == Game::Bananza ? std::optional{Preset::Balanced} : std::nullopt;
+    return game == Game::Bananza ? std::optional{Preset::Performance} : std::nullopt;
 }
 
 /// The preset a game runs with: its own choice, else its starting one (unless it follows the
