@@ -21,11 +21,11 @@ and `=0` brings back the 2.0.0 code path.
   cube map off (`EDEN_NX2_DK_REFLECTIONS_OFF=1`, `core/loader/nx2_dk_reflections.h`); each capture
   draws the scene again. `EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>` sets the frames between captures
   by hand (the game's 8).
-- Donkey Kong Bananza: Dynamic reflections off turns the game's IsUseCubeMap parameter itself off
-  where the directors are built, instead of only the value read there. Other code still found it
-  on, which can read the missing cube map through a null pointer (the likely cause of about 300,000 `Unmapped Read` lines a
-  session: `Read64 @ 0xd0`, `Read32 @ 0x18` and `0x1c`). Both Bananza patches now log their state
-  at load, the game's own included.
+- Donkey Kong Bananza: Dynamic reflections off keeps the reflection cube map and only stops its
+  captures (one every 65535 frames). Turning the cube map off left it unbuilt while the game's
+  drawing code still read it through a null pointer: about 300,000 `Unmapped Read` lines a session
+  (`Read64 @ 0xd0`, `Read32 @ 0x18` and `0x1c`), from 40 to 100 s in. Both Bananza patches now log
+  their state at load, the game's own included.
 - Donkey Kong Bananza's presets: Performance and Experimental turn foliage and dynamic reflections
   off and set Medium shadows; Quality and Safe leave the game's own. The launchers set the same.
 - Frame generation (LSFG and Optical Flow) now runs while HDR output is active instead of turning off.

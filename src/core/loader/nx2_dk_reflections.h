@@ -15,8 +15,9 @@
 // (drawing the scene again into its faces) and its shiny and wet surfaces reflect.
 //   EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>: frames between two captures (the game's: 8), only by
 //   hand; higher, fewer draws, reflections follow later.
-//   EDEN_NX2_DK_REFLECTIONS_OFF=1: no cube map at all (IsUseCubeMap off): no captures, no
-//   reflections. The Dynamic reflections off box in Bananza's Properties > Tuning.
+//   EDEN_NX2_DK_REFLECTIONS_OFF=1: the cube map is kept but no longer captured (once in
+//   OffInterval frames), so it stops redrawing the scene. The Dynamic reflections off box in
+//   Bananza's Properties > Tuning.
 // Both are put in the main module as it loads, only where the instructions are exactly as expected.
 namespace Loader::Nx2DkReflections {
 
@@ -47,34 +48,26 @@ constexpr bool OffFrom(const char* value) {
 // A graphics parameter is an object with its value at +0x64, held by GraphicsParam at a fixed
 // offset. CubeMapShotInterval (+0x220) is read by one getter:
 //   ldr x8, [x0, #0x220]; ldr w0, [x8, #0x64]; ret        -> movz w0, #interval; ret
-// IsUseCubeMap (+0x28) is read in place once, where the game builds its directors:
-//   ldr xM, [xK, #0x28]; ldrb wN, [xM, #0x64]
-// Only zeroing the loaded register leaves the parameter itself on: the cube map director is not
-// built, but code that checks the parameter elsewhere can still use it, reading through a null
-// pointer (Unmapped Read64 @ 0xd0, Read32 @ 0x18 and 0x1c in gameplay). So the load jumps to a
-// routine that turns the parameter off for every reader, as if the game's data had it off:
-//   strb wzr, [xM, #0x64]; movz wN, #0; b back
+// Off goes through the same getter. Turning IsUseCubeMap off where the directors are built leaves
+// the cube map director unbuilt, and the game's drawing code still reads it through a null
+// pointer (Unmapped Read64 @ 0xd0, Read32 @ 0x18 and 0x1c, about 300,000 a session).
 constexpr u32 IntervalLoad = 0xF9411008U; // ldr x8, [x0, #0x220]
 constexpr u32 ValueLoad = 0xB9406500U;    // ldr w0, [x8, #0x64]
 constexpr u32 Ret = 0xD65F03C0U;
-constexpr u32 CubeMapParam = 0x28;
-constexpr u32 ValueOffset = 0x64;
-
-/// Words of the free space past the end of the text segment the off routine takes: after the
-/// shadow patch's (nx2_dk_shadow.h).
-constexpr size_t CaveOffset = 72;
-constexpr size_t CaveWords = 3;
+/// Off's interval: the most a movz takes, over 18 minutes at 60 frames a second.
+constexpr u32 OffInterval = 0xFFFF;
 
 struct Result {
     bool interval = false; ///< the interval was put in
-    bool off = false;      ///< the cube map was turned off
+    bool off = false;      ///< the captures were stopped
 };
 
-// `text` starts at the text segment and holds at least `aligned_size` bytes, the segment's size
-// rounded up to whole pages; `text_size` is its size in the NSO header.
-inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, int interval, bool off) {
+// `text` starts at the text segment; `text_size` is its size in the NSO header. Off wins over
+// `interval`.
+inline Result Apply(std::span<u8> text, u32 text_size, int interval, bool off) {
     Result result;
-    if (text.size() < aligned_size || aligned_size < text_size) {
+    const bool own_interval = interval >= 1 && interval <= MostInterval && interval != GameInterval;
+    if (text.size() < text_size || (!off && !own_interval)) {
         return result;
     }
     const size_t count = text_size / sizeof(u32);
@@ -86,48 +79,20 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, int int
     const auto put = [&](size_t index, u32 value) {
         std::memcpy(text.data() + index * sizeof(u32), &value, sizeof(value));
     };
-    if (interval >= 1 && interval <= MostInterval && interval != GameInterval) {
-        size_t found = 0, at = 0;
-        for (size_t i = 0; i + 2 < count; ++i) {
-            if (word(i) == IntervalLoad && word(i + 1) == ValueLoad && word(i + 2) == Ret) {
-                at = i;
-                ++found;
-            }
-        }
-        if (found == 1) {
-            put(at, 0x52800000U | (static_cast<u32>(interval) << 5)); // movz w0, #interval
-            put(at + 1, Ret);
-            result.interval = true;
+    size_t found = 0, at = 0;
+    for (size_t i = 0; i + 2 < count; ++i) {
+        if (word(i) == IntervalLoad && word(i + 1) == ValueLoad && word(i + 2) == Ret) {
+            at = i;
+            ++found;
         }
     }
-    if (off) {
-        size_t found = 0, at = 0;
-        for (size_t i = 0; i + 1 < count; ++i) {
-            const u32 first = word(i), second = word(i + 1);
-            if ((first & 0xFFC00000U) == 0xF9400000U && ((first >> 10) & 0xFFFU) * 8 == CubeMapParam &&
-                (second & 0xFFFFFC00U) == (0x39400000U | (ValueOffset << 10)) &&
-                ((second >> 5) & 31U) == (first & 31U)) {
-                at = i + 1;
-                ++found;
-            }
-        }
-        const size_t routine = (text_size + 15) / 16 * 4 + CaveOffset;
-        bool free = found == 1 && (routine + CaveWords) * sizeof(u32) <= aligned_size;
-        for (size_t i = 0; free && i < CaveWords; ++i) {
-            free = word(routine + i) == 0;
-        }
-        if (free) {
-            const u32 param = (word(at) >> 5) & 31U;
-            const auto branch = [](size_t from, size_t to) {
-                return 0x14000000U | (static_cast<u32>(to - from) & 0x3FFFFFFU);
-            };
-            put(routine, 0x3900001FU | (ValueOffset << 10) | (param << 5)); // strb wzr, [xM, #0x64]
-            put(routine + 1, 0x52800000U | (word(at) & 31U));                // movz wN, #0
-            put(routine + 2, branch(routine + 2, at + 1));
-            put(at, branch(at, routine));
-            result.off = true;
-        }
+    if (found != 1) {
+        return result;
     }
+    const u32 frames = off ? OffInterval : static_cast<u32>(interval);
+    put(at, 0x52800000U | (frames << 5)); // movz w0, #frames
+    put(at + 1, Ret);
+    (off ? result.off : result.interval) = true;
     return result;
 }
 

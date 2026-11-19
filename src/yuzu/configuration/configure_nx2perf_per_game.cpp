@@ -50,8 +50,8 @@ const Entry* EntryOf(std::size_t key) {
         {&S::dk_reflections_off, Perf::Game::Bananza, QT_TR_NOOP("Dynamic reflections off"),
          QT_TR_NOOP("Stops the game redrawing the scene around the camera into its reflection "
                     "cube map every 8 frames, which saves those draws. Shiny and wet surfaces no "
-                    "longer reflect what is around them; some may still reflect the sky, and some "
-                    "areas may look a little flatter.")},
+                    "longer follow what is around them; some may still reflect the sky or an old "
+                    "capture, and some areas may look a little flatter.")},
     };
     return &entries[key];
 }

@@ -379,7 +379,8 @@ capture draws the scene again), which its shiny and wet surfaces reflect.
 `EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>` sets the frames between captures: higher means fewer draws
 and reflections that follow changes later; it changes how fresh the reflections are, not how
 detailed. The menu program leaves it unset (the game's own); set it in `nx2_switches.txt` to try one.
-`EDEN_NX2_DK_REFLECTIONS_OFF=1` turns the cube map off: no captures, no reflections. In the menu
+`EDEN_NX2_DK_REFLECTIONS_OFF=1` stops the captures (one every 65535 frames): the cube map is kept,
+since the game's drawing code reads it whether or not it is used, but no longer follows the scene. In the menu
 program it is the **Dynamic reflections off** box in Bananza's Properties > Tuning, ticked by
 Performance and Experimental (and their launchers), unticked by Quality and Safe.
 Both are patched in the main module as it loads; the log says whether they were. They apply when

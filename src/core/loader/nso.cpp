@@ -275,12 +275,12 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
         const std::span<u8> image{codeset.memory};
         const auto reflections = Nx2DkReflections::Apply(
             text_start <= image.size() ? image.subspan(text_start) : std::span<u8>{}, text.size,
-            PageAlignSize(text.size), dk_reflections_off ? 0 : dk_cubemap_interval,
-            dk_reflections_off);
+            dk_cubemap_interval, dk_reflections_off);
         if (dk_reflections_off) {
             if (reflections.off) {
-                LOG_INFO(Loader, "Donkey Kong Bananza: reflections off ({})",
-                         Nx2DkReflections::OffSwitch);
+                LOG_INFO(Loader,
+                         "Donkey Kong Bananza: reflections off, captured every {} frames ({})",
+                         Nx2DkReflections::OffInterval, Nx2DkReflections::OffSwitch);
             } else {
                 LOG_WARNING(Loader, "Donkey Kong Bananza: {} not applied: not where expected",
                             Nx2DkReflections::OffSwitch);
