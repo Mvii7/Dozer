@@ -16,7 +16,7 @@
 //   EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>: frames between two captures (the game's: 8), only by
 //   hand; higher, fewer draws, reflections follow later.
 //   EDEN_NX2_DK_REFLECTIONS_OFF=1: no cube map at all (IsUseCubeMap off): no captures, no
-//   reflections. The Reflections off box in Bananza's Properties > Tuning.
+//   reflections. The Dynamic reflections off box in Bananza's Properties > Tuning.
 // Both are put in the main module as it loads, only where the instructions are exactly as expected.
 namespace Loader::Nx2DkReflections {
 

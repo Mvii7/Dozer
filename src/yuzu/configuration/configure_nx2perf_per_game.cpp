@@ -30,6 +30,7 @@ struct Entry {
     bool Perf::Switches::*field;
     Perf::Game game; ///< Other: every game
     const char* label;
+    const char* tip = nullptr;
 };
 
 // The order of Perf::Keys, then Perf::GameKeys.
@@ -46,7 +47,11 @@ const Entry* EntryOf(std::size_t key) {
         {&S::dk_dyn, Perf::Game::Bananza, QT_TR_NOOP("Dynamic frame rate")},
         {&S::mkw_dyn, Perf::Game::MarioKartWorld, QT_TR_NOOP("Dynamic frame rate")},
         {&S::dk_foliage_off, Perf::Game::Bananza, QT_TR_NOOP("Foliage off")},
-        {&S::dk_reflections_off, Perf::Game::Bananza, QT_TR_NOOP("Reflections off")},
+        {&S::dk_reflections_off, Perf::Game::Bananza, QT_TR_NOOP("Dynamic reflections off"),
+         QT_TR_NOOP("Stops the game redrawing the scene around the camera into its reflection "
+                    "cube map every 8 frames, which saves those draws. Shiny and wet surfaces no "
+                    "longer reflect what is around them; some may still reflect the sky, and some "
+                    "areas may look a little flatter.")},
     };
     return &entries[key];
 }
@@ -150,6 +155,9 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         auto* row_layout = new QHBoxLayout;
         row_layout->addWidget(box, 1);
         row_layout->addWidget(reset);
+        if (entry->tip != nullptr) {
+            box->setToolTip(tr(entry->tip));
+        }
         form->addRow(tr(entry->label), row_layout);
         rows.push_back({box, reset, key});
         const std::size_t index = rows.size() - 1;

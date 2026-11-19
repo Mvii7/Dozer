@@ -12,7 +12,7 @@ and `=0` brings back the 2.0.0 code path.
   Medium, High and Very high cap the sun shadow's cascades at 1, 2, 3 and the game's own 4
   (`EDEN_NX2_DK_SHADOW_CASCADES=<1-3>`, `core/loader/nx2_dk_shadow.h`). Each cascade draws the
   shadow casters again.
-- Donkey Kong Bananza: a **Reflections off** box in its Properties > Tuning turns the reflection
+- Donkey Kong Bananza: a **Dynamic reflections off** box in its Properties > Tuning turns the reflection
   cube map off (`EDEN_NX2_DK_REFLECTIONS_OFF=1`, `core/loader/nx2_dk_reflections.h`); each capture
   draws the scene again. `EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>` sets the frames between captures
   by hand (the game's 8).
