@@ -1,6 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
-rem Dozer - PERFORMANCE (the default): the fastest settings, read traps and reactive flushing off. Foliage is not rendered.
+rem Dozer - PERFORMANCE (the default): the fastest settings, read traps on, reactive flushing off. Bananza: foliage off.
 rem Dozer launcher for dozer-cli.exe (Dozer's program without menus).
 rem Put this file next to dozer-cli.exe.
 rem Start: put your game (.nsp .xci .nsz .xcz .nup .nx) in the Games folder next to this file and double-click
@@ -67,7 +67,8 @@ set EDEN_NX2_FG_DIAG=
 set EDEN_NX2_RX_RT_FIT=
 set EDEN_NX2_FLUSH_FIRST_READ=
 set EDEN_NX2_READ_LATCH_AGE=
-rem Read traps are set to 0 below (balanced leaves them unset).
+rem Read traps stay on when this is unset.
+set EDEN_NX2_READ_TRAPS=
 set EDEN_NX2_RX_ONE_SUBMIT=
 set EDEN_NX2_RX_COALESCE=
 set EDEN_NX2_RX_PITCH_FORCED=
@@ -91,15 +92,17 @@ rem Donkey Kong Bananza dynamic frame rate (DK_DYN above; 0 = the game's own 60/
 set EDEN_NX2_DK_DYN=%DK_DYN%
 rem Donkey Kong Bananza foliage off: its grass, flowers and plants are not drawn (README).
 set EDEN_NX2_DK_FOLIAGE_OFF=1
+rem Donkey Kong Bananza: medium shadows (the sun shadow in 2 cascades) and no reflections (README).
+set EDEN_NX2_DK_SHADOW_CASCADES=2
+set EDEN_NX2_DK_REFLECTIONS_OFF=1
+set EDEN_NX2_DK_CUBEMAP_INTERVAL=
 rem Mario Kart World dynamic frame rate (MKW_DYN above).
 set EDEN_NX2_MKW_DYN=%MKW_DYN%
-rem FSR3 frame generation: generated frames blended for the time they are shown (only
+rem Optical Flow frame generation: generated frames blended for the time they are shown (only
 rem does something when frame generation is on in the config, README).
 set EDEN_NX2_FG_TIMED=1
 rem Game FPS, display FPS and speed in RivaTuner Statistics Server's overlay (OSD above).
 set EDEN_NX2_OSD=%OSD%
-rem Read traps off. Balanced leaves them on (the variable unset).
-set EDEN_NX2_READ_TRAPS=0
 if defined CONFIG goto withconfig
 "%HERE%dozer-cli.exe" %FULLSCREEN% -g "%GAME%"
 goto ran
