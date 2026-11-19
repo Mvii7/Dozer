@@ -149,7 +149,7 @@
 # split's back (and is flushed) only when the GPU wrote its page in the last n to 2n frames
 # (default 600). Before, a page the GPU wrote once counted for the whole session: after other
 # worlds, Donkey Kong Bananza's lists landed on pages their buffers had written, and the waits
-# took its lagoon from about 40 to 30 fps. 0: ever written, as before (Safe).
+# made a world slower on each return to it. 0: ever written, as before (Safe).
 #EDEN_NX2_WRITTEN_AGE=0
 # SKIP_EMPTY_DRAWS=1: draws without indices, vertices or instances are dropped (off).
 #EDEN_NX2_SKIP_EMPTY_DRAWS=1
