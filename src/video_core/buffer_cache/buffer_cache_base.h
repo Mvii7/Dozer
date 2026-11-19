@@ -445,8 +445,8 @@ public:
     void CompareReadChecks(DAddr device_addr, u64 size, u64 seq);
 
     /// EDEN_NX2_EARLY_DOWNLOADS: records the early downloads due and lands those the host GPU
-    /// ran (after a dispatch, at fences and frames).
-    void NoteReadBackPoint();
+    /// ran (after a dispatch, at fences and frames). dispatch: EDEN_NX2_EARLY_SUBMIT may submit.
+    void NoteReadBackPoint(bool dispatch = false);
 
     std::optional<VideoCore::RasterizerDownloadArea> GetFlushArea(DAddr device_addr, u64 size);
 
@@ -1210,7 +1210,7 @@ private:
     /// A GPU write: the learned pages under it get an early download.
     void NoteReadBackWrite(DAddr device_addr, u64 size);
     [[nodiscard]] bool IsEarlyPage(DAddr page) const;
-    void RecordEarlyDownloads();
+    bool RecordEarlyDownloads();
 
     size_t immediate_buffer_capacity = 0;
     Common::ScratchBuffer<u8> immediate_buffer_alloc;

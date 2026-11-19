@@ -1947,7 +1947,7 @@ void RasterizerVulkan::DispatchCompute() {
     // EDEN_NX2_EARLY_DOWNLOADS: downloads of the pages it writes go right behind it.
     SCOPE_EXIT {
         if (VideoCommon::Nx2AsyncReadback::EarlyDownloads()) {
-            buffer_cache.NoteReadBackPoint();
+            buffer_cache.NoteReadBackPoint(true);
         }
     };
 

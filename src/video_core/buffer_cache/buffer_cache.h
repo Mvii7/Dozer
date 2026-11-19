@@ -802,7 +802,8 @@ void BufferCache<P>::CompareReadChecks(DAddr device_addr, u64 size, u64 seq) {
 }
 
 template <class P>
-void BufferCache<P>::NoteReadBackPoint() {
+void BufferCache<P>::NoteReadBackPoint(bool dispatch) {
+    namespace AsyncReadback = VideoCommon::Nx2AsyncReadback;
     if constexpr (!IS_OPENGL && USE_MEMORY_MAPS) {
         if (read_downloads.empty() && early_pages.empty()) {
             return;
@@ -810,7 +811,10 @@ void BufferCache<P>::NoteReadBackPoint() {
         if (!runtime.CanSubmitForRead()) {
             return;
         }
-        RecordEarlyDownloads();
+        if (RecordEarlyDownloads() && dispatch && AsyncReadback::EarlySubmit()) {
+            runtime.SubmitForRead();
+            AsyncReadback::Add(AsyncReadback::g_stats.early_submits, 1);
+        }
         WriteRunReadDownloads();
     }
 }
@@ -841,6 +845,11 @@ void BufferCache<P>::NoteReadBack(DAddr begin, DAddr end, bool gpu_modified) {
             if (!it->written) {
                 // Nothing new since its last read.
                 continue;
+            }
+            if (!gpu_modified && it->reads >= EarlyAfterReads) {
+                // New writes the read found in guest memory already.
+                VideoCommon::Nx2AsyncReadback::Add(
+                    VideoCommon::Nx2AsyncReadback::g_stats.early_served, 1);
             }
             it->written = false;
             it->unread_frames = 0;
@@ -886,11 +895,11 @@ bool BufferCache<P>::IsEarlyPage(DAddr page) const {
 }
 
 template <class P>
-void BufferCache<P>::RecordEarlyDownloads() {
+bool BufferCache<P>::RecordEarlyDownloads() {
     namespace AsyncReadback = VideoCommon::Nx2AsyncReadback;
     if constexpr (!IS_OPENGL && USE_MEMORY_MAPS) {
         if (early_pages.empty()) {
-            return;
+            return false;
         }
         boost::container::small_vector<std::pair<DAddr, u64>, 16> pages;
         for (const DAddr page : early_pages) {
@@ -905,10 +914,11 @@ void BufferCache<P>::RecordEarlyDownloads() {
         if (pending_early_downloads >= MaxPendingEarlyDownloads ||
             early_bytes_this_frame >= EarlyBytesPerFrame) {
             AsyncReadback::Add(AsyncReadback::g_stats.early_capped, 1);
-            return;
+            return false;
         }
-        RecordReadDownload(pages, true);
+        return RecordReadDownload(pages, true);
     }
+    return false;
 }
 
 template <class P>

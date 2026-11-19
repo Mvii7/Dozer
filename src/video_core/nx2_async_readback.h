@@ -69,6 +69,17 @@ namespace VideoCommon::Nx2AsyncReadback {
     return enabled;
 }
 
+/// EDEN_NX2_EARLY_SUBMIT=1: early downloads recorded after a dispatch are submitted at once,
+/// so the host GPU runs them before the read comes (more submissions). Off: they go with the
+/// next submission.
+[[nodiscard]] inline bool EarlySubmit() noexcept {
+    static const bool enabled = [] {
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_EARLY_SUBMIT");
+        return EarlyDownloads() && value != nullptr && value[0] == '1';
+    }();
+    return enabled;
+}
+
 [[nodiscard]] inline bool EarlySkipCopyBack() noexcept {
     static const bool enabled = EarlyDownloads() && EnvOn("EDEN_NX2_EARLY_SKIP_COPYBACK");
     return enabled;
@@ -99,6 +110,8 @@ struct Stats {
     std::atomic<u64> writer_drops{};  ///< Not submitted yet: such a write took its bytes out
     std::atomic<u64> cpu_kept{};      ///< Bytes a pending guest CPU write kept from a landing
     std::atomic<u64> learned{};       ///< Pages learned as read back
+    std::atomic<u64> early_served{};  ///< Reads of a learned page's new writes that needed no fetch
+    std::atomic<u64> early_submits{}; ///< EDEN_NX2_EARLY_SUBMIT submissions
     std::atomic<u64> checks{};        ///< Verify: reads checked
     std::atomic<u64> mismatches{};    ///< Verify: reads whose bytes differed
 };
@@ -143,17 +156,20 @@ inline void Report() noexcept {
     const u64 writer_drops = take(g_stats.writer_drops);
     const u64 cpu_kept = take(g_stats.cpu_kept);
     const u64 checks = take(g_stats.checks);
+    const u64 early_served = take(g_stats.early_served);
+    const u64 early_submits = take(g_stats.early_submits);
     LOG_INFO(HW_GPU,
              "Async read-back, last 600 frames: {} reads flushed, {} read downloads ({} KiB), {} "
              "early "
              "({} KiB, {} capped) | readers waited for the host GPU {} times, {} us (avg {} us, "
              "max {} us) | landed by the GPU thread {}, readers {}, GPU-side writes {} ({} "
              "dropped) | {} bytes kept for pending CPU writes | {} synchronous fallbacks | "
-             "{} pages learned | checks {} this window, {} mismatching reads so far",
+             "{} pages learned, {} reads of their new writes needed no fetch, {} early submits | "
+             "checks {} this window, {} mismatching reads so far",
              reads, recorded, bytes >> 10, early, early_bytes >> 10, early_capped, waits, wait_us,
              waits != 0 ? wait_us / waits : 0, max_wait_us, gpu_lands, reader_lands, writer_lands,
              writer_drops, cpu_kept, fallbacks, g_stats.learned.load(std::memory_order_relaxed),
-             checks, g_stats.mismatches.load(std::memory_order_relaxed));
+             early_served, early_submits, checks, g_stats.mismatches.load(std::memory_order_relaxed));
 }
 
 } // namespace VideoCommon::Nx2AsyncReadback
