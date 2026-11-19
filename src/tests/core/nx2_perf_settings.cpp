@@ -537,19 +537,20 @@ TEST_CASE("Nx2PerfSettings: a game's overrides read back what was written", "[co
                 .Empty());
 }
 
-TEST_CASE("Nx2PerfSettings: Bananza starts from Performance, the others from the global preset",
+TEST_CASE("Nx2PerfSettings: Bananza starts from Balanced, the others from the global preset",
           "[core]") {
     REQUIRE(Keys[0].name == "read_traps");
     // A first start is Balanced; a file with no stored choice still reads as Performance.
     REQUIRE(FirstStart() == Balanced());
     REQUIRE(FirstStart().preset == Preset::Balanced);
     REQUIRE(FirstStart().read_traps);
-    // Whatever the global preset is, Bananza is Performance.
+    // Whatever the global preset is, Bananza is Balanced: read traps on, foliage off.
     for (const Preset preset : {Preset::Performance, Preset::Balanced, Preset::Reactive,
                                 Preset::Safe, Preset::Custom}) {
         const Switches global = FromPreset(preset, Balanced());
-        REQUIRE(ForGame(global, Game::Bananza, {}) == FromPreset(Preset::Performance, global));
-        REQUIRE(!ForGame(global, Game::Bananza, {}).read_traps);
+        REQUIRE(ForGame(global, Game::Bananza, {}) == FromPreset(Preset::Balanced, global));
+        REQUIRE(ForGame(global, Game::Bananza, {}).read_traps);
+        REQUIRE(ForGame(global, Game::Bananza, {}).dk_foliage_off);
         // Any other game, Mario Kart World too: the global settings as they are.
         REQUIRE(ForGame(global, Game::MarioKartWorld, {}) == global);
         REQUIRE(ForGame(global, Game::Other, {}) == global);
@@ -569,10 +570,10 @@ TEST_CASE("Nx2PerfSettings: Bananza starts from Performance, the others from the
     own = {};
     own.boxes[0] = true;
     REQUIRE(ForGame(global, Game::Bananza, own).read_traps);
-    REQUIRE(ForGame(global, Game::Bananza, own).preset == Preset::Performance);
+    REQUIRE(ForGame(global, Game::Bananza, own).preset == Preset::Balanced);
     REQUIRE(ForGame(global, Game::Bananza, own).osd == global.osd);
 
-    // What the game's variables say: Bananza sets READ_TRAPS=0, Mario Kart World leaves it unset.
+    // What the game's variables say: neither sets READ_TRAPS=0 (Bananza does with Performance).
     const auto has_read_traps = [](const std::vector<Var>& vars) {
         for (const Var& var : vars) {
             if (var.name == "EDEN_NX2_READ_TRAPS") {
@@ -581,7 +582,10 @@ TEST_CASE("Nx2PerfSettings: Bananza starts from Performance, the others from the
         }
         return false;
     };
-    REQUIRE(has_read_traps(Wanted(ForGame(Balanced(), Game::Bananza, {}), Game::Bananza)));
+    REQUIRE(!has_read_traps(Wanted(ForGame(Performance(), Game::Bananza, {}), Game::Bananza)));
+    Overrides performance;
+    performance.preset = Preset::Performance;
+    REQUIRE(has_read_traps(Wanted(ForGame(Balanced(), Game::Bananza, performance), Game::Bananza)));
     REQUIRE(!has_read_traps(
         Wanted(ForGame(FirstStart(), Game::MarioKartWorld, {}), Game::MarioKartWorld)));
     // With the first start's preset the two games differ, so a session asks to restart between
@@ -594,7 +598,7 @@ TEST_CASE("Nx2PerfSettings: Bananza starts from Performance, the others from the
 
 TEST_CASE("Nx2PerfSettings: a game with its own preset can follow the global one", "[core]") {
     const Switches global = FirstStart();
-    REQUIRE(PresetFor(global.preset, Game::Bananza, {}) == Preset::Performance);
+    REQUIRE(PresetFor(global.preset, Game::Bananza, {}) == Preset::Balanced);
     REQUIRE(PresetFor(global.preset, Game::MarioKartWorld, {}) == global.preset);
 
     Overrides follow;

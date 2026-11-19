@@ -142,8 +142,9 @@ under it.
 **Per game.** A game's **Properties > Tuning** tab (right-click the game, or **Emulation >
 Configure Current Game**) shows this tab's preset and boxes as that game runs them, the same as
 here. Change one for that game only and a cross appears next to it; the cross resets it to this
-tab's. **Donkey Kong Bananza** starts with the **Performance** preset (read traps off) instead of
-this tab's, so its cross is there from the start; press it and Bananza follows this tab's preset.
+tab's. **Donkey Kong Bananza** starts with the **Balanced** preset (read traps on with foliage off
+is its fastest) instead of this tab's, so with another preset here its cross is there from the
+start; press it and Bananza follows this tab's preset.
 Frame generation stays as it is here. Bananza and Mario Kart World also have a **Dynamic frame
 rate** box, only in their own Properties (on by default, no cross: it has no global setting). A game with changes starts with
 them, and Dozer asks to restart when the session's first game used others. Mario Kart World needs

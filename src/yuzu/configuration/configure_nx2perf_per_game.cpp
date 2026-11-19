@@ -98,7 +98,7 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     auto* intro = new QLabel(
         tr("These settings are the Tuning tab's, as this game runs them. A cross next to one resets "
-           "it to the Tuning tab's. Donkey Kong Bananza starts with the Performance preset instead "
+           "it to the Tuning tab's. Donkey Kong Bananza starts with the Balanced preset instead "
            "of the Tuning tab's. They take effect when the game starts. If a game has already run "
            "since Dozer was opened, Dozer will ask to restart before a change applies."),
         this);

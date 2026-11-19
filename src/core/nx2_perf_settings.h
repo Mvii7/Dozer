@@ -455,10 +455,11 @@ constexpr Game GameOf(u64 program_id) {
     return Game::Other;
 }
 
-/// The preset a game starts from instead of the global one: Bananza Performance (read traps off).
-/// Other games: none, they follow the global preset (Balanced from the first start).
+/// The preset a game starts from instead of the global one: Bananza Balanced (read traps on with
+/// foliage off is its fastest). Other games: none, they follow the global preset (Balanced from
+/// the first start).
 constexpr std::optional<Preset> GamePreset(Game game) {
-    return game == Game::Bananza ? std::optional{Preset::Performance} : std::nullopt;
+    return game == Game::Bananza ? std::optional{Preset::Balanced} : std::nullopt;
 }
 
 /// The preset a game runs with: its own choice, else its starting one (unless it follows the

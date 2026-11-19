@@ -8,6 +8,8 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Donkey Kong Bananza starts with the **Balanced** preset instead of Performance: with foliage off,
+  read traps on runs it faster than off.
 - Donkey Kong Bananza: a **Shadow quality** box in its Properties > Tuning, under Foliage off: Low,
   Medium, High and Very high cap the sun shadow's cascades at 1, 2, 3 and the game's own 4
   (`EDEN_NX2_DK_SHADOW_CASCADES=<1-3>`, `core/loader/nx2_dk_shadow.h`). Each cascade draws the
