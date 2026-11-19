@@ -185,7 +185,7 @@ program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
 it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
 **Foliage off** box under its Dynamic frame rate box (`DK_FOLIAGE_OFF=1`), a **Reflections off**
-box (`DK_REFLECTIONS_OFF=1`; unticked, the program sets `DK_CUBEMAP_INTERVAL=24`, no box) and
+box (`DK_REFLECTIONS_OFF=1`; unticked, the game's own) and
 **Shadow quality** (Low, Medium, High, Very high: the sun shadow's 1 to 4 cascades, Very high the
 game's own; `DK_SHADOW_CASCADES=<1-3>`). The presets set all three: Performance, Balanced and
 Experimental foliage and reflections off and Medium shadows; Safe the game's own. Bananza's
@@ -379,8 +379,8 @@ high. It applies when the game starts.
 Bananza captures the scene around the camera into a reflection cube map every 8 frames (each
 capture draws the scene again), which its shiny and wet surfaces reflect.
 `EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>` sets the frames between captures: higher means fewer draws
-and reflections that follow changes later. The menu program always sets 24 for Bananza (no box);
-set the variable in `nx2_switches.txt` to try another value, which wins over the program's.
+and reflections that follow changes later; it changes how fresh the reflections are, not how
+detailed. The menu program leaves it unset (the game's own); set it in `nx2_switches.txt` to try one.
 `EDEN_NX2_DK_REFLECTIONS_OFF=1` turns the cube map off: no captures, no reflections. In the menu
 program it is the **Reflections off** box in Bananza's Properties > Tuning, ticked by
 Performance, Balanced and Experimental (and their launchers), unticked by Safe and Quality.

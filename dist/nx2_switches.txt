@@ -301,8 +301,7 @@
 
 # --- Donkey Kong Bananza reflections (game-specific; core/loader/nx2_dk_reflections.h) ---
 # DK_CUBEMAP_INTERVAL=<1-240>: frames between two captures of the reflection cube map (the game's:
-# 8; each capture draws the scene again). The menu program always sets 24 for Bananza; set it here
-# to try another. DK_REFLECTIONS_OFF=1: no cube map at all, so no captures and no reflections (the
+# 8; each capture draws the scene again; the menu program leaves it unset). DK_REFLECTIONS_OFF=1: no cube map at all, so no captures and no reflections (the
 # Reflections off box in Bananza's Properties > Tuning: on in Performance, Balanced and Experimental).
 #EDEN_NX2_DK_CUBEMAP_INTERVAL=24
 #EDEN_NX2_DK_REFLECTIONS_OFF=1

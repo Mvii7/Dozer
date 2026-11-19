@@ -10,7 +10,6 @@
 
 #include "common/common_types.h"
 #include "core/loader/nx2_dk_dynamic_fps.h"
-#include "core/loader/nx2_dk_reflections.h"
 #include "core/loader/nx2_mkw_dynamic_fps.h"
 
 // Anka's settings in the Qt program (anka.exe): the EDEN_NX2_* switches of the launchers
@@ -79,8 +78,7 @@ struct Switches {
     // Game-specific, but set by the presets (FromPreset): on in Performance, Balanced and
     // Experimental, off in Safe and Quality.
     bool dk_foliage_off = true;    ///< EDEN_NX2_DK_FOLIAGE_OFF=1, Bananza only
-    /// Bananza's reflections off (EDEN_NX2_DK_REFLECTIONS_OFF=1). Unticked, Bananza gets a
-    /// reflection capture interval instead (EDEN_NX2_DK_CUBEMAP_INTERVAL).
+    /// Bananza's reflections off (EDEN_NX2_DK_REFLECTIONS_OFF=1); unticked, the game's own.
     bool dk_reflections_off = true;
     /// Bananza's shadow quality, kept per game only: the sun shadow's most cascades, Low 1 to
     /// Very high 4 (the game's own); below it EDEN_NX2_DK_SHADOW_CASCADES=<n>. Medium in
@@ -519,7 +517,7 @@ inline constexpr std::array<std::string_view, 68> SafeOff{
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
-inline constexpr std::array<std::string_view, 18> Names{
+inline constexpr std::array<std::string_view, 17> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
@@ -528,7 +526,7 @@ inline constexpr std::array<std::string_view, 18> Names{
     "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
     "EDEN_NX2_DK_FOLIAGE_OFF", "EDEN_NX2_DK_SHADOW_CASCADES",
-    "EDEN_NX2_DK_REFLECTIONS_OFF", "EDEN_NX2_DK_CUBEMAP_INTERVAL",
+    "EDEN_NX2_DK_REFLECTIONS_OFF",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -584,11 +582,6 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
         vars.push_back({"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"});
         vars.push_back({"EDEN_NX2_MODE_PACE", "2"});
         vars.push_back({"EDEN_NX2_PACE_SPIN_US", "1500"});
-        // Fewer reflection captures than the game's every 8 frames (no box: always)
-        if (!switches.dk_reflections_off) {
-            vars.push_back({Loader::Nx2DkReflections::IntervalSwitch,
-                            Loader::Nx2DkReflections::Interval});
-        }
     }
     if (game == Game::MarioKartWorld && switches.mkw_dyn) {
         vars.push_back({"EDEN_NX2_MKW_DYN", "1"});

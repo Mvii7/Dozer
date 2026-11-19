@@ -13,8 +13,8 @@
 
 // Donkey Kong Bananza's reflections: the cube map the game captures of the scene around the camera
 // (drawing the scene again into its faces) and its shiny and wet surfaces reflect.
-//   EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>: frames between two captures (the game's: 8). The menu
-//   program always sets it for Bananza (Interval); higher, fewer draws, reflections follow later.
+//   EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>: frames between two captures (the game's: 8), only by
+//   hand; higher, fewer draws, reflections follow later.
 //   EDEN_NX2_DK_REFLECTIONS_OFF=1: no cube map at all (IsUseCubeMap off): no captures, no
 //   reflections. The Reflections off box in Bananza's Properties > Tuning.
 // Both are put in the main module as it loads, only where the instructions are exactly as expected.
@@ -24,8 +24,6 @@ constexpr const char* IntervalSwitch = "EDEN_NX2_DK_CUBEMAP_INTERVAL";
 constexpr const char* OffSwitch = "EDEN_NX2_DK_REFLECTIONS_OFF";
 constexpr int GameInterval = 8;
 constexpr int MostInterval = 240;
-/// What the menu program sets for Bananza.
-constexpr std::string_view Interval = "24";
 
 /// The interval a variable asks for: 1 to 240, or 0 (unset or anything else).
 constexpr int IntervalFrom(const char* value) {
