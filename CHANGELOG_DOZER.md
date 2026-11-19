@@ -13,7 +13,8 @@ and `=0` brings back the 2.0.0 code path.
   thread wait for the host GPU. It submits the download and goes on; the reading thread waits for
   that submission and writes the bytes to guest memory itself, keeping those of guest CPU writes
   not applied yet. Pages the guest reads after each GPU write get their download recorded right
-  behind the write (early downloads), and are no longer copied back at every fence. Writes to
+  behind the write (early downloads, with reactive flushing; `EARLY_DOWNLOADS=1` for read traps,
+  where the fences' copies back serve them better), and are no longer copied back at every fence. Writes to
   guest memory from the GPU's side (semaphores, reports, engine copies) land the downloads under
   them first. `READER_LANDING`, `EARLY_DOWNLOADS`, `RX_READBACK` and `EARLY_SKIP_COPYBACK=0` turn
   the parts off; `=2` checks every read against the GPU's bytes at its point (slow). Vulkan only;

@@ -337,7 +337,9 @@
 #   READER_LANDING=0: the GPU thread writes the bytes instead, in a second request.
 #   EARLY_DOWNLOADS=0: no early downloads. On: pages the guest reads after each GPU write (twice
 #     in a row) get their download recorded right behind the write (a dispatch, a fence), so the
-#     read finds them landed or on their way (8 MiB a frame, 512 pending at most).
+#     read finds them landed or on their way (8 MiB a frame, 512 pending at most). Unset, they
+#     are on with reactive flushing only: with read traps the fences' copies back bring those
+#     pages already (Bananza: 30 to 40 fps with them off). =1 turns them on with read traps.
 #   RX_READBACK=0: with reactive flushing, reads of GPU-written buffer memory keep waiting for
 #     the fences' copies back (on: they download like read traps do).
 #   EARLY_SKIP_COPYBACK=0: pages early downloads cover are still copied back at every fence.

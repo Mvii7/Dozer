@@ -8,6 +8,7 @@
 #include "common/common_types.h"
 #include "common/logging.h"
 #include "common/nx2_reactive.h"
+#include "common/settings.h"
 
 // EDEN_NX2_ASYNC_READBACK (after Lichii's read-back): a guest CPU read of GPU-written buffer
 // memory (GPU::OnCPURead) has the GPU thread record the copies and submit them without waiting
@@ -23,7 +24,9 @@
 //   GPU thread does).
 // - EDEN_NX2_EARLY_DOWNLOADS: pages the guest reads after each GPU write get their download
 //   recorded right behind the write (a dispatch, a fence), so the read finds them landed or on
-//   their way.
+//   their way. Unset, on with reactive flushing only: with read traps the fences' copies back
+//   bring those pages already, and early downloads made their reads trap (Bananza: 30 to 40 fps
+//   with them off).
 // - EDEN_NX2_RX_READBACK: with reactive flushing, a read of GPU-written buffer memory downloads
 //   it the same way (0: it waits for the fences' copies back, as before).
 // - EDEN_NX2_EARLY_SKIP_COPYBACK: pages early downloads cover are no longer copied back at
@@ -60,7 +63,16 @@ namespace VideoCommon::Nx2AsyncReadback {
 }
 
 [[nodiscard]] inline bool EarlyDownloads() noexcept {
-    static const bool enabled = Enabled() && EnvOn("EDEN_NX2_EARLY_DOWNLOADS");
+    static const bool enabled = [] {
+        if (!Enabled()) {
+            return false;
+        }
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_EARLY_DOWNLOADS");
+        if (value == nullptr || value[0] == '\0') {
+            return Settings::values.use_reactive_flushing.GetValue();
+        }
+        return value[0] != '0';
+    }();
     return enabled;
 }
 
