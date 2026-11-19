@@ -609,7 +609,7 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
         for (size_t i = 0; i < sites.size(); ++i) {
             const auto [from, store, reg] = sites[i];
             const size_t routine = literal + 1 + i * InvalidRoutineWords;
-            put(routine, 0x36180060U | reg); // tbz wR, #3, +12
+            put(routine, 0x36180060U | static_cast<u32>(reg)); // tbz wR, #3, +12
             put(routine + 1,
                 0x1C000000U | ((static_cast<u32>(literal - (routine + 1)) & 0x7FFFFU) << 5));
             put(routine + 2, branch(routine + 2, store));
