@@ -58,6 +58,12 @@ inline constexpr int ShadowLow = 1;
 inline constexpr int ShadowMedium = 2;
 inline constexpr int ShadowVeryHigh = 4;
 
+/// Bananza's reflection update steps: how often the reflection cube map is captured again.
+inline constexpr int ReflectionsVeryLow = 1; ///< every 240 frames, the most the patch takes
+inline constexpr int ReflectionsLow = 2;    ///< every 32 frames
+inline constexpr int ReflectionsMedium = 3; ///< every 16 frames
+inline constexpr int ReflectionsHigh = 4;   ///< every 8 frames, the game's own
+
 struct Switches {
     bool read_traps = true;        ///< on leaves EDEN_NX2_READ_TRAPS unset; off sets it to 0
     bool split_gpu_thread = true;  ///< EDEN_NX2_BACK_STAGES=1 + EDEN_NX2_BACK_CUTS=a
@@ -72,8 +78,10 @@ struct Switches {
     // Game-specific, but set by the presets (FromPreset): on in Performance and Experimental,
     // off in Quality and Safe.
     bool dk_foliage_off = true;    ///< EDEN_NX2_DK_FOLIAGE_OFF=1, Bananza only
-    /// Bananza's reflections off (EDEN_NX2_DK_REFLECTIONS_OFF=1); unticked, the game's own.
-    bool dk_reflections_off = true;
+    /// Bananza's reflection updates, kept per game only: Very low, Low and Medium
+    /// (EDEN_NX2_DK_CUBEMAP_INTERVAL=240, 32 or 16), High the game's own. Very low in Performance
+    /// and Experimental, High in Quality and Safe.
+    int dk_reflections = ReflectionsVeryLow;
     /// Bananza's shadow quality, kept per game only: the sun shadow's most cascades, Low 1 to
     /// Very high 4 (the game's own); below it EDEN_NX2_DK_SHADOW_CASCADES=<n>. Medium in
     /// Performance and Experimental, Very high in Quality and Safe.
@@ -84,7 +92,7 @@ struct Switches {
 };
 
 /// What the performance launcher sets: everything on, read traps too (with Bananza's foliage off
-/// they are faster than off), Bananza's foliage and dynamic reflections off and medium shadows.
+/// they are faster than off), Bananza's foliage off, static reflections and medium shadows.
 constexpr Switches Performance() {
     return Switches{};
 }
@@ -94,7 +102,7 @@ constexpr Switches Performance() {
 constexpr Switches Quality() {
     Switches switches{};
     switches.dk_foliage_off = false;
-    switches.dk_reflections_off = false;
+    switches.dk_reflections = ReflectionsHigh;
     switches.dk_shadow = ShadowVeryHigh;
     switches.preset = Preset::Quality;
     return switches;
@@ -116,7 +124,7 @@ constexpr Switches AllOff() {
         .fg_timed = false,
         .osd = false,
         .dk_foliage_off = false,
-        .dk_reflections_off = false,
+        .dk_reflections = ReflectionsHigh,
         .dk_shadow = ShadowVeryHigh,
         .preset = Preset::Safe,
     };
@@ -139,11 +147,10 @@ inline constexpr std::array<Key, 7> Keys{{
 
 /// The game-specific keys: stored like the others, but outside the presets (but for
 /// bananza_foliage_off, which they set).
-inline constexpr std::array<Key, 4> GameKeys{{
+inline constexpr std::array<Key, 3> GameKeys{{
     {"bananza_dynamic_fps", &Switches::dk_dyn},
     {"mariokart_dynamic_fps", &Switches::mkw_dyn},
     {"bananza_foliage_off", &Switches::dk_foliage_off},
-    {"bananza_reflections_off", &Switches::dk_reflections_off},
 }};
 
 inline constexpr std::size_t KeyCount = Keys.size() + GameKeys.size();
@@ -161,9 +168,10 @@ struct Overrides {
     bool global_preset = false;
     std::array<std::optional<bool>, KeyCount> boxes{};
     std::optional<int> dk_shadow; ///< Bananza's shadow quality, ShadowLow to ShadowVeryHigh
+    std::optional<int> dk_reflections; ///< ReflectionsVeryLow to ReflectionsHigh
 
     constexpr bool Empty() const {
-        if (preset || global_preset || dk_shadow) {
+        if (preset || global_preset || dk_shadow || dk_reflections) {
             return false;
         }
         for (const auto& box : boxes) {
@@ -187,6 +195,9 @@ constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) 
     if (overrides.dk_shadow) {
         switches.dk_shadow = *overrides.dk_shadow;
     }
+    if (overrides.dk_reflections) {
+        switches.dk_reflections = *overrides.dk_reflections;
+    }
     return switches;
 }
 
@@ -195,7 +206,9 @@ inline constexpr int FollowGlobalPreset = -2;
 
 /// Reads a game's overrides through `read(key)`: -1 for no override, 0 off, 1 on; "preset" is
 /// a preset number, FollowGlobalPreset, or -1 (Custom, or anything else, is none);
-/// "bananza_shadow_quality" a shadow quality step or -1.
+/// "bananza_shadow_quality" a shadow quality step or -1, "bananza_reflection_updates" a
+/// reflection update step or -1 (else the box it replaces, "bananza_reflections_off": on is
+/// Very low, off High).
 template <typename Read>
 Overrides LoadOverrides(Read&& read) {
     Overrides overrides;
@@ -215,6 +228,12 @@ Overrides LoadOverrides(Read&& read) {
         shadow >= ShadowLow && shadow <= ShadowVeryHigh) {
         overrides.dk_shadow = shadow;
     }
+    if (const int updates = read("bananza_reflection_updates");
+        updates >= ReflectionsVeryLow && updates <= ReflectionsHigh) {
+        overrides.dk_reflections = updates;
+    } else if (const int off = read("bananza_reflections_off"); off == 0 || off == 1) {
+        overrides.dk_reflections = off == 1 ? ReflectionsVeryLow : ReflectionsHigh;
+    }
     return overrides;
 }
 
@@ -231,6 +250,8 @@ void SaveOverrides(const Overrides& overrides, Write&& write) {
         write(KeyAt(i).name, box ? static_cast<int>(*box) : -1);
     }
     write("bananza_shadow_quality", overrides.dk_shadow.value_or(-1));
+    write("bananza_reflection_updates", overrides.dk_reflections.value_or(-1));
+    write("bananza_reflections_off", -1);
 }
 
 /// A stored preset number. Anything else is Custom (a file edited by hand).
@@ -397,15 +418,15 @@ Switches Load(Read&& read, ReadPreset&& read_preset) {
         switches.read_traps = preset_switches.read_traps;
     }
     for (const Key& key : GameKeys) {
-        // Bananza's foliage and reflections were added after the presets: a file without them
-        // gets the preset's
-        const bool by_preset = key.field == &Switches::dk_foliage_off ||
-                               key.field == &Switches::dk_reflections_off;
+        // Bananza's foliage was added after the presets: a file without it gets the preset's
+        const bool by_preset = key.field == &Switches::dk_foliage_off;
         const bool fallback = by_preset ? preset_switches.*key.field : Performance().*key.field;
         switches.*key.field = read(key.name, fallback);
     }
-    // Bananza's shadow quality is not stored here: the preset's (games keep their own choice)
+    // Bananza's shadow quality and reflection updates are not stored here: the preset's (games
+    // keep their own choice)
     switches.dk_shadow = preset_switches.dk_shadow;
+    switches.dk_reflections = preset_switches.dk_reflections;
     switches.preset = preset;
     return AfterBoxChange(switches);
 }
@@ -514,7 +535,7 @@ inline constexpr std::array<std::string_view, 17> Names{
     "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
     "EDEN_NX2_DK_FOLIAGE_OFF", "EDEN_NX2_DK_SHADOW_CASCADES",
-    "EDEN_NX2_DK_REFLECTIONS_OFF",
+    "EDEN_NX2_DK_CUBEMAP_INTERVAL",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -564,8 +585,12 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
             vars.push_back({"EDEN_NX2_DK_SHADOW_CASCADES",
                             Cascades[static_cast<std::size_t>(switches.dk_shadow - 1)]});
         }
-        if (switches.dk_reflections_off) {
-            vars.push_back({"EDEN_NX2_DK_REFLECTIONS_OFF", "1"});
+        if (switches.dk_reflections == ReflectionsVeryLow) {
+            vars.push_back({"EDEN_NX2_DK_CUBEMAP_INTERVAL", "240"});
+        } else if (switches.dk_reflections == ReflectionsLow) {
+            vars.push_back({"EDEN_NX2_DK_CUBEMAP_INTERVAL", "32"});
+        } else if (switches.dk_reflections == ReflectionsMedium) {
+            vars.push_back({"EDEN_NX2_DK_CUBEMAP_INTERVAL", "16"});
         }
         vars.push_back({"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"});
         vars.push_back({"EDEN_NX2_MODE_PACE", "2"});

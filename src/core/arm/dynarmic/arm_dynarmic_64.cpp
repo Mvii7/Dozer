@@ -4,8 +4,12 @@
 // SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdlib>
+#include <mutex>
+#include <string>
 #if defined(_M_X64) || defined(__x86_64__)
 #include <immintrin.h>
 #endif
@@ -38,13 +42,39 @@ u64 DynarmicCallbacks64::MemoryRead(u64 vaddr, size_t size) {
     case sizeof(u8): value = m_memory.Read8(vaddr); break;
     default: UNREACHABLE();
     }
-    // With memory aborts ignored the guest keeps running on zeros: say where it read from.
+    // With memory aborts ignored the guest keeps running on zeros: say where it read from, once
+    // for each of the first reading instructions, with the code around it to disassemble.
     if (auto& unmapped = Core::Memory::UnmappedReadFlag(); unmapped != 0) {
         unmapped = 0;
-        static std::atomic<u32> logged{};
-        if (logged.fetch_add(1) < 32) {
-            LOG_ERROR(Core_ARM, "Unmapped read {:#x} ({} bytes) at pc {:#x} lr {:#x} sp {:#x}", vaddr, size,
-                      m_parent.m_jit->GetPC(), m_parent.m_jit->GetRegister(30), m_parent.m_jit->GetSP());
+        const u64 pc = m_parent.m_jit->GetPC();
+        static std::mutex seen_mutex;
+        static std::array<u64, 32> seen{};
+        static size_t seen_count = 0;
+        bool first = false;
+        {
+            std::scoped_lock lock{seen_mutex};
+            if (seen_count < seen.size() &&
+                std::find(seen.begin(), seen.begin() + seen_count, pc) == seen.begin() + seen_count) {
+                seen[seen_count++] = pc;
+                first = true;
+            }
+        }
+        if (first) {
+            constexpr u64 Before = 16, After = 4;
+            std::string code;
+            const u64 start = pc - Before * 4;
+            if (m_memory.IsValidVirtualAddressRange(start, (Before + After + 1) * 4)) {
+                for (u64 i = 0; i <= Before + After; ++i) {
+                    const bool at_pc = i == Before;
+                    code += fmt::format(" {}{:08x}{}", at_pc ? "[" : "",
+                                        m_memory.Read32(start + i * 4), at_pc ? "]" : "");
+                }
+            }
+            LOG_ERROR(Core_ARM,
+                      "Unmapped read {:#x} ({} bytes) at pc {:#x} lr {:#x} sp {:#x}; code from "
+                      "{:#x}:{}",
+                      vaddr, size, pc, m_parent.m_jit->GetRegister(30), m_parent.m_jit->GetSP(),
+                      start, code);
         }
     }
     return value;

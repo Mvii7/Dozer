@@ -300,10 +300,13 @@
 
 # --- Donkey Kong Bananza reflections (game-specific; core/loader/nx2_dk_reflections.h) ---
 # DK_CUBEMAP_INTERVAL=<1-240>: frames between two captures of the reflection cube map (the game's:
-# 8; each capture draws the scene again; the menu program leaves it unset). DK_REFLECTIONS_OFF=1: no cube map at all, so no captures and no reflections (the
-# Dynamic reflections off box in Bananza's Properties > Tuning: on in Performance and Experimental).
-#EDEN_NX2_DK_CUBEMAP_INTERVAL=24
-#EDEN_NX2_DK_REFLECTIONS_OFF=1
+# 8; each capture draws the scene again; the cube map itself is never turned off). Bananza's
+# Reflection updates in its Properties > Tuning set it: Very low 240 (Performance and
+# Experimental), Low 32, Medium 16, High the game's (Quality and Safe).
+#EDEN_NX2_DK_CUBEMAP_INTERVAL=240
+# Set here or in the environment, DK_SHADOW_CASCADES=0 and DK_CUBEMAP_INTERVAL=8 keep the game's
+# own whatever the menu program's preset (the log says "the game's own" for each): to tell which
+# one gives "Unmapped Read" lines, run with one at 0 and the other set, then the other way round.
 
 # --- Mario Kart World dynamic frame rate (game-specific; core/loader/nx2_mkw_dynamic_fps.h) ---
 # MKW_DYN=1: while Mario Kart World's main module loads, patch its frame mode choice in memory
