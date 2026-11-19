@@ -47,11 +47,6 @@ const Entry* EntryOf(std::size_t key) {
         {&S::dk_dyn, Perf::Game::Bananza, QT_TR_NOOP("Dynamic frame rate")},
         {&S::mkw_dyn, Perf::Game::MarioKartWorld, QT_TR_NOOP("Dynamic frame rate")},
         {&S::dk_foliage_off, Perf::Game::Bananza, QT_TR_NOOP("Foliage off")},
-        {&S::dk_reflections_off, Perf::Game::Bananza, QT_TR_NOOP("Dynamic reflections off"),
-         QT_TR_NOOP("Stops the game redrawing the scene around the camera into its reflection "
-                    "cube map every 8 frames, which saves those draws. Shiny and wet surfaces no "
-                    "longer reflect what is around them; some may still reflect the sky, and some "
-                    "areas may look a little flatter.")},
     };
     return &entries[key];
 }
@@ -188,6 +183,29 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
             own.dk_shadow = chosen == base ? std::nullopt : std::optional<int>{chosen};
             Refresh();
         });
+
+        // How often the reflection cube map is captured again, one interval per step
+        reflections = new QComboBox(this);
+        reflections->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        reflections->addItem(tr("Very low"));
+        reflections->addItem(tr("Low"));
+        reflections->addItem(tr("Medium"));
+        reflections->addItem(tr("High"));
+        reflections->setToolTip(
+            tr("How often the scene around the camera is captured again into the reflection cube "
+               "map that shiny and wet surfaces reflect: Very low every 240 frames, Low every 32, "
+               "Medium every 16, High every 8 (the game's own). Each capture draws the scene "
+               "again; less often, reflections follow what is around them later."));
+        form->addRow(tr("Reflection updates"), reflections);
+        connect(reflections, &QComboBox::activated, this, [this](int index) {
+            const int chosen = Perf::ReflectionsVeryLow + index;
+            Perf::Overrides without = own;
+            without.dk_reflections.reset();
+            const int base =
+                Perf::ForGame(UISettings::values.nx2perf, game, without).dk_reflections;
+            own.dk_reflections = chosen == base ? std::nullopt : std::optional<int>{chosen};
+            Refresh();
+        });
     }
 
     Refresh();
@@ -226,6 +244,10 @@ void ConfigureNx2PerfPerGame::Refresh() {
         const QSignalBlocker blocker{shadow};
         shadow->setCurrentIndex(now.dk_shadow - Perf::ShadowLow);
     }
+    if (reflections != nullptr) {
+        const QSignalBlocker blocker{reflections};
+        reflections->setCurrentIndex(now.dk_reflections - Perf::ReflectionsVeryLow);
+    }
 }
 
 void ConfigureNx2PerfPerGame::ChoosePreset(Perf::Preset chosen) {
@@ -235,12 +257,12 @@ void ConfigureNx2PerfPerGame::ChoosePreset(Perf::Preset chosen) {
     // Bananza's foliage, reflections and shadows are the preset's again
     for (std::size_t key = 0; key < Perf::KeyCount; ++key) {
         const auto field = Perf::KeyAt(key).field;
-        if (field == &Perf::Switches::dk_foliage_off ||
-            field == &Perf::Switches::dk_reflections_off) {
+        if (field == &Perf::Switches::dk_foliage_off) {
             own.boxes[key].reset();
         }
     }
     own.dk_shadow.reset();
+    own.dk_reflections.reset();
     // Only what differs from where the game starts is kept.
     if (chosen != Perf::PresetFor(global, game, own)) {
         if (chosen == global) {

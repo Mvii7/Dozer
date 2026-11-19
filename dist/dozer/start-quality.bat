@@ -94,7 +94,6 @@ set EDEN_NX2_DK_DYN=%DK_DYN%
 rem Donkey Kong Bananza as the game makes it: foliage, very high shadows, reflections (README).
 set EDEN_NX2_DK_FOLIAGE_OFF=
 set EDEN_NX2_DK_SHADOW_CASCADES=
-set EDEN_NX2_DK_REFLECTIONS_OFF=
 set EDEN_NX2_DK_CUBEMAP_INTERVAL=
 rem Mario Kart World dynamic frame rate (MKW_DYN above).
 set EDEN_NX2_MKW_DYN=%MKW_DYN%
