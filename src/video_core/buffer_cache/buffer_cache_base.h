@@ -385,6 +385,24 @@ public:
 
     void DownloadMemory(DAddr device_addr, u64 size);
 
+    /// EDEN_NX2_ASYNC_READBACK: DownloadMemory for a guest CPU read, without waiting for the
+    /// host GPU. Returns the tick holding the copies over the range (this read's or an earlier
+    /// one's, for WaitForReadDownload), nothing once guest memory is up to date there. The bytes
+    /// stay GPU-modified until FinishReadDownloads writes them.
+    std::optional<u64> DownloadMemoryForRead(DAddr device_addr, u64 size);
+
+    /// Waits for a tick DownloadMemoryForRead returned, on any thread without the lock.
+    void WaitForReadDownload(u64 tick) {
+        if constexpr (!IS_OPENGL && USE_MEMORY_MAPS) {
+            runtime.WaitForRead(tick);
+        }
+    }
+
+    /// Writes the read downloads over the range, and those before them, to guest memory, waiting
+    /// for the host GPU if it has not run them. verify: EDEN_NX2_ASYNC_READBACK=2 may check them
+    /// (a Finish: on the thread that records).
+    void FinishReadDownloads(DAddr device_addr, u64 size, bool verify);
+
     std::optional<VideoCore::RasterizerDownloadArea> GetFlushArea(DAddr device_addr, u64 size);
 
     bool InlineMemory(DAddr dest_address, size_t copy_size, std::span<const u8> inlined_buffer);
@@ -1030,6 +1048,32 @@ private:
     std::optional<Async_Buffer> current_buffer;
 
     std::deque<Async_Buffer> async_buffers_death_ring;
+
+    /// EDEN_NX2_ASYNC_READBACK: copies for guest CPU reads, submitted and not in guest memory yet
+    struct ReadDownload {
+        Async_Buffer staging;
+        boost::container::small_vector<BufferCopy, 4> copies; ///< src_offset is the device address
+        u64 tick;
+        u64 seq; ///< Recording order
+        /// The bytes it writes: a CPU write, a discarded write or a newer download over them
+        /// takes them out (ClearDownload).
+        Common::RangeSet<DAddr> write_ranges;
+        /// The bytes no GPU write changed since: GPU-modified no longer once written.
+        Common::RangeSet<DAddr> clean_ranges;
+    };
+    std::deque<ReadDownload> read_downloads;
+    /// What the read downloads bring that is still the GPU's latest
+    Common::RangeSet<DAddr> read_download_ranges;
+    u64 read_download_seq{};
+    /// The newest read download when each of pending_downloads was committed
+    std::deque<u64> pending_download_read_seqs;
+
+    /// Writes the read downloads up to (and with) seq, oldest first.
+    void WriteReadDownloads(u64 seq, bool verify);
+    /// Writes those the host GPU already ran.
+    void WriteRunReadDownloads(bool verify);
+    /// EDEN_NX2_ASYNC_READBACK=2: compares a landed download's clean bytes with the GPU's.
+    void VerifyReadDownload(const ReadDownload& download);
 
     size_t immediate_buffer_capacity = 0;
     Common::ScratchBuffer<u8> immediate_buffer_alloc;

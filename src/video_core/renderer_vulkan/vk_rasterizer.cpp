@@ -60,6 +60,7 @@
 #include "video_core/vulkan_common/vulkan_device.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 #include "video_core/nx2.h"
+#include "video_core/nx2_async_readback.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/nx2_uniform_census.h"
 #include "video_core/nx2_stage_api.h"
@@ -2147,6 +2148,67 @@ void RasterizerVulkan::FlushRegion(DAddr addr, u64 size, VideoCommon::CacheType 
     if ((True(which & VideoCommon::CacheType::QueryCache))) {
         query_cache.FlushRegion(addr, size);
     }
+}
+
+std::optional<u64> RasterizerVulkan::FlushRegionForRead(DAddr addr, u64 size) {
+    if (!VideoCommon::Nx2AsyncReadback::Enabled() || addr == 0 || size == 0) {
+        FlushRegion(addr, size);
+        return std::nullopt;
+    }
+    if (SplitOnB()) [[unlikely]] {
+        // As FlushRegionB: the body in a join where a cache may hold GPU data.
+        const DAddr begin = Common::AlignDown(addr, Core::DEVICE_PAGESIZE);
+        const size_t span = Common::AlignUp(addr + size, Core::DEVICE_PAGESIZE) - begin;
+        std::optional<u64> tick;
+        if (HoldsGpuWrittenDataB(begin, span)) {
+            JoinB([&] { tick = FlushRegionForRead(addr, size); });
+        } else {
+            NoteLightWork();
+        }
+        return tick;
+    }
+    if (split_draws && !VideoCommon::Nx2Stages::MayTakeBufferLock()) [[unlikely]] {
+        FlushRegion(addr, size);
+        return std::nullopt;
+    }
+    NoteLightWork();
+    {
+        std::scoped_lock lock{texture_cache.mutex};
+        texture_cache.DownloadMemory(addr, size);
+    }
+    std::optional<u64> tick;
+    {
+        CheckBufferLockOffB("RasterizerVulkan::FlushRegionForRead");
+        std::scoped_lock lock{buffer_cache.mutex};
+        tick = buffer_cache.DownloadMemoryForRead(addr, size);
+    }
+    query_cache.FlushRegion(addr, size);
+    return tick;
+}
+
+void RasterizerVulkan::WaitForRead(u64 tick) {
+    buffer_cache.WaitForReadDownload(tick);
+}
+
+void RasterizerVulkan::FinishRead(DAddr addr, u64 size) {
+    if (SplitOnB()) [[unlikely]] {
+        if (VideoCommon::Nx2AsyncReadback::Verify()) {
+            // The check downloads again: in a join, as FlushRegionB.
+            JoinB([&] { FinishRead(addr, size); });
+            return;
+        }
+        Nx2Record::CacheLock lock{buffer_cache.mutex};
+        buffer_cache.FinishReadDownloads(addr, size, false);
+        return;
+    }
+    if (split_draws && !VideoCommon::Nx2Stages::MayTakeBufferLock()) [[unlikely]] {
+        // FlushRegionForRead records nothing here; a landing never waits for B's lock either.
+        VideoCommon::Nx2Stages::ReportStageHazard("read download landing on C in a record");
+        return;
+    }
+    CheckBufferLockOffB("RasterizerVulkan::FinishRead");
+    std::scoped_lock lock{buffer_cache.mutex};
+    buffer_cache.FinishReadDownloads(addr, size, true);
 }
 
 bool RasterizerVulkan::MustFlushRegion(DAddr addr, u64 size, VideoCommon::CacheType which) {

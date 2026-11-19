@@ -118,6 +118,21 @@ public:
 
     virtual RasterizerDownloadArea GetFlushArea(DAddr addr, u64 size) = 0;
 
+    /// EDEN_NX2_ASYNC_READBACK: FlushRegion for a guest CPU read, on the GPU thread. Buffer data
+    /// may be submitted without waiting for the host GPU: returns the tick to wait for (any
+    /// thread, WaitForRead) before FinishRead writes it to guest memory.
+    virtual std::optional<u64> FlushRegionForRead(DAddr addr, u64 size) {
+        FlushRegion(addr, size);
+        return std::nullopt;
+    }
+
+    /// Waits for the host GPU to reach a tick FlushRegionForRead returned, on the reading thread.
+    virtual void WaitForRead([[maybe_unused]] u64 tick) {}
+
+    /// Writes what FlushRegionForRead submitted over the region to guest memory, on the GPU
+    /// thread.
+    virtual void FinishRead([[maybe_unused]] DAddr addr, [[maybe_unused]] u64 size) {}
+
     /// Notify rasterizer that any caches of the specified region should be invalidated
     virtual void InvalidateRegion(DAddr addr, u64 size,
                                   VideoCommon::CacheType which = VideoCommon::CacheType::All) = 0;

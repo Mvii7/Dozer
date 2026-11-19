@@ -330,6 +330,12 @@
 # (8 ms at most, then the sync flush). The reactive stats line shows "traps disarmed at copy
 # back" and "copy back waits".
 #EDEN_NX2_COPYBACK_WAIT=0
+# ASYNC_READBACK=1: a read trap's buffer download (and a reactive flush's) is submitted by the GPU
+# thread without waiting for the host GPU; the reading thread waits for it, then the GPU thread
+# writes it to guest memory. Off: the GPU thread waits at every such read. =2 also compares each
+# landing with a synchronous download (diagnostic, slow; "verify mismatches" in the log). Vulkan;
+# cut c falls back to the waiting flush. Logs an "Async read-back" line every 4096 reads.
+#EDEN_NX2_ASYNC_READBACK=1
 
 # --- reactive flushing (video_core/nx2_reactive_flush.h, common/nx2_reactive.h) ---
 # All off by default. Most matter only with use_reactive_flushing=true in the config;

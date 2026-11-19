@@ -138,6 +138,19 @@ public:
 
     void Finish();
 
+    /// EDEN_NX2_ASYNC_READBACK: whether this thread may submit (not in cut c's staging).
+    bool CanSubmitForRead() const {
+        return !staged && target.list == nullptr;
+    }
+
+    /// Submits the recorded copies without waiting, returning the tick they are in.
+    u64 SubmitForRead();
+
+    /// Waits for a tick SubmitForRead returned, on any thread.
+    void WaitForRead(u64 tick);
+
+    bool IsFreeForRead(u64 tick) const;
+
     u64 GetDeviceLocalMemory() const;
 
     u64 GetDeviceMemoryUsage() const;

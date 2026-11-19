@@ -849,6 +849,20 @@ void BufferCacheRuntime::Finish() {
     scheduler.Finish();
 }
 
+u64 BufferCacheRuntime::SubmitForRead() {
+    const u64 tick = scheduler.CurrentTick();
+    scheduler.Flush();
+    return tick;
+}
+
+void BufferCacheRuntime::WaitForRead(u64 tick) {
+    scheduler.GetMasterSemaphore().Wait(tick);
+}
+
+bool BufferCacheRuntime::IsFreeForRead(u64 tick) const {
+    return scheduler.IsFree(tick);
+}
+
 void BufferCacheRuntime::WaitStaged(u64 tick) {
     if (IsFree(tick)) {
         return;

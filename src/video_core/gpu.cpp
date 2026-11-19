@@ -40,6 +40,7 @@
 #include "video_core/host1x/host1x.h"
 #include "video_core/host1x/syncpoint_manager.h"
 #include "video_core/memory_manager.h"
+#include "video_core/nx2_async_readback.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/nx2_busy_clock.h"
 #include "video_core/nx2_mode_gov.h"
@@ -343,12 +344,37 @@ struct GPU::Impl {
                      reads.load(std::memory_order_relaxed));
         }
         const s64 flush_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
-        const u64 fence = RequestSyncOperation([this, &raster_area]() {
+        const u64 area_size = raster_area.end_address - raster_area.start_address;
+        // EDEN_NX2_ASYNC_READBACK: the GPU thread submits buffer downloads without waiting for
+        // the host GPU; this thread waits for them, then the GPU thread writes them.
+        std::optional<u64> read_tick;
+        const u64 fence = RequestSyncOperation([this, &raster_area, area_size, &read_tick]() {
             VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::TickWorkFlushes, 1);
-            renderer->ReadRasterizer()->FlushRegion(raster_area.start_address, raster_area.end_address - raster_area.start_address);
+            if (VideoCommon::Nx2AsyncReadback::Enabled()) {
+                read_tick = renderer->ReadRasterizer()->FlushRegionForRead(raster_area.start_address,
+                                                                          area_size);
+            } else {
+                renderer->ReadRasterizer()->FlushRegion(raster_area.start_address, area_size);
+            }
         });
         gpu_thread.TickGPU(is_async);
         WaitForSyncOperation(fence);
+        if (read_tick) {
+            namespace AsyncReadback = VideoCommon::Nx2AsyncReadback;
+            const s64 wait_ns = Common::Nx2Reactive::NowNs();
+            renderer->ReadRasterizer()->WaitForRead(*read_tick);
+            if (const u64 waited = Common::Nx2Reactive::MicrosecondsSince(wait_ns); waited != 0) {
+                AsyncReadback::NoteWait(waited);
+            }
+            const u64 landing = RequestSyncOperation([this, &raster_area, area_size]() {
+                // Collected guest writes first: a landing skips the bytes they wrote.
+                InvalidateGPUCache();
+                renderer->ReadRasterizer()->FinishRead(raster_area.start_address, area_size);
+            });
+            gpu_thread.TickGPU(is_async);
+            WaitForSyncOperation(landing);
+            AsyncReadback::NoteRead();
+        }
         if (stats) [[unlikely]] {
             const u64 wait_us = Common::Nx2Reactive::MicrosecondsSince(flush_ns);
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::SyncFlushes, 1);
