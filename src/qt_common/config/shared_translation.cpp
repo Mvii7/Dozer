@@ -144,8 +144,8 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "On: HDR whenever the display driver offers an HDR format.\n"
               "The game is told the display is HDR only while Dozer really presents HDR. SDR "
               "games and menus are shown at the reference white.\n"
-              "While HDR is active, anti-aliasing, post-processing, FSR/SGSR upscaling and frame "
-              "generation are off and the window is scaled bilinearly.\n"
+              "While HDR is active, anti-aliasing, post-processing and FSR/SGSR upscaling are off "
+              "and the window is scaled bilinearly. Frame generation stays on.\n"
               "Screenshots are tone mapped to SDR."));
     INSERT(Settings, hdr_swapchain, tr("HDR format:"),
            tr("HDR10: 10-bit PQ, what HDR displays take.\n"
@@ -235,7 +235,9 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, bg_blue, QString(), QString());
 
     INSERT(Settings, frame_gen, tr("Enable Frame Generation"),
-           tr("Paused while HDR output is active."));
+           tr("Generates intermediate frames for smoother motion. Requires Vulkan.\n"
+              "Optical Flow is built in. LSFG requires Lossless.dll in the user directory's "
+              "lossless folder."));
     INSERT(Settings, frame_gen_type, tr("Frame Generation Type"), QString());
     INSERT(Settings, frame_gen_multiplier, tr("Frame Generation Multiplier"), QString());
     INSERT(Settings, frame_gen_target_rate, tr("Target Frame Rate"), QString());
@@ -518,7 +520,7 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
     translations->insert({Settings::EnumMetadata<Settings::FrameGenType>::Index(),
                           {
                               PAIR(FrameGenType, Lsfg, tr("Lossless Scaling (LSFG)")),
-                              PAIR(FrameGenType, Fsr3, tr("AMD FidelityFX Super Resolution 3 (FSR 3)")),
+                              PAIR(FrameGenType, Fsr3, tr("Optical Flow Interpolation (built-in)")),
                           }});
     translations->insert({Settings::EnumMetadata<Settings::ScalingFilter>::Index(),
                           {
@@ -528,7 +530,7 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                               PAIR(ScalingFilter, Gaussian, tr("Gaussian")),
                               PAIR(ScalingFilter, Lanczos, tr("Lanczos")),
                               PAIR(ScalingFilter, ScaleForce, tr("ScaleForce")),
-                              PAIR(ScalingFilter, Fsr, tr("AMD FidelityFX Super Resolution")),
+                              PAIR(ScalingFilter, Fsr, tr("AMD FidelityFX Super Resolution 1 (FSR 1)")),
                               PAIR(ScalingFilter, Area, tr("Area")),
                               PAIR(ScalingFilter, Mmpx, tr("MMPX")),
                               PAIR(ScalingFilter, ZeroTangent, tr("Zero-Tangent")),
@@ -537,7 +539,7 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                               PAIR(ScalingFilter, Spline1, tr("Spline-1")),
                               PAIR(ScalingFilter, Sgsr, tr("Snapdragon Game Super Resolution")),
                               PAIR(ScalingFilter, SgsrEdge, tr("Snapdragon Game Super Resolution EdgeDir")),
-                              PAIR(ScalingFilter, Fsr3, tr("AMD FidelityFX Super Resolution 3")),
+                              PAIR(ScalingFilter, Fsr3, tr("AMD FidelityFX Super Resolution 1, softer sharpening")),
                           }});
     translations->insert({Settings::EnumMetadata<Settings::HdrMode>::Index(),
                           {

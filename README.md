@@ -154,8 +154,8 @@ read traps on, so keep the preset here on Balanced (or tick Read traps in its ow
 | Choice | What it does |
 |---|---|
 | **Off** (the default) | frame generation off |
-| **2x** | FSR3, one generated frame per real frame (fixed). On a 60 Hz screen it holds the game at 30 fps |
-| **Dynamic** | FSR3 with a 120 fps target, capped at the screen's refresh rate when it is known. It steps between 1x and 4x only while the screen can show the extra frames and the game's own frame rate holds: a step that lowers the game's frame rate by more than 8% is undone |
+| **2x** | Optical Flow, one generated frame per real frame (fixed). On a 60 Hz screen it holds the game at 30 fps |
+| **Dynamic** | Optical Flow with a 120 fps target, capped at the screen's refresh rate when it is known. It steps between 1x and 4x only while the screen can show the extra frames and the game's own frame rate holds: a step that lowers the game's frame rate by more than 8% is undone |
 | *Other (Graphics tab)* | not a choice: shown when the Graphics tab holds another frame generation setup (LSFG, or another multiplier or target frame rate), which the Tuning tab leaves as it is |
 
 Generated frames need a screen faster than the game's frame rate; on a 60 Hz screen they only
@@ -270,7 +270,7 @@ error. Take the launchers from the release zip: they need Windows line endings (
   `JIT_SAME=1`, `FRONT_MACRO_LEAN=1`; Bananza's own 60/30/20 fps choice followed at the right
   speed (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`, `PACE_SPIN_US=1500`); the dynamic
   frame rate patch (`DK_DYN=1`; while it is applied, the two pacing lines above are set aside:
-  they act with `DK_DYN=0` or when the patch does not apply); timed FSR3 generated frames
+  they act with `DK_DYN=0` or when the patch does not apply); timed Optical Flow generated frames
   (`FG_TIMED=1`, only does something with frame generation on); the RTSS display (`OSD=1`). The
   Bananza-specific lines are marked; for other games use the safe launcher, or remove them. It
   is meant for reactive flushing **off**: it turns it off in an `sdl2-config.ini` it makes,
@@ -318,7 +318,7 @@ without a launcher; the menu program sets the recommended ones from its Tuning t
 | `MODE_PACE=2`, `PACE_SPIN_US=1500` | off | steers Bananza's 60/30/20 fps mode by frame timing |
 | `DK_DYN=1` | off | Bananza dynamic frame rate patch, in memory (below) |
 | `DK_DYN_MIN_FPS=<n>` | 40 | the patch's lower limit |
-| `FG_TIMED=1` | off | FSR3 generated frames blended for the time they are shown |
+| `FG_TIMED=1` | off | Optical Flow generated frames blended for the time they are shown |
 | `OSD=1` | off | game FPS, display FPS (with frame generation's multiplier) and speed in RTSS |
 | `LIGHT_DRAW`, `LIGHT_UNIFORM`, `UBO_*`, `SYNC_*`, `VERTEX_*`, `RESET_*`, ... (about 60) | **on** | per-draw shortcuts on the GPU thread; `=0` is the 2.0.0 code path, many accept `=2` to check themselves and log |
 | `HLE_INDIRECT`, `INDIRECT_BATCH`, `PBFLUSH_WINDOW_KIB` | **on** | Bananza's terrain: indirect draws on the host GPU, merged; GPU-written parameters flushed in 256 KiB windows |
@@ -378,13 +378,14 @@ PokeDinner-Eglantine 2.0.0 already has frame generation; Dozer adds `FG_TIMED`, 
 multiplier on the OSD and has a **Frame generation** box in its Tuning tab ("The Tuning tab").
 Two kinds exist:
 
-- **FSR3** (built in, the default kind). This is the recommended kind.
+- **Optical Flow Interpolation** (built in, the default kind; called FSR3 before, though it is not
+  AMD's). This is the recommended kind.
 - **LSFG** (Lossless Scaling frame generation). It needs `Lossless.dll` from the paid
   *Lossless Scaling* app. **Dozer does not include it**; put your own copy in the user folder's
   `lossless\` folder if you want this kind.
 
 In the menu program, choose 2x or Dynamic in the Tuning tab's Frame generation box (it writes the
-Graphics tab's frame generation settings, which you can also set there). To turn FSR3
+Graphics tab's frame generation settings, which you can also set there). To turn Optical Flow
 frame generation on for dozer-cli, close the program and add these lines under `[Renderer]` in
 `config\sdl2-config.ini` (the `\default=false` lines make dozer-cli read the value):
 

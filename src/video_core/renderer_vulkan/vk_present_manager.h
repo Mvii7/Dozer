@@ -76,6 +76,10 @@ public:
     /// How many additional frames can be queued without stalling the render thread
     [[nodiscard]] size_t MaxExtraFrames() const;
 
+    /// Follows the frame generation settings, which can change during play: more frames are put in
+    /// use at once, frames no longer needed are parked as they come back
+    void UpdateImageCount();
+
     [[nodiscard]] std::size_t SwapchainImageCount() const { return swapchain_image_count; }
     [[nodiscard]] VkFormat SwapchainImageFormat() const { return swapchain_image_format; }
 
@@ -101,6 +105,11 @@ private:
 
     void SetImageCount();
 
+    [[nodiscard]] static size_t WantedImageCount(size_t swapchain_images);
+
+    /// Back to the free queue, or parked while more frames are in use than image_count
+    void ReturnFrame(Frame* frame);
+
 private:
     const vk::Instance& instance;
     Core::Frontend::EmuWindow& render_window;
@@ -113,6 +122,8 @@ private:
     std::vector<Frame> frames;
     boost::container::deque<Frame*> present_queue;
     boost::container::deque<Frame*> free_queue;
+    std::vector<Frame*> parked_frames; ///< guarded by free_mutex
+    size_t active_frames{};            ///< frames not parked, guarded by free_mutex
     std::condition_variable_any frame_cv;
     std::condition_variable free_cv;
     std::mutex swapchain_mutex;

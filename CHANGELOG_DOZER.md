@@ -6,6 +6,25 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Dozer 0.1.7 (`v0.1.7`)
+
+- Frame generation (LSFG and Optical Flow) now runs while HDR output is active instead of turning off.
+  LSFG takes its HDR mode on an scRGB swapchain (as lsfg-vk's); HDR10's PQ frames go through it
+  like SDR ones. Not tried on an HDR display yet.
+- Frame generation: switching between LSFG and Optical Flow during play rebuilds the chain for
+  the new type, a missing Lossless.dll no longer keeps Optical Flow off afterwards, and Optical
+  Flow no longer loads the LSFG shaders. From Lichii #1493.
+- Status bar: an **FG** button next to the others. Click turns frame generation on and off,
+  also during play; right click picks Optical Flow or LSFG. It shows the type and multiplier
+  ("FG OPTICAL FLOW 2X", "AUTO" with a target frame rate), and "(IDLE)" while a game runs and
+  no frames were generated in the last half second. The frames frame generation presents through
+  are made at start for the most it can use and parked until needed, so turning it on during
+  play gets the frames it needs instead of the count the game started with. From Lichii #537.
+- Renamed to what they do (labels only; settings and configs keep their values): frame
+  generation type "FSR 3" is now **Optical Flow Interpolation**, Eglantine's own optical-flow
+  interpolation and not AMD's FSR 3; the window filter "AMD FidelityFX Super Resolution 3" is
+  now **FSR 1, softer sharpening** (it runs FSR 1's EASU and RCAS at 0.8x sharpness), and the
+  plain FSR filter is **FSR 1**. From Lichii.
 ## Dozer 0.1.6 (`v0.1.6`)
 
 - Donkey Kong Bananza: a **Foliage off** box in its Properties > Tuning, under Dynamic frame rate
