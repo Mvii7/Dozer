@@ -1047,6 +1047,36 @@ void MainWindow::InitializeWidgets() {
 
     statusBar()->insertPermanentWidget(0, volume_button);
 
+#ifdef HAS_LSFG
+    // Frame generation: click turns it on and off, also during play; right click picks the type
+    frame_gen_status_button = new QPushButton();
+    frame_gen_status_button->setObjectName(QStringLiteral("TogglableStatusBarButton"));
+    frame_gen_status_button->setFocusPolicy(Qt::NoFocus);
+    frame_gen_status_button->setCheckable(true);
+    connect(frame_gen_status_button, &QPushButton::clicked, this, [this] {
+        Settings::values.frame_gen.SetValue(!Settings::values.frame_gen.GetValue());
+        frame_gen_generating = false;
+        UpdateFrameGenButton();
+    });
+    UpdateFrameGenButton();
+    frame_gen_status_button->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(frame_gen_status_button, &QPushButton::customContextMenuRequested,
+            [this](const QPoint& menu_location) {
+                QMenu context_menu;
+                for (auto const& [type, text] : ConfigurationShared::frame_gen_type_texts_map) {
+                    context_menu.addAction(text, [this, type] {
+                        Settings::values.frame_gen_type.SetValue(type);
+                        Settings::values.frame_gen.SetValue(true);
+                        frame_gen_generating = false;
+                        UpdateFrameGenButton();
+                    });
+                }
+                context_menu.exec(frame_gen_status_button->mapToGlobal(menu_location));
+                frame_gen_status_button->repaint();
+            });
+    statusBar()->insertPermanentWidget(0, frame_gen_status_button);
+#endif
+
 #ifdef HAS_RESHADE
     post_shader_status_button = new QPushButton();
     post_shader_status_button->setObjectName(QStringLiteral("TogglableStatusBarButton"));
@@ -2064,6 +2094,10 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
         game_list_placeholder->hide();
     }
     status_bar_update_timer.start(500);
+#ifdef HAS_LSFG
+    frame_gen_frames = Core::g_generated_frames.load(std::memory_order_relaxed);
+    frame_gen_generating = false;
+#endif
     renderer_status_button->setDisabled(true);
     refresh_button->setDisabled(true);
     SetFPSSuffix();
@@ -4404,6 +4438,13 @@ void MainWindow::UpdateStatusBar() {
 
     emu_frametime_label->setText(tr("Frame: %1 ms").arg(results.frametime * 1000.0, 0, 'f', 2));
 
+#ifdef HAS_LSFG
+    const u64 generated = Core::g_generated_frames.load(std::memory_order_relaxed);
+    frame_gen_generating = generated > frame_gen_frames;
+    frame_gen_frames = generated;
+    UpdateFrameGenButton();
+#endif
+
     res_scale_label->setVisible(true);
     emu_speed_label->setVisible(!Settings::values.use_multi_core.GetValue());
     game_fps_label->setVisible(true);
@@ -4447,6 +4488,49 @@ void MainWindow::UpdateAAText() {
                                   : aa_text.toUpper());
 }
 
+#ifdef HAS_LSFG
+void MainWindow::UpdateFrameGenButton() {
+    const bool enabled = Settings::values.frame_gen.GetValue();
+    frame_gen_status_button->setChecked(enabled);
+    if (!enabled) {
+        frame_gen_status_button->setText(tr("NO FG"));
+        frame_gen_status_button->setToolTip(
+            tr("Frame generation is off. Click to turn it on, right click to pick the type."));
+        return;
+    }
+
+    const auto type = Settings::values.frame_gen_type.GetValue();
+    const QString type_text = ConfigurationShared::frame_gen_type_texts_map.at(type).toUpper();
+    const u32 target_rate = Settings::values.frame_gen_target_rate.GetValue();
+    const QString mode = target_rate == 0
+                             ? tr("FG %1 %2X").arg(type_text).arg(Settings::FrameGenMultiplier())
+                             : tr("FG %1 AUTO").arg(type_text);
+    const QString target = target_rate == 0
+                               ? QString()
+                               : tr(" It adds up to %1 frames per game frame to reach %2 FPS.")
+                                     .arg(Settings::MAX_FRAME_GEN_MULTIPLIER - 1)
+                                     .arg(target_rate);
+
+    if (!emulation_running || frame_gen_generating) {
+        frame_gen_status_button->setText(mode);
+        frame_gen_status_button->setToolTip(tr("Frame generation is on.%1").arg(target));
+        return;
+    }
+
+    const QString lsfg = type == Settings::FrameGenType::Lsfg
+                             ? tr(" LSFG also needs Lossless.dll in the user directory's lossless "
+                                  "folder.")
+                             : QString();
+    frame_gen_status_button->setText(tr("%1 (IDLE)").arg(mode));
+    frame_gen_status_button->setToolTip(
+        tr("Frame generation is on but generated no frames in the last half second. It waits "
+           "while it warms up, after hitches and while the game is below 10 FPS%1.%2")
+            .arg(target_rate == 0 ? QString()
+                                  : tr(" or already at %1 FPS").arg(target_rate))
+            .arg(lsfg));
+}
+#endif
+
 #ifdef HAS_RESHADE
 void MainWindow::UpdatePostShaderText() {
     const bool enabled = Settings::values.post_shader_enabled.GetValue();
@@ -4487,6 +4571,9 @@ void MainWindow::UpdateStatusButtons() {
     UpdateDockedButton();
     UpdateFilterText();
     UpdateAAText();
+#ifdef HAS_LSFG
+    UpdateFrameGenButton();
+#endif
     UpdateVolumeUI();
 }
 

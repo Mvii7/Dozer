@@ -142,9 +142,11 @@ PresentManager::PresentManager(const vk::Instance& instance_,
             VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
         .queueFamilyIndex = device.GetGraphicsFamily(),
     });
-    auto cmdbuffers = cmdpool.Allocate(image_count);
+    // Every slot is made up front so frame generation can be turned on during play; the slots
+    // beyond image_count are parked (UpdateImageCount)
+    auto cmdbuffers = cmdpool.Allocate(MAX_FRAMES_IN_FLIGHT);
 
-    frames.resize(image_count);
+    frames.resize(MAX_FRAMES_IN_FLIGHT);
     for (u32 i = 0; i < frames.size(); i++) {
         Frame& frame = frames[i];
         frame.index = i;
@@ -160,8 +162,13 @@ PresentManager::PresentManager(const vk::Instance& instance_,
             .flags = VK_FENCE_CREATE_SIGNALED_BIT,
         });
         frame.storage_capable = storage_supported;
-        free_queue.push_back(&frame);
+        if (i < image_count) {
+            free_queue.push_back(&frame);
+        } else {
+            parked_frames.push_back(&frame);
+        }
     }
+    active_frames = image_count;
 
     if (use_present_thread) {
         present_thread = std::jthread([this](std::stop_token token) { PresentThread(token); });
@@ -198,7 +205,34 @@ void PresentManager::Present(Frame* frame) {
     } else {
         scheduler.WaitWorker();
         CopyToSwapchain(frame);
-        free_queue.push_back(frame);
+        ReturnFrame(frame);
+    }
+}
+
+void PresentManager::ReturnFrame(Frame* frame) {
+    std::scoped_lock lock{free_mutex};
+    if (active_frames > image_count) {
+        parked_frames.push_back(frame);
+        --active_frames;
+        return;
+    }
+    free_queue.push_back(frame);
+    free_cv.notify_one();
+}
+
+void PresentManager::UpdateImageCount() {
+    image_count = WantedImageCount(swapchain_image_count);
+
+    std::scoped_lock lock{free_mutex};
+    bool released = false;
+    while (active_frames < image_count && !parked_frames.empty()) {
+        free_queue.push_back(parked_frames.back());
+        parked_frames.pop_back();
+        ++active_frames;
+        released = true;
+    }
+    if (released) {
+        free_cv.notify_all();
     }
 }
 
@@ -362,9 +396,7 @@ void PresentManager::PresentThread(std::stop_token token) {
             CopyToSwapchain(frame);
 
             // Free the frame for reuse
-            std::scoped_lock fl{free_mutex};
-            free_queue.push_back(frame);
-            free_cv.notify_one();
+            ReturnFrame(frame);
         }
     }
 }
@@ -411,21 +443,28 @@ void PresentManager::ConfigureTransfer(const Frame* frame) {
     }
 }
 
-void PresentManager::SetImageCount() {
+size_t PresentManager::WantedImageCount(size_t swapchain_images) {
     // We cannot have more than 7 images in flight at any given time.
     // FRAMES_IN_FLIGHT is 8, and the cache TICKS_TO_DESTROY is 8.
     // Mali drivers will give us 6.
 #ifdef HAS_LSFG
     const size_t generations = Settings::FrameGenMaxGenerations();
     const size_t queued_composites = Settings::values.frame_gen_queue_target.GetValue() + 1;
-    image_count =
-        std::clamp<size_t>((generations + 1) * queued_composites, swapchain.GetImageCount(),
-                           MAX_FRAMES_IN_FLIGHT);
+    return std::clamp<size_t>((generations + 1) * queued_composites, swapchain_images,
+                              MAX_FRAMES_IN_FLIGHT);
 #else
-    image_count = std::min<size_t>(swapchain.GetImageCount(), MAX_FRAMES_IN_FLIGHT);
+    return std::min<size_t>(swapchain_images, MAX_FRAMES_IN_FLIGHT);
 #endif
+}
+
+void PresentManager::SetImageCount() {
     swapchain_image_count = swapchain.GetImageCount();
     swapchain_image_format = swapchain.GetImageFormat();
+    if (frames.empty()) {
+        image_count = WantedImageCount(swapchain_image_count);
+    } else {
+        UpdateImageCount();
+    }
 }
 
 void PresentManager::DiscardFrame(Frame* frame) {

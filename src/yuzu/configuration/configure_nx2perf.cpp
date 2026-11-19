@@ -185,11 +185,11 @@ void ConfigureNx2Perf::ShowFrameGen() {
         text = tr("Off.");
         break;
     case Perf::FrameGen::Fixed2x:
-        text = tr("FSR3, one generated frame per real frame. On a 60 Hz screen it holds the game "
+        text = tr("Optical Flow, one generated frame per real frame. On a 60 Hz screen it holds the game "
                   "at 30 fps.");
         break;
     case Perf::FrameGen::Dynamic:
-        text = tr("FSR3 aiming at 120 fps, at most the screen's refresh rate: 2x to 4x, only while "
+        text = tr("Optical Flow aiming at 120 fps, at most the screen's refresh rate: 2x to 4x, only while "
                   "the screen can show the frames and the game's own frame rate holds.");
         break;
     case Perf::FrameGen::Other:

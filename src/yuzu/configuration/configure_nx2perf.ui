@@ -288,7 +288,7 @@
       <item>
        <widget class="QLabel" name="fg_timed_text">
         <property name="text">
-         <string>FSR3 frame generation: each generated frame is blended for the time it is shown. Only does something with frame generation on (FG_TIMED).</string>
+         <string>Optical Flow frame generation: each generated frame is blended for the time it is shown. Only does something with frame generation on (FG_TIMED).</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
