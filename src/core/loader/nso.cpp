@@ -264,7 +264,7 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
         Nx2DkReflections::IntervalFrom(std::getenv(Nx2DkReflections::IntervalSwitch));
     if (Nx2DkReflections::IsTarget(process.GetProgramId(), name)) {
         if (dk_cubemap_interval == 0 || dk_cubemap_interval == Nx2DkReflections::GameInterval) {
-            LOG_INFO(Loader, "Donkey Kong Bananza: reflections the game's own ({} unset)",
+            LOG_INFO(Loader, "Donkey Kong Bananza: reflections the game's own ({} unset or 8)",
                      Nx2DkReflections::IntervalSwitch);
         } else {
             const auto& text = nso_header.segments[0];
