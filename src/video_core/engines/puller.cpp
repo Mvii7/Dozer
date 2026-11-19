@@ -601,10 +601,102 @@ bool Puller::PendingAcquire::Matches(u32 current) const {
     }
 }
 
+namespace {
+
+// EDEN_NX2_GPU_PROFILE: how acquires that had to wait were met at last, and how long the channel
+// waited, logged every 10 s. A latch is a GPU-side write (Nx2LatchSource names which); a word met
+// in memory without one was stored by the guest CPU or written around the latches.
+enum class ResumeHow : u8 {
+    Queued,       ///< A release sent to the word, not run yet (no drain)
+    Memory,       ///< The word in memory (no drain)
+    Latched,      ///< A latch (no drain)
+    PeekLatched,  ///< A latch, at the peek before the drain
+    PeekSkip,     ///< The peek let it go on
+    DrainLatched, ///< A latch, after a drain
+    DrainMemory,  ///< The word in memory, after a drain
+    HostPending,  ///< A release only the host GPU has still to write
+    Count,
+};
+constexpr std::array<const char*, static_cast<size_t>(ResumeHow::Count)> resume_how_names{
+    "queued release", "memory",          "latch",           "latch at peek",
+    "peek",           "latch after drain", "memory after drain", "host GPU release"};
+constexpr std::array<const char*, static_cast<size_t>(Nx2LatchSource::Count)> latch_source_names{
+    "other", "QMD add", "QMD max", "query fence", "query"};
+
+struct ResumeStats {
+    static constexpr size_t Buckets = 5; ///< Waits under 0.1/0.5/2/8 ms and over
+    std::array<u64, static_cast<size_t>(ResumeHow::Count)> count{};
+    std::array<u64, static_cast<size_t>(ResumeHow::Count)> wait_us{};
+    std::array<std::array<u64, Buckets>, static_cast<size_t>(ResumeHow::Count)> buckets{};
+    std::array<u64, static_cast<size_t>(Nx2LatchSource::Count)> sources{};
+    std::array<u64, 3> operations{}; ///< Equal, greater or equal, mask
+    std::chrono::steady_clock::time_point next{};
+};
+thread_local ResumeStats t_resume;
+
+void NoteResume(ResumeHow how, const Puller::PendingAcquire& acquire, const void* owner) {
+    if (!VideoCommon::Nx2Profile::Enabled()) {
+        return;
+    }
+    auto& stats = t_resume;
+    const auto now = std::chrono::steady_clock::now();
+    const u64 us = static_cast<u64>(
+        std::chrono::duration_cast<std::chrono::microseconds>(now - acquire.since).count());
+    const size_t index = static_cast<size_t>(how);
+    ++stats.count[index];
+    stats.wait_us[index] += us;
+    ++stats.buckets[index][us < 100 ? 0 : us < 500 ? 1 : us < 2000 ? 2 : us < 8000 ? 3 : 4];
+    if (how == ResumeHow::Latched || how == ResumeHow::PeekLatched ||
+        how == ResumeHow::DrainLatched) {
+        ++stats.sources[static_cast<size_t>(Nx2SemaphoreWaiters::Get().LatchSource(owner))];
+    }
+    const u32 op = acquire.operation;
+    ++stats.operations[op == Nx2SemaphoreWaiters::AcquireEqual    ? 0
+                       : op == Nx2SemaphoreWaiters::AcquireGequal ? 1
+                                                                  : 2];
+    if (stats.next == std::chrono::steady_clock::time_point{}) {
+        stats.next = now + std::chrono::seconds{10};
+    }
+    if (now < stats.next) {
+        return;
+    }
+    std::string line;
+    for (size_t i = 0; i < stats.count.size(); ++i) {
+        if (stats.count[i] == 0) {
+            continue;
+        }
+        const auto& b = stats.buckets[i];
+        line += fmt::format("{}{} {} ({:.1f} ms; {}/{}/{}/{}/{})", line.empty() ? "" : ", ",
+                            resume_how_names[i], stats.count[i],
+                            static_cast<double>(stats.wait_us[i]) / 1000.0, b[0], b[1], b[2], b[3],
+                            b[4]);
+    }
+    std::string sources;
+    for (size_t i = 0; i < stats.sources.size(); ++i) {
+        sources +=
+            fmt::format("{}{} {}", i == 0 ? "" : ", ", latch_source_names[i], stats.sources[i]);
+    }
+    LOG_INFO(HW_GPU,
+             "Acquires that waited, in 10 s, by what met them (count, total wait; waits under "
+             "0.1/0.5/2/8 ms and over): {} | latches by source: {} | equal {}, greater or equal "
+             "{}, mask {}",
+             line.empty() ? "none" : line, sources, stats.operations[0], stats.operations[1],
+             stats.operations[2]);
+    const auto next = now + std::chrono::seconds{10};
+    stats = ResumeStats{};
+    stats.next = next;
+}
+
+} // Anonymous namespace
+
 bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
     if (!pending_acquire) {
         return true;
     }
+    const auto resumed = [&](ResumeHow how) {
+        NoteResume(how, *pending_acquire, this);
+        return true;
+    };
     const auto rescued = [&](u32 now) {
         if (static std::atomic<u32> count{};
             !pending_acquire->Matches(now) && count.fetch_add(1) < 64) {
@@ -620,7 +712,7 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
     case AcquireCheck::Met:
         CountNoDrain(&NoDrainStats::passed);
         VerifyWithoutDrain(dma_pusher, *pending_acquire, check);
-        return true;
+        return resumed(check == AcquireCheck::MetByQueued ? ResumeHow::Queued : ResumeHow::Memory);
     case AcquireCheck::NotMet: {
         // A release the back runs latches the waiter or reaches memory on its own: until it runs
         // one, nothing sent to the word meets it. Work only a drain finishes still lands: a
@@ -628,7 +720,7 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         // the drain reports waits over 2 s.
         if (Nx2SemaphoreWaiters::Get().Latched(this)) {
             CountNoDrain(&NoDrainStats::passed);
-            return true;
+            return resumed(ResumeHow::Latched);
         }
         const auto now = std::chrono::steady_clock::now();
         if (now - pending_acquire->last_drain < std::chrono::milliseconds{1}) {
@@ -653,12 +745,12 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         if (Nx2SemaphoreWaiters::Get().Latched(this)) {
             CountPeek(&PeekStats::resumes_latched);
             rescued(peek.raw);
-            return true;
+            return resumed(ResumeHow::PeekLatched);
         }
         if (peek.verdict == Peek::Verdict::Skip) {
             CountPeek(&PeekStats::resumes_skipped);
             PeekSkipped();
-            return true;
+            return resumed(ResumeHow::PeekSkip);
         }
     }
     // The release may still be queued for the split GPU thread's back half (and the caches
@@ -669,17 +761,17 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
               pending_acquire->value, current);
     if (Nx2SemaphoreWaiters::Get().Latched(this)) {
         rescued(current);
-        return true;
+        return resumed(ResumeHow::DrainLatched);
     }
     if (pending_acquire->Matches(current)) {
-        return true;
+        return resumed(ResumeHow::DrainMemory);
     }
     // A release the GPU already processed may only wait for the host GPU to write it (accurate
     // GPU mode): work after this acquire runs after the work before that release on the host.
     if (const auto device = dma_pusher.memory_manager.GpuToCpuAddress(pending_acquire->address)) {
         if (const auto pending = dma_pusher.rasterizer->PendingSemaphoreRelease(*device);
             pending && pending_acquire->Matches(*pending)) {
-            return true;
+            return resumed(ResumeHow::HostPending);
         }
     }
     if (!pending_acquire->reported &&

@@ -532,6 +532,10 @@ private:
 /// Channels suspended on a semaphore acquire. A console channel polls and sees every release;
 /// Eden writes releases in bursts when fences signal and resumes waiters only between command
 /// lists, so an acquire-equal could miss its value. Writes latch the waiters they satisfy.
+/// What wrote the value that latched a waiter (Nx2SemaphoreWaiters::OnWrite; EDEN_NX2_GPU_PROFILE's
+/// acquire wait line).
+enum class Nx2LatchSource : u8 { Other, QmdAdd, QmdMax, QueryFence, Query, Count };
+
 class Nx2SemaphoreWaiters {
 public:
     // Puller GpuSemaphoreOperation values.
@@ -551,7 +555,8 @@ public:
         EraseOwner(owner);
         const u32 seen =
             word != nullptr ? std::atomic_ref<u32>{*word}.load(std::memory_order_relaxed) : 0;
-        waiters.push_back({owner, device_address, value, operation, false, word, seen});
+        waiters.push_back({owner, device_address, value, operation, false, word, seen,
+                           Nx2LatchSource::Other});
         count.store(waiters.size(), std::memory_order_release);
     }
 
@@ -562,6 +567,17 @@ public:
         std::scoped_lock lk{mutex};
         EraseOwner(owner);
         count.store(waiters.size(), std::memory_order_release);
+    }
+
+    /// The source of owner's latch (Other when it has none).
+    [[nodiscard]] Nx2LatchSource LatchSource(const void* owner) {
+        std::scoped_lock lk{mutex};
+        for (const Waiter& w : waiters) {
+            if (w.owner == owner && w.latched) {
+                return w.source;
+            }
+        }
+        return Nx2LatchSource::Other;
     }
 
     [[nodiscard]] bool Latched(const void* owner) {
@@ -597,7 +613,7 @@ public:
     }
 
     /// A GPU write of `value` to the u32 at `device_address`.
-    void OnWrite(u64 device_address, u32 value) {
+    void OnWrite(u64 device_address, u32 value, Nx2LatchSource source = Nx2LatchSource::Other) {
         if (count.load(std::memory_order_acquire) == 0) {
             return;
         }
@@ -607,6 +623,7 @@ public:
             for (auto& w : waiters) {
                 if (w.address == device_address && !w.latched && Matches(w, value)) {
                     w.latched = true;
+                    w.source = source;
                     latched = true;
                     latched_count.fetch_add(1, std::memory_order_release);
                 }
@@ -641,6 +658,7 @@ private:
         bool latched;
         u32* word;
         u32 seen;
+        Nx2LatchSource source;
     };
 
     static bool Matches(const Waiter& w, u32 current) {
