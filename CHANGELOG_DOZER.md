@@ -8,12 +8,16 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
-- Buffer cache, opt-in `EDEN_NX2_ASYNC_READBACK=1` (after Lichii's read-back): a guest CPU read of
-  GPU-written buffer memory (a read trap) no longer has the GPU thread wait for the host GPU. It
-  submits the download and goes on; the reading thread waits for that submission, then the GPU
-  thread writes the bytes to guest memory. A CPU write in the meantime keeps its bytes, a GPU
-  write keeps the range GPU-written for the next read. `=2` checks every landing (slow). Vulkan
-  only; cut c keeps the waiting flush.
+- Buffer cache, opt-in `EDEN_NX2_ASYNC_READBACK=1` (a port of Lichii's read-back): a guest CPU
+  read of GPU-written buffer memory (a read trap, or reactive flushing) no longer has the GPU
+  thread wait for the host GPU. It submits the download and goes on; the reading thread waits for
+  that submission and writes the bytes to guest memory itself, keeping those of guest CPU writes
+  not applied yet. Pages the guest reads after each GPU write get their download recorded right
+  behind the write (early downloads), and are no longer copied back at every fence. Writes to
+  guest memory from the GPU's side (semaphores, reports, engine copies) land the downloads under
+  them first. `READER_LANDING`, `EARLY_DOWNLOADS`, `RX_READBACK` and `EARLY_SKIP_COPYBACK=0` turn
+  the parts off; `=2` checks every read against the GPU's bytes at its point (slow). Vulkan only;
+  cut c keeps the waiting flush.
 - Split GPU thread: an equal semaphore acquire goes on without draining the back when the last
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are

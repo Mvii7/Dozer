@@ -12,10 +12,13 @@
 #include <cstdlib>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <utility>
+#include <vector>
 
 #include "common/assert.h"
 #include "common/nx2_reactive.h"
+#include "common/scope_exit.h"
 #include "common/settings.h"
 #include "common/nx2_sync_serial.h"
 #include "common/settings_enums.h"
@@ -41,6 +44,7 @@
 #include "video_core/host1x/syncpoint_manager.h"
 #include "video_core/memory_manager.h"
 #include "video_core/nx2_async_readback.h"
+#include "video_core/rasterizer_download_area.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/nx2_busy_clock.h"
 #include "video_core/nx2_mode_gov.h"
@@ -71,9 +75,15 @@ struct GPU::Impl {
         , use_nvdec{use_nvdec_}
         , shader_notify()
         , is_async{is_async_}
-    {}
+    {
+        VideoCore::g_pending_cpu_writes_context = this;
+        VideoCore::g_pending_cpu_writes = &PendingCpuWrites;
+    }
 
-    ~Impl() = default;
+    ~Impl() {
+        VideoCore::g_pending_cpu_writes = nullptr;
+        VideoCore::g_pending_cpu_writes_context = nullptr;
+    }
 
     std::shared_ptr<Control::ChannelState> CreateChannel(s32 channel_id) {
         auto channel_state = std::make_shared<Tegra::Control::ChannelState>(channel_id);
@@ -137,11 +147,53 @@ struct GPU::Impl {
                                  &Core::GPUDirtyMemoryManager::MayHavePending)) {
             return;
         }
-        std::function<void(PAddr, size_t)> callback_writes([this](PAddr address, size_t size) {
+        if (!VideoCommon::Nx2AsyncReadback::ReaderLanding()) {
+            std::function<void(PAddr, size_t)> callback_writes([this](PAddr address, size_t size) {
+                renderer->ReadRasterizer()->OnCachedWrite(address, size);
+            });
+            system.GatherGPUDirtyMemory(callback_writes);
+            return;
+        }
+        // EDEN_NX2_READER_LANDING: gathered writes stay visible (PendingCpuWrites) until they
+        // are applied, so a download landing meanwhile on another thread keeps their bytes.
+        std::vector<std::pair<DAddr, u64>> writes;
+        {
+            std::scoped_lock lock{applying_writes_mutex};
+            std::function<void(PAddr, size_t)> callback_writes(
+                [&writes](PAddr address, size_t size) { writes.emplace_back(address, size); });
+            system.GatherGPUDirtyMemory(callback_writes);
+            if (writes.empty()) {
+                return;
+            }
+            applying_writes.push_back(&writes);
+        }
+        SCOPE_EXIT {
+            std::scoped_lock lock{applying_writes_mutex};
+            std::erase(applying_writes, &writes);
+        };
+        for (const auto& [address, size] : writes) {
             renderer->ReadRasterizer()->OnCachedWrite(address, size);
-        });
-        system.GatherGPUDirtyMemory(callback_writes);
+        }
     }
+
+    /// VideoCore::g_pending_cpu_writes: the writes collected or being applied.
+    static void PendingCpuWrites(void* context, const std::function<void(DAddr, u64)>& func) {
+        auto* const impl = static_cast<Impl*>(context);
+        std::scoped_lock lock{impl->applying_writes_mutex};
+        for (const auto* writes : impl->applying_writes) {
+            for (const auto& [address, size] : *writes) {
+                func(address, size);
+            }
+        }
+        const std::function<void(PAddr, size_t)> callback(
+            [&func](PAddr address, size_t size) { func(address, size); });
+        for (auto& manager : impl->system.GetGPUDirtyMemoryManager()) {
+            manager.ForEachPending(callback);
+        }
+    }
+
+    std::mutex applying_writes_mutex;
+    std::vector<const std::vector<std::pair<DAddr, u64>>*> applying_writes;
 
     /// Signal the ending of command list.
     void OnCommandListEnd() {
@@ -346,33 +398,41 @@ struct GPU::Impl {
         const s64 flush_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
         const u64 area_size = raster_area.end_address - raster_area.start_address;
         // EDEN_NX2_ASYNC_READBACK: the GPU thread submits buffer downloads without waiting for
-        // the host GPU; this thread waits for them, then the GPU thread writes them.
-        std::optional<u64> read_tick;
-        const u64 fence = RequestSyncOperation([this, &raster_area, area_size, &read_tick]() {
+        // the host GPU; this thread waits for them, then writes them (EDEN_NX2_READER_LANDING;
+        // =0: the GPU thread does, in a second request).
+        namespace AsyncReadback = VideoCommon::Nx2AsyncReadback;
+        std::optional<VideoCore::ReadPoint> read_point;
+        const u64 fence = RequestSyncOperation([this, &raster_area, area_size, &read_point]() {
             VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::TickWorkFlushes, 1);
-            if (VideoCommon::Nx2AsyncReadback::Enabled()) {
-                read_tick = renderer->ReadRasterizer()->FlushRegionForRead(raster_area.start_address,
-                                                                          area_size);
+            if (AsyncReadback::Enabled()) {
+                read_point = renderer->ReadRasterizer()->FlushRegionForRead(
+                    raster_area.start_address, area_size);
             } else {
                 renderer->ReadRasterizer()->FlushRegion(raster_area.start_address, area_size);
             }
         });
         gpu_thread.TickGPU(is_async);
         WaitForSyncOperation(fence);
-        if (read_tick) {
-            namespace AsyncReadback = VideoCommon::Nx2AsyncReadback;
+        if (read_point) {
             const s64 wait_ns = Common::Nx2Reactive::NowNs();
-            renderer->ReadRasterizer()->WaitForRead(*read_tick);
+            renderer->ReadRasterizer()->WaitForRead(read_point->tick);
             if (const u64 waited = Common::Nx2Reactive::MicrosecondsSince(wait_ns); waited != 0) {
                 AsyncReadback::NoteWait(waited);
             }
-            const u64 landing = RequestSyncOperation([this, &raster_area, area_size]() {
-                // Collected guest writes first: a landing skips the bytes they wrote.
-                InvalidateGPUCache();
-                renderer->ReadRasterizer()->FinishRead(raster_area.start_address, area_size);
-            });
-            gpu_thread.TickGPU(is_async);
-            WaitForSyncOperation(landing);
+            if (AsyncReadback::ReaderLanding()) {
+                renderer->ReadRasterizer()->FinishRead(raster_area.start_address, area_size,
+                                                       read_point->seq, false);
+            } else {
+                const u64 landing =
+                    RequestSyncOperation([this, &raster_area, area_size, &read_point]() {
+                        // Collected guest writes first: a landing skips the bytes they wrote.
+                        InvalidateGPUCache();
+                        renderer->ReadRasterizer()->FinishRead(raster_area.start_address,
+                                                               area_size, read_point->seq, true);
+                    });
+                gpu_thread.TickGPU(is_async);
+                WaitForSyncOperation(landing);
+            }
             AsyncReadback::NoteRead();
         }
         if (stats) [[unlikely]] {

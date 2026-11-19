@@ -119,9 +119,9 @@ public:
     virtual RasterizerDownloadArea GetFlushArea(DAddr addr, u64 size) = 0;
 
     /// EDEN_NX2_ASYNC_READBACK: FlushRegion for a guest CPU read, on the GPU thread. Buffer data
-    /// may be submitted without waiting for the host GPU: returns the tick to wait for (any
+    /// may be submitted without waiting for the host GPU: returns where it is, to wait for (any
     /// thread, WaitForRead) before FinishRead writes it to guest memory.
-    virtual std::optional<u64> FlushRegionForRead(DAddr addr, u64 size) {
+    virtual std::optional<ReadPoint> FlushRegionForRead(DAddr addr, u64 size) {
         FlushRegion(addr, size);
         return std::nullopt;
     }
@@ -129,9 +129,15 @@ public:
     /// Waits for the host GPU to reach a tick FlushRegionForRead returned, on the reading thread.
     virtual void WaitForRead([[maybe_unused]] u64 tick) {}
 
-    /// Writes what FlushRegionForRead submitted over the region to guest memory, on the GPU
-    /// thread.
-    virtual void FinishRead([[maybe_unused]] DAddr addr, [[maybe_unused]] u64 size) {}
+    /// Writes what FlushRegionForRead submitted over the region to guest memory, up to the read's
+    /// point: on the reading thread, or on the GPU thread (on_gpu_thread).
+    virtual void FinishRead([[maybe_unused]] DAddr addr, [[maybe_unused]] u64 size,
+                            [[maybe_unused]] u64 seq, [[maybe_unused]] bool on_gpu_thread) {}
+
+    /// A write to guest memory from the GPU's side (semaphores, reports, inline data, engine
+    /// copies), on any thread: read downloads not yet landed there land first, so none lands
+    /// over it later.
+    virtual void FinishGpuSideWrite([[maybe_unused]] DAddr addr, [[maybe_unused]] u64 size) {}
 
     /// Notify rasterizer that any caches of the specified region should be invalidated
     virtual void InvalidateRegion(DAddr addr, u64 size,

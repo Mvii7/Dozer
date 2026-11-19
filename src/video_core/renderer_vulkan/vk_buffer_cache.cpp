@@ -849,10 +849,16 @@ void BufferCacheRuntime::Finish() {
     scheduler.Finish();
 }
 
-u64 BufferCacheRuntime::SubmitForRead() {
-    const u64 tick = scheduler.CurrentTick();
+u64 BufferCacheRuntime::ReadTick() const {
+    return scheduler.CurrentTick();
+}
+
+void BufferCacheRuntime::SubmitForRead() {
     scheduler.Flush();
-    return tick;
+}
+
+bool BufferCacheRuntime::IsSubmittedForRead(u64 tick) const {
+    return tick < scheduler.CurrentTick();
 }
 
 void BufferCacheRuntime::WaitForRead(u64 tick) {

@@ -23,6 +23,7 @@
 #include "common/settings.h"
 #include "common/thread.h"
 #include "video_core/delayed_destruction_ring.h"
+#include "video_core/nx2_async_readback.h"
 #include "video_core/gpu.h"
 #include "video_core/host1x/host1x.h"
 #include "video_core/host1x/syncpoint_manager.h"
@@ -397,6 +398,10 @@ private:
             // Back stages, cut c: B's mutex (K3); C may commit only inside a ParkB.
             Nx2Stages::CheckBufferLock("FenceManager::CommitCacheFlushes");
             std::scoped_lock lock{buffer_cache.mutex};
+            if (VideoCommon::Nx2AsyncReadback::EarlyDownloads()) {
+                // EDEN_NX2_EARLY_DOWNLOADS: the writes since the last dispatch, before this fence.
+                buffer_cache.NoteReadBackPoint();
+            }
             if (buffer_cache.HasUncommittedFlushes()) {
                 if (coalesce_fences > 1 && !CommitBufferNow(delay_fence, flushes)) [[unlikely]] {
                     return flushes;

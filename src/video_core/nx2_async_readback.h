@@ -12,13 +12,28 @@
 // EDEN_NX2_ASYNC_READBACK (after Lichii's read-back): a guest CPU read of GPU-written buffer
 // memory (GPU::OnCPURead) has the GPU thread record the copies and submit them without waiting
 // for the host GPU (BufferCache::DownloadMemoryForRead). The reading thread waits for that
-// submission alone, then the GPU thread writes the bytes to guest memory
-// (BufferCache::FinishReadDownloads), in order with its other writes there.
+// submission, then writes the bytes to guest memory (BufferCache::FinishReadDownloads).
 // - unset or 0: off, the GPU thread waits for the host GPU at every such read (runtime.Finish).
 // - 1: on.
-// - 2: on, and each landing is compared with a synchronous download of the bytes no GPU write
-//   changed since (DIAGNOSTIC: a Finish per read).
+// - 2: on, and checked: each read also copies the bytes it needs at its point of the GPU's work,
+//   and once its downloads landed guest memory is compared with them ("Async read-back check"
+//   errors name where the bytes came from).
+// With it on, each of these is on unless set to 0:
+// - EDEN_NX2_READER_LANDING: the reading thread writes the bytes (0: a second request to the
+//   GPU thread does).
+// - EDEN_NX2_EARLY_DOWNLOADS: pages the guest reads after each GPU write get their download
+//   recorded right behind the write (a dispatch, a fence), so the read finds them landed or on
+//   their way.
+// - EDEN_NX2_RX_READBACK: with reactive flushing, a read of GPU-written buffer memory downloads
+//   it the same way (0: it waits for the fences' copies back, as before).
+// - EDEN_NX2_EARLY_SKIP_COPYBACK: pages early downloads cover are no longer copied back at
+//   every fence.
 namespace VideoCommon::Nx2AsyncReadback {
+
+[[nodiscard]] inline bool EnvOn(const char* name) noexcept {
+    const char* value = Common::Nx2Reactive::GetEnv(name);
+    return value == nullptr || value[0] != '0';
+}
 
 [[nodiscard]] inline int Mode() noexcept {
     static const int mode = [] {
@@ -39,16 +54,53 @@ namespace VideoCommon::Nx2AsyncReadback {
     return Mode() == 2;
 }
 
+[[nodiscard]] inline bool ReaderLanding() noexcept {
+    static const bool enabled = Enabled() && EnvOn("EDEN_NX2_READER_LANDING");
+    return enabled;
+}
+
+[[nodiscard]] inline bool EarlyDownloads() noexcept {
+    static const bool enabled = Enabled() && EnvOn("EDEN_NX2_EARLY_DOWNLOADS");
+    return enabled;
+}
+
+[[nodiscard]] inline bool RxReadback() noexcept {
+    static const bool enabled = Enabled() && EnvOn("EDEN_NX2_RX_READBACK");
+    return enabled;
+}
+
+[[nodiscard]] inline bool EarlySkipCopyBack() noexcept {
+    static const bool enabled = EarlyDownloads() && EnvOn("EDEN_NX2_EARLY_SKIP_COPYBACK");
+    return enabled;
+}
+
+/// Who wrote a read download to guest memory.
+enum class Landing : u8 {
+    Gpu,    ///< The GPU thread (it may submit and wait)
+    Reader, ///< The reading thread, after its wait
+    Writer, ///< A write to guest memory from the GPU's side over its bytes
+    Fence,  ///< A fence's copy back, after the read downloads older than it
+};
+
 struct Stats {
-    std::atomic<u64> reads{};       ///< Reads served by a read download
-    std::atomic<u64> recorded{};    ///< Read downloads recorded (the rest found theirs in flight)
+    std::atomic<u64> reads{};         ///< Reads served by read downloads
+    std::atomic<u64> recorded{};      ///< Read downloads recorded (the rest found theirs in flight)
     std::atomic<u64> bytes{};
-    std::atomic<u64> waits{};       ///< Reads whose download the host GPU had not run yet
+    std::atomic<u64> early{};         ///< Early downloads recorded
+    std::atomic<u64> early_bytes{};
+    std::atomic<u64> early_capped{};  ///< Early downloads left to the reads (bounds)
+    std::atomic<u64> waits{};         ///< Reads whose download the host GPU had not run yet
     std::atomic<u64> wait_us{};
     std::atomic<u64> max_wait_us{};
-    std::atomic<u64> fallbacks{};   ///< Reads that took the synchronous flush
-    std::atomic<u64> early_lands{}; ///< Downloads landed before their read asked (run already)
-    std::atomic<u64> mismatches{};  ///< Verify: landed bytes a synchronous download disagreed with
+    std::atomic<u64> fallbacks{};     ///< Reads that took the synchronous flush
+    std::atomic<u64> gpu_lands{};     ///< Downloads landed by the GPU thread (run already)
+    std::atomic<u64> reader_lands{};
+    std::atomic<u64> writer_lands{};  ///< Landed first by a write over them from the GPU's side
+    std::atomic<u64> writer_drops{};  ///< Not submitted yet: such a write took its bytes out
+    std::atomic<u64> cpu_kept{};      ///< Bytes a pending guest CPU write kept from a landing
+    std::atomic<u64> learned{};       ///< Pages learned as read back
+    std::atomic<u64> checks{};        ///< Verify: reads checked
+    std::atomic<u64> mismatches{};    ///< Verify: reads whose bytes differed
 };
 
 inline Stats g_stats;
@@ -66,30 +118,42 @@ inline void NoteWait(u64 us) noexcept {
     }
 }
 
-/// A read was served: logs the totals every 4096 reads.
 inline void NoteRead() noexcept {
-    const u64 reads = g_stats.reads.fetch_add(1, std::memory_order_relaxed) + 1;
-    if ((reads & 4095) != 0) {
-        return;
-    }
+    Add(g_stats.reads, 1);
+}
+
+/// Logs the totals and starts them again (BufferCache::TickFrame, every 600 frames).
+inline void Report() noexcept {
     const auto take = [](std::atomic<u64>& counter) {
         return counter.exchange(0, std::memory_order_relaxed);
     };
+    const u64 reads = take(g_stats.reads);
     const u64 recorded = take(g_stats.recorded);
     const u64 bytes = take(g_stats.bytes);
+    const u64 early = take(g_stats.early);
+    const u64 early_bytes = take(g_stats.early_bytes);
+    const u64 early_capped = take(g_stats.early_capped);
     const u64 waits = take(g_stats.waits);
     const u64 wait_us = take(g_stats.wait_us);
     const u64 max_wait_us = take(g_stats.max_wait_us);
     const u64 fallbacks = take(g_stats.fallbacks);
-    const u64 early_lands = take(g_stats.early_lands);
-    const u64 mismatches = g_stats.mismatches.load(std::memory_order_relaxed);
+    const u64 gpu_lands = take(g_stats.gpu_lands);
+    const u64 reader_lands = take(g_stats.reader_lands);
+    const u64 writer_lands = take(g_stats.writer_lands);
+    const u64 writer_drops = take(g_stats.writer_drops);
+    const u64 cpu_kept = take(g_stats.cpu_kept);
+    const u64 checks = take(g_stats.checks);
     LOG_INFO(HW_GPU,
-             "Async read-back, last 4096 reads: {} downloads recorded ({} KiB), the rest in "
-             "flight | readers waited for the host GPU {} times, {} us (avg {} us, max {} us) | "
-             "{} landed before their read asked | {} synchronous fallbacks | {} verify "
-             "mismatches so far",
-             recorded, bytes >> 10, waits, wait_us, waits != 0 ? wait_us / waits : 0, max_wait_us,
-             early_lands, fallbacks, mismatches);
+             "Async read-back, last 600 frames: {} reads flushed, {} read downloads ({} KiB), {} "
+             "early "
+             "({} KiB, {} capped) | readers waited for the host GPU {} times, {} us (avg {} us, "
+             "max {} us) | landed by the GPU thread {}, readers {}, GPU-side writes {} ({} "
+             "dropped) | {} bytes kept for pending CPU writes | {} synchronous fallbacks | "
+             "{} pages learned | checks {} this window, {} mismatching reads so far",
+             reads, recorded, bytes >> 10, early, early_bytes >> 10, early_capped, waits, wait_us,
+             waits != 0 ? wait_us / waits : 0, max_wait_us, gpu_lands, reader_lands, writer_lands,
+             writer_drops, cpu_kept, fallbacks, g_stats.learned.load(std::memory_order_relaxed),
+             checks, g_stats.mismatches.load(std::memory_order_relaxed));
 }
 
 } // namespace VideoCommon::Nx2AsyncReadback

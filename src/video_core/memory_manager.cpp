@@ -24,6 +24,7 @@
 #include "video_core/host1x/host1x.h"
 #include "video_core/invalidation_accumulator.h"
 #include "video_core/memory_manager.h"
+#include "video_core/rasterizer_download_area.h"
 #include "video_core/rasterizer_interface.h"
 #include "video_core/renderer_base.h"
 #include "video_core/texture_cache/util.h"
@@ -409,9 +410,29 @@ T MemoryManager::Read(GPUVAddr addr) const {
     return {};
 }
 
+void MemoryManager::FinishReadsBefore(GPUVAddr gpu_addr, std::size_t size) const {
+    // EDEN_NX2_ASYNC_READBACK: a read download not yet in guest memory would land over this.
+    if ((VideoCore::g_read_downloads.pending.load(std::memory_order_acquire) == 0 &&
+         !VideoCore::g_read_checks.load(std::memory_order_relaxed)) ||
+        rasterizer == nullptr || size == 0) [[likely]] {
+        return;
+    }
+    constexpr GPUVAddr page_size = GPUVAddr{1} << cpu_page_bits;
+    for (GPUVAddr addr = gpu_addr; addr < gpu_addr + size;) {
+        const GPUVAddr next = (std::min)((addr & ~(page_size - 1)) + page_size, gpu_addr + size);
+        if (const std::optional<DAddr> device = GpuToCpuAddress(addr);
+            device && (VideoCore::ReadDownloadsMayCover(*device, next - addr) ||
+                       VideoCore::g_read_checks.load(std::memory_order_relaxed))) {
+            rasterizer->FinishGpuSideWrite(*device, next - addr);
+        }
+        addr = next;
+    }
+}
+
 template <typename T>
 void MemoryManager::Write(GPUVAddr addr, T data) {
     WaitPendingWrites(addr, sizeof(T));
+    FinishReadsBefore(addr, sizeof(T));
     // Semaphore and report words: no cache is told.
     MarkUntracked(addr, sizeof(T));
     const BumpSyncSerialAfter bump_after{};
@@ -634,6 +655,7 @@ void MemoryManager::CheckSmallRead(GPUVAddr gpu_addr, const void* read, std::siz
 
 void MemoryManager::WriteBlockImpl(GPUVAddr gpu_dest_addr, const void* src_buffer, std::size_t size, [[maybe_unused]] VideoCommon::CacheType which, bool unsafe) {
     WaitPendingWrites(gpu_dest_addr, size);
+    FinishReadsBefore(gpu_dest_addr, size);
     // Give Switch 2 sparse pages the write lands on their memory first (otherwise it is dropped).
     Tegra::Nx2BackSparseWrite(gpu_dest_addr, size);
     auto just_advance = [&]([[maybe_unused]] std::size_t page_index, [[maybe_unused]] std::size_t offset, std::size_t copy_amount) {
@@ -691,6 +713,7 @@ bool MemoryManager::WriteSmall(GPUVAddr gpu_dest_addr, const void* src_buffer, s
     if (pointer == nullptr) {
         return false;
     }
+    FinishReadsBefore(gpu_dest_addr, size);
     std::memcpy(const_cast<u8*>(pointer), src_buffer, size);
     return true;
 }

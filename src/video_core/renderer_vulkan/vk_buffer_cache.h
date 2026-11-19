@@ -143,10 +143,16 @@ public:
         return !staged && target.list == nullptr;
     }
 
-    /// Submits the recorded copies without waiting, returning the tick they are in.
-    u64 SubmitForRead();
+    /// The tick copies recorded now go in.
+    u64 ReadTick() const;
 
-    /// Waits for a tick SubmitForRead returned, on any thread.
+    /// Submits the recorded copies without waiting.
+    void SubmitForRead();
+
+    /// Whether a ReadTick has been submitted (any thread).
+    bool IsSubmittedForRead(u64 tick) const;
+
+    /// Waits for a submitted ReadTick, on any thread.
     void WaitForRead(u64 tick);
 
     bool IsFreeForRead(u64 tick) const;
