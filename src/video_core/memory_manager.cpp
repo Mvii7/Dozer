@@ -417,9 +417,9 @@ void MemoryManager::FinishReadsBefore(GPUVAddr gpu_addr, std::size_t size) const
         rasterizer == nullptr || size == 0) [[likely]] {
         return;
     }
-    constexpr GPUVAddr page_size = GPUVAddr{1} << cpu_page_bits;
+    constexpr GPUVAddr small_page = GPUVAddr{1} << cpu_page_bits;
     for (GPUVAddr addr = gpu_addr; addr < gpu_addr + size;) {
-        const GPUVAddr next = (std::min)((addr & ~(page_size - 1)) + page_size, gpu_addr + size);
+        const GPUVAddr next = (std::min)((addr & ~(small_page - 1)) + small_page, gpu_addr + size);
         if (const std::optional<DAddr> device = GpuToCpuAddress(addr);
             device && (VideoCore::ReadDownloadsMayCover(*device, next - addr) ||
                        VideoCore::g_read_checks.load(std::memory_order_relaxed))) {
