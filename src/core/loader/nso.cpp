@@ -238,7 +238,10 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
     // (nx2_dk_shadow.h).
     static const int dk_shadow_cascades =
         Nx2DkShadow::CascadesFrom(std::getenv(Nx2DkShadow::Switch));
-    if (dk_shadow_cascades != 0 && Nx2DkShadow::IsTarget(process.GetProgramId(), name)) {
+    if (dk_shadow_cascades == 0 && Nx2DkShadow::IsTarget(process.GetProgramId(), name)) {
+        LOG_INFO(Loader, "Donkey Kong Bananza: sun shadow cascades the game's own ({} unset or 0)",
+                 Nx2DkShadow::Switch);
+    } else if (dk_shadow_cascades != 0 && Nx2DkShadow::IsTarget(process.GetProgramId(), name)) {
         const auto& text = nso_header.segments[0];
         const size_t text_start = module_start + text.location;
         const std::span<u8> image{codeset.memory};
@@ -261,6 +264,10 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
         Nx2DkReflections::IntervalFrom(std::getenv(Nx2DkReflections::IntervalSwitch));
     static const bool dk_reflections_off =
         Nx2DkReflections::OffFrom(std::getenv(Nx2DkReflections::OffSwitch));
+    if (!dk_reflections_off && Nx2DkReflections::IsTarget(process.GetProgramId(), name)) {
+        LOG_INFO(Loader, "Donkey Kong Bananza: reflections the game's own ({} unset or 0)",
+                 Nx2DkReflections::OffSwitch);
+    }
     if ((dk_cubemap_interval != 0 || dk_reflections_off) &&
         Nx2DkReflections::IsTarget(process.GetProgramId(), name)) {
         const auto& text = nso_header.segments[0];
@@ -268,7 +275,8 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
         const std::span<u8> image{codeset.memory};
         const auto reflections = Nx2DkReflections::Apply(
             text_start <= image.size() ? image.subspan(text_start) : std::span<u8>{}, text.size,
-            dk_reflections_off ? 0 : dk_cubemap_interval, dk_reflections_off);
+            PageAlignSize(text.size), dk_reflections_off ? 0 : dk_cubemap_interval,
+            dk_reflections_off);
         if (dk_reflections_off) {
             if (reflections.off) {
                 LOG_INFO(Loader, "Donkey Kong Bananza: reflections off ({})",
