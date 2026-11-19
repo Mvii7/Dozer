@@ -583,22 +583,7 @@ public:
 
     /// EDEN_NX2_RX_COALESCE: a fence leaves the copies back pending so far for a later one; they
     /// are kept apart, so reads that fetch them count (NoteDeferredRead).
-    void DeferCopyBacks() {
-        if (uncommitted_gpu_modified_ranges.Empty()) {
-            return;
-        }
-        // Into the last held back set while nothing came after it, so the sets stay few.
-        if (deferred_copy_back_sets != 0 &&
-            deferred_copy_back_sets == committed_gpu_modified_ranges.size()) {
-            auto& held = committed_gpu_modified_ranges.back();
-            uncommitted_gpu_modified_ranges.ForEach(
-                [&held](DAddr start, DAddr end) { held.Add(start, end - start); });
-            uncommitted_gpu_modified_ranges.Clear();
-            return;
-        }
-        AccumulateFlushes();
-        deferred_copy_back_sets = committed_gpu_modified_ranges.size();
-    }
+    void DeferCopyBacks();
 
     /// Reads that fetched data a fence held back, since the last call.
     [[nodiscard]] u64 TakeDeferredReads() noexcept {
