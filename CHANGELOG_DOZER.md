@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Buffer cache: the copies back a fence makes of GPU-written buffer memory the guest reads are
+  recorded as one copy command per buffer instead of one per range, and ranges up to 256 bytes
+  apart are copied together (Donkey Kong Bananza with read traps: about 700 ranges a frame, in
+  about 70 fences). `EDEN_NX2_COPYBACK_BATCH=0` records them one by one as before.
 - Presets: **Performance** (the default again, for a first start too) keeps read traps on: with
   Bananza's foliage off they run it faster than off. **Balanced** is now **Quality**: Performance's
   settings with Bananza as the game makes it (foliage, reflections, very high shadows); a stored

@@ -1212,6 +1212,10 @@ private:
     [[nodiscard]] bool IsEarlyPage(DAddr page) const;
     bool RecordEarlyDownloads();
 
+    /// EDEN_NX2_COPYBACK_BATCH: records a fence's copies back (buffer offsets, in address order)
+    /// as few copy commands as it can.
+    void CommitBatchedCopyBacks(std::span<const std::pair<BufferCopy, BufferId>> downloads);
+
     size_t immediate_buffer_capacity = 0;
     Common::ScratchBuffer<u8> immediate_buffer_alloc;
 

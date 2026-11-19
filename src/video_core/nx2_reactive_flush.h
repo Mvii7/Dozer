@@ -386,6 +386,19 @@ enum class FitFeedback : u32 {
     return enabled;
 }
 
+/// EDEN_NX2_COPYBACK_BATCH=0: each range a fence copies back is its own copy command. Unset: a
+/// fence's ranges in one buffer go in one copy command, and ranges at most CopyBackMergeGap bytes
+/// apart are copied as one region (only the ranges themselves land in guest memory).
+[[nodiscard]] inline bool CopyBackBatch() noexcept {
+    static const bool enabled = [] {
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_COPYBACK_BATCH");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+inline constexpr u64 CopyBackMergeGap = 256;
+
 /// EDEN_NX2_COPYBACK_WAIT=0: a read trap that finds GPU writes not in guest memory yet always
 /// sync flushes. Unset: when they are all in committed copies back, it waits for those to land
 /// (BufferCache::WaitForCopyBack).
