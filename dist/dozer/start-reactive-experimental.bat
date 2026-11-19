@@ -1,6 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
-rem Dozer - EXPERIMENTAL: the balanced settings with Reactive Flushing instead of read traps.
+rem Dozer - EXPERIMENTAL: the performance settings with Reactive Flushing instead of read traps.
 rem Dozer launcher for dozer-cli.exe (Dozer's program without menus).
 rem Put this file next to dozer-cli.exe.
 rem Start: put your game (.nsp .xci .nsz .xcz .nup .nx) in the Games folder next to this file and double-click
@@ -9,12 +9,12 @@ rem First start: when the user folder has no config\sdl2-config.ini yet, it is m
 rem config\qt-config.ini (the controller and settings of the menu program, dozer.exe). An existing
 rem sdl2-config.ini is never changed. The .ini edits are made by dozer-config.ps1 next to this file
 rem (a small, readable PowerShell script). Quit the game with Alt+F4.
-rem The second choice next to start-balanced.bat. Reactive flushing copies GPU-written data
+rem The second choice next to start-performance.bat. Reactive flushing copies GPU-written data
 rem back to the game. On our PC (5 Nov, DK_DYN on, frame generation off) it traded the opening
 rem for open areas: with RX_RT_FIT=3, -7 percent FPS at the game's opening and +15 percent in
 rem the open area against the same build with it off. Not checked yet: together with frame
 rem generation, and the image with RX_RT_FIT=3. If you see wrong
-rem images, set RX_RT_FIT=1 below or use start-balanced.bat. Reactive flushing is a config
+rem images, set RX_RT_FIT=1 below or use start-performance.bat. Reactive flushing is a config
 rem setting, not a switch: with CONFIG empty this launcher uses config\sdl2-config-reactive.ini,
 rem made once as a copy of sdl2-config.ini with use_reactive_flushing=true and
 rem barrier_feedback_loops=true.
@@ -97,6 +97,10 @@ rem Donkey Kong Bananza dynamic frame rate (DK_DYN above; 0 = the game's own 60/
 set EDEN_NX2_DK_DYN=%DK_DYN%
 rem Donkey Kong Bananza foliage off: its grass, flowers and plants are not drawn (README).
 set EDEN_NX2_DK_FOLIAGE_OFF=1
+rem Donkey Kong Bananza: medium shadows (the sun shadow in 2 cascades) and no reflections (README).
+set EDEN_NX2_DK_SHADOW_CASCADES=2
+set EDEN_NX2_DK_REFLECTIONS_OFF=1
+set EDEN_NX2_DK_CUBEMAP_INTERVAL=
 rem Mario Kart World dynamic frame rate (MKW_DYN above).
 set EDEN_NX2_MKW_DYN=%MKW_DYN%
 rem Optical Flow frame generation: generated frames blended for the time they are shown (only

@@ -8,6 +8,21 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Presets: **Performance** (the default again, for a first start too) keeps read traps on: with
+  Bananza's foliage off they run it faster than off. **Balanced** is now **Quality**: Performance's
+  settings with Bananza as the game makes it (foliage, reflections, very high shadows); a stored
+  Balanced reads as Quality, a stored Performance gets read traps on. `start-balanced.bat` is now
+  `start-quality.bat`, and `start-performance.bat` no longer sets `EDEN_NX2_READ_TRAPS=0`.
+- Donkey Kong Bananza: a **Shadow quality** box in its Properties > Tuning, under Foliage off: Low,
+  Medium, High and Very high cap the sun shadow's cascades at 1, 2, 3 and the game's own 4
+  (`EDEN_NX2_DK_SHADOW_CASCADES=<1-3>`, `core/loader/nx2_dk_shadow.h`). Each cascade draws the
+  shadow casters again.
+- Donkey Kong Bananza: a **Dynamic reflections off** box in its Properties > Tuning turns the reflection
+  cube map off (`EDEN_NX2_DK_REFLECTIONS_OFF=1`, `core/loader/nx2_dk_reflections.h`); each capture
+  draws the scene again. `EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>` sets the frames between captures
+  by hand (the game's 8).
+- Donkey Kong Bananza's presets: Performance and Experimental turn foliage and dynamic reflections
+  off and set Medium shadows; Quality and Safe leave the game's own. The launchers set the same.
 - Frame generation (LSFG and Optical Flow) now runs while HDR output is active instead of turning off.
   LSFG takes its HDR mode on an scRGB swapchain (as lsfg-vk's); HDR10's PQ frames go through it
   like SDR ones. Not tried on an HDR display yet.
