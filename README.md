@@ -162,7 +162,7 @@ read traps on, which Performance and Quality have (Experimental and Safe do not)
 Generated frames need a screen faster than the game's frame rate; on a 60 Hz screen they only
 help below 30 fps. The presets do not change this box, except Safe, which sets it to Off. The
 box writes the Graphics tab's frame generation settings (*Enable Frame Generation*, the type
-FSR3, and the multiplier or the target frame rate), so you see the same choice there.
+Optical Flow, and the multiplier or the target frame rate), so you see the same choice there.
 
 Below the preset are the nine settings, in two groups:
 

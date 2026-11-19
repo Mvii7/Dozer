@@ -98,7 +98,7 @@ set EDEN_NX2_DK_REFLECTIONS_OFF=1
 set EDEN_NX2_DK_CUBEMAP_INTERVAL=
 rem Mario Kart World dynamic frame rate (MKW_DYN above).
 set EDEN_NX2_MKW_DYN=%MKW_DYN%
-rem FSR3 frame generation: generated frames blended for the time they are shown (only
+rem Optical Flow frame generation: generated frames blended for the time they are shown (only
 rem does something when frame generation is on in the config, README).
 set EDEN_NX2_FG_TIMED=1
 rem Game FPS, display FPS and speed in RivaTuner Statistics Server's overlay (OSD above).
