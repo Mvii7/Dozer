@@ -61,6 +61,29 @@ inline bool Nx2NeedsBufferDownloads() {
 inline constexpr u64 Nx2WrittenPageBits = 12;
 inline std::array<std::atomic<u64>, (u64{1} << (36 - Nx2WrittenPageBits)) / 64> g_nx2_gpu_written_pages{};
 
+// The same pages by when the GPU last wrote them, in three sets: the current one, the one before
+// it and a cleared one, which becomes current every EDEN_NX2_WRITTEN_AGE frames (default 600; 0:
+// off, the bits above alone). DmaPusher drains the split's back only for blocks on pages of the
+// current and previous sets: after other worlds, Bananza's command lists and macro parameters
+// landed on pages their buffers wrote minutes before, and each such block drained it.
+inline std::array<std::array<std::atomic<u64>, (u64{1} << (36 - Nx2WrittenPageBits)) / 64>, 3>
+    g_nx2_recent_written_pages{};
+inline std::atomic<u32> g_nx2_recent_set{};
+inline u32 g_nx2_recent_frames{}; ///< Frames since the last change of set (Nx2AgeGpuWrittenPages)
+
+/// EDEN_NX2_WRITTEN_AGE, read at the first call (after nx2_switches.txt is loaded).
+inline u32 Nx2WrittenAge() {
+    static std::atomic<s64> age{-1};
+    s64 value = age.load(std::memory_order_relaxed);
+    if (value < 0) [[unlikely]] {
+        const char* env = std::getenv("EDEN_NX2_WRITTEN_AGE");
+        value = env == nullptr || env[0] == '\0' ? 600 : std::strtoll(env, nullptr, 10);
+        value = std::clamp<s64>(value, 0, 1 << 20);
+        age.store(value, std::memory_order_relaxed);
+    }
+    return static_cast<u32>(value);
+}
+
 /// EDEN_NX2_MARK_WORDS=2 (Nx2MarkGpuWritten): `mask` is the bits word `index` gets 64 pages at a
 /// time, `pages` the bits worked out page by page. Logs the first 16 words where they differ and,
 /// at each power of two from 1024 on, how many words were checked and how many differed
@@ -91,6 +114,7 @@ inline void Nx2MarkGpuWritten(u64 device_address, u64 size) {
     const u64 first = device_address >> Nx2WrittenPageBits;
     const u64 last = std::min<u64>((device_address + size - 1) >> Nx2WrittenPageBits,
                                    g_nx2_gpu_written_pages.size() * 64 - 1);
+    auto& recent = g_nx2_recent_written_pages[g_nx2_recent_set.load(std::memory_order_acquire) % 3];
     if (mode != 0) {
         for (u64 index = first / 64; first <= last && index <= last / 64; ++index) {
             const u64 low = index == first / 64 ? first % 64 : 0;
@@ -105,18 +129,20 @@ inline void Nx2MarkGpuWritten(u64 device_address, u64 size) {
                 Nx2CheckMarkWord(index, mask, pages);
                 mask = pages;
             }
-            auto& word = g_nx2_gpu_written_pages[index];
-            if ((word.load(std::memory_order_relaxed) & mask) != mask) {
-                word.fetch_or(mask, std::memory_order_relaxed);
+            for (auto* const word : {&g_nx2_gpu_written_pages[index], &recent[index]}) {
+                if ((word->load(std::memory_order_relaxed) & mask) != mask) {
+                    word->fetch_or(mask, std::memory_order_relaxed);
+                }
             }
         }
         return;
     }
     for (u64 page = first; page <= last; ++page) {
-        auto& word = g_nx2_gpu_written_pages[page / 64];
         const u64 bit = u64{1} << (page % 64);
-        if ((word.load(std::memory_order_relaxed) & bit) == 0) {
-            word.fetch_or(bit, std::memory_order_relaxed);
+        for (auto* const word : {&g_nx2_gpu_written_pages[page / 64], &recent[page / 64]}) {
+            if ((word->load(std::memory_order_relaxed) & bit) == 0) {
+                word->fetch_or(bit, std::memory_order_relaxed);
+            }
         }
     }
 }
@@ -172,6 +198,12 @@ inline void Nx2ClearGpuWrittenPages() {
     for (auto& word : g_nx2_untracked_pages) {
         word.store(0, std::memory_order_relaxed);
     }
+    for (auto& set : g_nx2_recent_written_pages) {
+        for (auto& word : set) {
+            word.store(0, std::memory_order_relaxed);
+        }
+    }
+    g_nx2_recent_frames = 0;
 }
 
 [[nodiscard]] inline bool Nx2IsGpuWritten(u64 device_address) {
@@ -180,6 +212,37 @@ inline void Nx2ClearGpuWrittenPages() {
         return false;
     }
     return (g_nx2_gpu_written_pages[page / 64].load(std::memory_order_relaxed) >> (page % 64)) & 1;
+}
+
+/// Whether the GPU wrote the page within the last EDEN_NX2_WRITTEN_AGE to twice that many frames
+/// (ever, with the age 0).
+[[nodiscard]] inline bool Nx2RecentlyGpuWritten(u64 device_address) {
+    if (Nx2WrittenAge() == 0) {
+        return Nx2IsGpuWritten(device_address);
+    }
+    const u64 page = device_address >> Nx2WrittenPageBits;
+    if (page >= g_nx2_gpu_written_pages.size() * 64) {
+        return false;
+    }
+    const u32 set = g_nx2_recent_set.load(std::memory_order_acquire);
+    const u64 bits = g_nx2_recent_written_pages[set % 3][page / 64].load(std::memory_order_relaxed) |
+                     g_nx2_recent_written_pages[(set + 2) % 3][page / 64].load(std::memory_order_relaxed);
+    return (bits >> (page % 64)) & 1;
+}
+
+/// Once a frame, from one thread (BufferCache::TickFrame): every EDEN_NX2_WRITTEN_AGE frames the
+/// cleared set becomes current and the oldest one is cleared for the next change.
+inline void Nx2AgeGpuWrittenPages() {
+    const u32 age = Nx2WrittenAge();
+    if (age == 0 || ++g_nx2_recent_frames < age) {
+        return;
+    }
+    g_nx2_recent_frames = 0;
+    const u32 set = g_nx2_recent_set.load(std::memory_order_relaxed);
+    for (auto& word : g_nx2_recent_written_pages[(set + 1) % 3]) {
+        word.store(0, std::memory_order_relaxed);
+    }
+    g_nx2_recent_set.store(set + 1, std::memory_order_release);
 }
 
 // NVN2 queues release their progress values into the second page of a two-page GPU-accessible

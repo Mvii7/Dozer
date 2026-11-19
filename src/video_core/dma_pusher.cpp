@@ -770,7 +770,7 @@ void DmaPusher::NoteBackSemaphore(Engines::EngineTypes type, u32 method, u32 arg
 bool DmaPusher::IsGpuWrittenRange(GPUVAddr address, size_t size) const {
     for (GPUVAddr page = address & ~GPUVAddr{0xfff}; page < address + size; page += 0x1000) {
         if (const auto device = memory_manager.GpuToCpuAddress(page);
-            device && Tegra::Nx2IsGpuWritten(*device)) {
+            device && Tegra::Nx2RecentlyGpuWritten(*device)) {
             return true;
         }
     }

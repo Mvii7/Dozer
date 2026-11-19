@@ -267,6 +267,32 @@ TEST_CASE("Nx2GpuPages: writes around the caches and the address range", "[video
     REQUIRE(!pages->Holds(address, 4));
 }
 
+TEST_CASE("Nx2: GPU-written pages age out of the recent sets", "[video_core]") {
+    if (Tegra::Nx2WrittenAge() == 0) {
+        SKIP("EDEN_NX2_WRITTEN_AGE=0");
+    }
+    const u32 age = Tegra::Nx2WrittenAge();
+    Tegra::Nx2ClearGpuWrittenPages();
+    const u64 old_page = 0x3000'0000;
+    const u64 new_page = 0x3010'0000;
+    Tegra::Nx2MarkGpuWritten(old_page, 0x1000);
+    REQUIRE(Tegra::Nx2RecentlyGpuWritten(old_page));
+    REQUIRE(!Tegra::Nx2RecentlyGpuWritten(old_page + 0x1000));
+    for (u32 frame = 0; frame < age; ++frame) {
+        Tegra::Nx2AgeGpuWrittenPages();
+    }
+    REQUIRE(Tegra::Nx2RecentlyGpuWritten(old_page)); // in the previous set
+    Tegra::Nx2MarkGpuWritten(new_page, 16);
+    for (u32 frame = 0; frame < age; ++frame) {
+        Tegra::Nx2AgeGpuWrittenPages();
+    }
+    REQUIRE(!Tegra::Nx2RecentlyGpuWritten(old_page));
+    REQUIRE(Tegra::Nx2RecentlyGpuWritten(new_page));
+    REQUIRE(Tegra::Nx2IsGpuWritten(old_page)); // the session's bits keep it
+    Tegra::Nx2ClearGpuWrittenPages();
+    REQUIRE(!Tegra::Nx2RecentlyGpuWritten(new_page));
+}
+
 TEST_CASE("Nx2GpuPages: queued clean-ups past the queue stay marked", "[video_core]") {
     auto pages = Started();
     pages->MarkImage(Base, 2 * Page);

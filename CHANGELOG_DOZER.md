@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- GPU thread: a command list or macro parameter block on a page the GPU wrote waits for the
+  split's back only if the GPU wrote that page in the last 600 to 1,200 frames
+  (`EDEN_NX2_WRITTEN_AGE`); before, any page it ever wrote counted. In Donkey Kong Bananza, coming
+  back to a world after others spent half of the GPU thread in these waits. `=0` brings back the
+  old check (Safe).
 - Fences: copies back of GPU-written buffer memory that alone would make a fence real wait for a
   later fence by default, as many fences as the game tolerates (`EDEN_NX2_RX_COALESCE`, now
   adaptive, every 30 frames): many reads that had to fetch data a fence held back halve the
