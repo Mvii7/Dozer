@@ -311,8 +311,10 @@
 # closer.
 #EDEN_NX2_DKQ_ACTOR_DRAW_DISTANCE=100
 # NONCLIP_DISTANCE=<10-300>: a far clip distance in tens of units for the actors the game never
-# clips (NonClip: about 220 kinds, big level models and landmarks among them), which
-# ACTOR_DRAW_DISTANCE leaves alone. Unset: never clipped.
+# clips, which ACTOR_DRAW_DISTANCE leaves alone: those of no clip level (NonClip: about 220
+# kinds, big level models and landmarks among them) and those whose ClippingParam switches it
+# off (Invalidate: about 670 kinds, distant views and cutscene props among them). Unset: never
+# clipped.
 #EDEN_NX2_DKQ_NONCLIP_DISTANCE=300
 # SHADOW_CASCADES=<1-4>: the most sun shadow cascades (the game's up to 4); each one draws the
 # shadow casters again. SHADOW_DISTANCE=<10-100>: the sun shadow's far distance in % of the

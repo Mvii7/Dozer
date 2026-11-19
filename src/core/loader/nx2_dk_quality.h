@@ -38,7 +38,8 @@ enum Id : size_t {
     CameraFar,         ///< the camera's far distance, % (EDEN_NX2_FAR_SCALE of the Selevet fork)
     ColorDecalMax,     ///< ColorDecalMaxNum
     ActorDrawDistance, ///< the actors' far clip distances (FarClipLevel), % of the game's
-    NonClipDistance,   ///< a far clip distance for the never clipped actors (NonClip), x10 units
+    NonClipDistance,   ///< a far clip distance for the never clipped actors (NonClip, or
+                       ///< clipping invalidated), x10 units
     ShadowCascades,    ///< the most sun shadow cascades (depth_shadow_cascade_num)
     ShadowDistance,    ///< the sun shadow's far distance (depth_shadow_far), % of the game's
     GgxFilterOff,      ///< IsUseGGXFilter forced off (reflection cube map filtering)
@@ -268,7 +269,11 @@ constexpr size_t CascadeRoutine = DebrisRoutine + DebrisRoutineWords; ///< after
 constexpr size_t CascadeRoutineWords = 5;
 constexpr size_t ShadowFarRoutine = CascadeRoutine + CascadeRoutineWords; ///< three
 constexpr size_t ShadowFarRoutineWords = 5;
-constexpr size_t CaveWords = ShadowFarRoutine + 3 * ShadowFarRoutineWords;
+/// Thirteen after one shared distance, past words 64-68 of the free space (Shadow quality's).
+constexpr size_t InvalidRoutine = 50;
+constexpr size_t InvalidSites = 13;
+constexpr size_t InvalidRoutineWords = 4;
+constexpr size_t CaveWords = InvalidRoutine + 1 + InvalidSites * InvalidRoutineWords;
 
 /// The upper half of a float, rounded: the constants are put in with one `movz wN, #x, lsl #16`.
 constexpr u32 FloatHigh(float value) {
@@ -562,7 +567,56 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
     // HardClipLv1-5); the distance of each level is a table of the read-only data:
     //   -1 (never clipped), 200, 50, 100, 150, 300, 450, 700, 900, 1200
     // Each distance but NonClip's is scaled in place; NonClip's -1 can be given a distance of its
-    // own (the big level models and landmarks use it).
+    // own (the big level models and landmarks use it). An actor whose ClippingParam invalidates its
+    // clipping (flag bit 3) skips the table for a -1 of the code's own, in thirteen places:
+    //   fmov s0, #-1.0; up to 4 words; tbnz wR, #3, store; ...; store: ldr x0, [xN, #0x18];
+    //   str s0, [xN, #0x54]
+    // With a NonClip distance each tbnz becomes a jump to a routine that loads it first:
+    //   tbz wR, #3, +12; ldr s0, <distance>; b store; b back   (the distance shared, before them)
+    const auto PutInvalidDistance = [&](float distance) {
+        constexpr u32 FmovMinusOne = 0x1E3E1000U; // fmov s0, #-1.0
+        std::array<std::array<size_t, 3>, InvalidSites> sites{}; // tbnz, store, register
+        size_t found = 0;
+        for (size_t i = 0; i + Reach < count; ++i) {
+            if (word(i) != FmovMinusOne) {
+                continue;
+            }
+            for (size_t j = i + 1; j <= i + 5; ++j) {
+                const u32 test = word(j);
+                if ((test & 0xFFF80000U) != 0x37180000U) { // tbnz wR, #3
+                    continue;
+                }
+                const size_t store = j + ((test >> 5) & 0x3FFFU);
+                if (store + 1 < count && (word(store) & 0xFFFFFC1FU) == 0xF9400C00U &&
+                    word(store + 1) == (0xBD005400U | (word(store) & 0x3E0U))) {
+                    if (found < sites.size()) {
+                        sites[found] = {j, store, test & 31U};
+                    }
+                    ++found;
+                }
+                break;
+            }
+        }
+        if (found != sites.size() ||
+            !CaveFree(InvalidRoutine, 1 + InvalidSites * InvalidRoutineWords)) {
+            return;
+        }
+        const size_t literal = cave + InvalidRoutine;
+        put(literal, std::bit_cast<u32>(distance));
+        const auto branch = [](size_t from, size_t to) {
+            return 0x14000000U | (static_cast<u32>(to - from) & 0x3FFFFFFU);
+        };
+        for (size_t i = 0; i < sites.size(); ++i) {
+            const auto [from, store, reg] = sites[i];
+            const size_t routine = literal + 1 + i * InvalidRoutineWords;
+            put(routine, 0x36180060U | reg); // tbz wR, #3, +12
+            put(routine + 1,
+                0x1C000000U | ((static_cast<u32>(literal - (routine + 1)) & 0x7FFFFU) << 5));
+            put(routine + 2, branch(routine + 2, store));
+            put(routine + 3, branch(routine + 3, from + 1));
+            put(from, branch(from, routine));
+        }
+    };
     const int actor_distance = set(ActorDrawDistance), nonclip = set(NonClipDistance);
     if (actor_distance != 0 || nonclip != 0) {
         constexpr std::array<float, 10> Table{-1.0f, 200.0f, 50.0f,  100.0f, 150.0f,
@@ -590,6 +644,7 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 const float nonclip_far = static_cast<float>(nonclip) * 10.0f;
                 std::memcpy(text.data() + at, &nonclip_far, sizeof(nonclip_far));
                 result[NonClipDistance] = State::Applied;
+                PutInvalidDistance(nonclip_far);
             }
         }
     }

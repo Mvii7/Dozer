@@ -161,10 +161,12 @@ void ConfigureBananza::RetranslateUI() {
            "default). Lower: they are clipped closer to you. Actors marked never to clip stay.")};
     texts[Quality::NonClipDistance] = {
         tr("Never-clipped object distance"),
-        tr("Gives the objects the game never clips (about 220 kinds: big level models, "
-           "landmarks, backdrop effects; the actor draw distance leaves them alone) a draw "
-           "distance, in units (the actors' own go from 50 to 1200). Lower: big scenery "
-           "disappears at a distance. For testing.")};
+        tr("Gives the objects the game never clips a draw distance, in units (the actors' own "
+           "go from 50 to 1200): the ones of no clip level (about 220 kinds: big level models, "
+           "landmarks, backdrop effects) and the ones whose clipping is switched off (about 670 "
+           "kinds: distant views, level models, cutscene props). The actor draw distance leaves "
+           "both alone. Lower: big scenery disappears at a distance, cutscenes seen from afar "
+           "may miss props. For testing.")};
     texts[Quality::ShadowCascades] = {
         tr("Sun shadow cascades"),
         tr("The most cascades the sun's shadow is drawn in (the game's: up to 4). Each cascade "

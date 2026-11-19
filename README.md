@@ -229,7 +229,7 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Cube map update interval | 8 frames | how often reflection cube maps are captured (the one row where higher is faster) |
 | Radial blur render scale / samples | 50% / 20 | the radial blur's buffer size and samples |
 | Actor draw distance | 100% | scales the distances at which actors (objects, enemies, scenery pieces; over 2000 use them) are clipped, from the game's own 50-1200 (200 by default), 10-100%; actors marked never to clip stay |
-| Never-clipped object distance | never | gives the actors the game never clips (about 220 kinds: big level models, landmarks, backdrop effects) a draw distance, 100-3000 units; the actor draw distance leaves them alone |
+| Never-clipped object distance | never | gives the actors the game never clips a draw distance, 100-3000 units: those of no clip level (about 220 kinds: big level models, landmarks, backdrop effects) and those whose clipping is switched off (about 670 kinds: distant views, level models, cutscene props); the actor draw distance leaves both alone |
 | Object clipping in every level | off | turns the actors' far clipping on in the 135 levels (mostly special and challenge stages) that have it off, and drops the +2000 two levels add, so the draw distance rows work there; in the stages' scene settings as they are read |
 | Sun shadow cascades | 4 | the most cascades the sun's shadow is drawn in, 1-4; each draws the shadow casters again, so fewer means fewer draws and blurrier shadows |
 | Sun shadow distance | 100% | scales how far the sun's shadow reaches (the end of its last cascade), 10-100%; lower: fewer casters drawn into it |

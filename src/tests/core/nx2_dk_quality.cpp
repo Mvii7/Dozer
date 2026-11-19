@@ -17,11 +17,11 @@ namespace {
 using namespace Loader::Nx2DkQuality;
 
 constexpr u32 Filler = 0x12345678;
-// A text segment of 0x2e80 bytes in 0x3000: the free space starts at word 0xba0, the routines
-// at 0xba0 + CaveOffset.
-constexpr u32 TextSize = 0x2e80;
+// A text segment of 0x2d80 bytes in 0x3000: the free space starts at word 0xb60, the routines
+// at 0xb60 + CaveOffset.
+constexpr u32 TextSize = 0x2d80;
 constexpr u32 AlignedSize = 0x3000;
-constexpr size_t Cave = 0xba0 + CaveOffset;
+constexpr size_t Cave = 0xb60 + CaveOffset;
 constexpr size_t MinNear = 0x100, MaxFar = 0x120, MaxNear = 0x140, MinFar = 0x160;
 constexpr size_t GpuGetter = 0x200, FrameGetter = 0x210, BlurScaleGetter = 0x220;
 constexpr size_t BlurSamplesGetter = 0x230, CubeMapGetter = 0x240;
@@ -30,7 +30,7 @@ constexpr size_t DecalGetter = 0x260, GgxGetter = 0x270;
 constexpr size_t FarA = 0x600, FarB = 0x620, FarC = 0x640;
 constexpr size_t DebrisSite = 0x780, CascadeSite = 0x7a0, ShadowFarSites = 0x7c0;
 constexpr size_t BorderSite = 0x740, ShadowMaskGetter = 0x760,
-    FlagSite = 0x800;
+    FlagSite = 0x800, InvalidSites0 = 0x900;
 
 constexpr u32 ShadowFarLoads[3][2]{
     {0xBD5AE940, 0xB9822AC8}, {0xBD5AE900, 0x9BAA674A}, {0xBD5AEB60, 0xB9822AE8}};
@@ -82,6 +82,14 @@ struct Text {
         words[DebrisSite + 14] = 0x91030288; // add x8, x20, #0xc0
         const u32 border[]{0x3941F3E8, 0xF94017E6, 0x7100011F, 0x1A9F17E8};
         std::copy(std::begin(border), std::end(border), &words[BorderSite]);
+        for (size_t i = 0; i < InvalidSites; ++i) {
+            // fmov s0, #-1.0; (and, strh); tbnz w8/w9, #3, store; 4 words; store:
+            const size_t at = InvalidSites0 + i * 0x10, test = at + 1 + i % 3;
+            words[at] = 0x1E3E1000;
+            words[test] = 0x37180000U | (7 << 5) | (8 + i % 2);
+            words[test + 7] = 0xF9400C00U | (1 << 5); // ldr x0, [x1, #0x18]
+            words[test + 8] = 0xBD005400U | (1 << 5); // str s0, [x1, #0x54]
+        }
         words[BloomFirst] = LdrX(8, 8, BloomScaleParam);
         words[BloomFirst + 1] = LdrS(1, 8, ValueOffset);
         for (const size_t at : {BloomSecond, BloomThird}) {
@@ -237,6 +245,23 @@ TEST_CASE("Nx2DkQuality: the actors' far clip distances", "[core]") {
     std::memcpy(now.data(), &image2[at], sizeof(now));
     REQUIRE(now[0] == 800.0f);
     REQUIRE(now[1] == 200.0f);
+    // and the places that skip the table for their own -1 load it first
+    const size_t literal = Cave + InvalidRoutine;
+    REQUIRE(image2[literal] == 0x44480000); // 800.0
+    for (size_t i = 0; i < InvalidSites; ++i) {
+        const size_t test = InvalidSites0 + i * 0x10 + 1 + i % 3;
+        const size_t routine = literal + 1 + i * InvalidRoutineWords;
+        REQUIRE(image2[test] == (0x14000000U | static_cast<u32>(routine - test)));
+        REQUIRE(image2[routine] == (0x36180060U | (8 + i % 2))); // tbz wR, #3, +12
+        REQUIRE(image2[routine + 1] ==
+                (0x1C000000U | ((static_cast<u32>(literal - (routine + 1)) & 0x7FFFFU) << 5)));
+        REQUIRE(image2[routine + 2] ==
+                (0x14000000U | (static_cast<u32>((test + 7) - (routine + 2)) & 0x3FFFFFFU)));
+        REQUIRE(image2[routine + 3] ==
+                (0x14000000U | (static_cast<u32>((test + 1) - (routine + 3)) & 0x3FFFFFFU)));
+    }
+    // The actor draw distance alone leaves them alone
+    REQUIRE(image[InvalidSites0 + 1] == (0x37180000U | (7 << 5) | 8));
     // Without the table (or with two) it is not applied
     Text plain;
     REQUIRE(Apply(plain.Bytes(), TextSize, AlignedSize, Only(ActorDrawDistance, 50))[ActorDrawDistance] ==
