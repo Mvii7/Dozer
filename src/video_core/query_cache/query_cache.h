@@ -306,6 +306,11 @@ void QueryCacheBase<Traits>::CounterReport(GPUVAddr addr, QueryType counter_type
         }
         query_base->value += streamer->GetAmendValue();
         streamer->SetAccumulationValue(query_base->value);
+        // EDEN_NX2_ASYNC_READBACK: a read download not yet in guest memory lands first.
+        if (VideoCore::ReadDownloadsMayCover(cpu_addr, 2 * sizeof(u64)) ||
+            VideoCore::g_read_checks.load(std::memory_order_relaxed)) [[unlikely]] {
+            impl->rasterizer.FinishGpuSideWrite(cpu_addr, 2 * sizeof(u64));
+        }
         if (True(query_base->flags & QueryFlagBits::HasTimestamp)) {
             u64 timestamp = impl->gpu.GetTicks();
             std::memcpy(pointer_timestamp, &timestamp, sizeof(timestamp));
@@ -342,6 +347,10 @@ void QueryCacheBase<Traits>::CounterReport(GPUVAddr addr, QueryType counter_type
         impl->rasterizer.SignalFence(std::move(operation));
     } else {
         if (!Settings::IsGPULevelHigh() && counter_type == QueryType::Payload) {
+            if (VideoCore::ReadDownloadsMayCover(cpu_addr, 2 * sizeof(u64)) ||
+                VideoCore::g_read_checks.load(std::memory_order_relaxed)) [[unlikely]] {
+                impl->rasterizer.FinishGpuSideWrite(cpu_addr, 2 * sizeof(u64));
+            }
             if (has_timestamp) {
                 u64 timestamp = impl->gpu.GetTicks();
                 u64 value = static_cast<u64>(payload);

@@ -290,6 +290,9 @@ private:
     u64 big_page_mask;
     u64 big_page_table_mask;
 
+    /// Lands the read downloads (EDEN_NX2_ASYNC_READBACK) a write from the GPU's side covers.
+    void FinishReadsBefore(GPUVAddr gpu_addr, std::size_t size) const;
+
     VideoCore::RasterizerInterface* rasterizer = nullptr;
 
     enum class EntryType : u64 {
