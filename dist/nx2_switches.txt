@@ -344,6 +344,30 @@
 # (8 ms at most, then the sync flush). The reactive stats line shows "traps disarmed at copy
 # back" and "copy back waits".
 #EDEN_NX2_COPYBACK_WAIT=0
+# ASYNC_READBACK (on unless =0; after Lichii's read-back, Vulkan; cut c keeps the waiting flush):
+# a guest CPU read of GPU-written buffer memory no longer has the GPU thread wait for the host GPU. It submits
+# the download and goes on; the reading thread waits for it and writes the bytes itself. With it,
+# each of these is on unless set to 0:
+#   READER_LANDING=0: the GPU thread writes the bytes instead, in a second request.
+#   EARLY_DOWNLOADS=0: no early downloads. On: pages the guest reads after each GPU write (twice
+#     in a row) get their download recorded right behind the write (a dispatch, a fence), so the
+#     read finds them landed or on their way (8 MiB a frame, 512 pending at most). Unset, they
+#     are on with reactive flushing only: with read traps the fences' copies back bring those
+#     pages already (Bananza: 30 to 40 fps with them off). =1 turns them on with read traps.
+#   RX_READBACK=0: with reactive flushing, reads of GPU-written buffer memory keep waiting for
+#     the fences' copies back (on: they download like read traps do).
+#   EARLY_SKIP_COPYBACK=0: pages early downloads cover are still copied back at every fence.
+#   EARLY_SUBMIT=1 (test, off by default): early downloads recorded after a dispatch are
+#     submitted at once, so the host GPU runs them before the read comes (more submissions).
+# =2 checks it (slow): each read also copies its bytes as the GPU has them at its point, and once
+# they landed guest memory is compared ("Async read-back check" errors; reads early downloads
+# served are flushed for it). A line "Async read-back, last 600 frames" sums it all up.
+#EDEN_NX2_ASYNC_READBACK=0
+#EDEN_NX2_READER_LANDING=0
+#EDEN_NX2_EARLY_DOWNLOADS=0
+#EDEN_NX2_RX_READBACK=0
+#EDEN_NX2_EARLY_SKIP_COPYBACK=0
+#EDEN_NX2_EARLY_SUBMIT=1
 
 # --- reactive flushing (video_core/nx2_reactive_flush.h, common/nx2_reactive.h) ---
 # All off by default. Most matter only with use_reactive_flushing=true in the config;
@@ -366,9 +390,15 @@
 # RX_ONE_SUBMIT=0: a second, empty submission after a fence's own one, as before (default: left
 # out, in every game).
 #EDEN_NX2_RX_ONE_SUBMIT=0
-# RX_COALESCE=<n>: a buffer copy back that alone would turn a fence real waits for a fence
-# made anyway, at most n - 1 fences (only without delayed fences). 0 / 1: off.
-#EDEN_NX2_RX_COALESCE=4
+# RX_COALESCE: a buffer copy back that alone would turn a fence real waits for a fence made anyway,
+# at most n - 1 fences (only without delayed fences). Unset or =auto: only where a read catches a
+# copy back not landed yet (read traps or reactive flushing), n adapts per game and area every 30
+# frames: it halves when reads had to fetch data a fence held back (2 a frame or more, and costing
+# more than the fences saved), else doubles (1 to 64); a number that failed is tried again only
+# after a hold (4 s, longer after each failure, up to about a minute). =<n>: fixed n. 0 / 1: off
+# (Safe).
+# The reactive stats line shows "coalesce limit N (M reads of held back copies)".
+#EDEN_NX2_RX_COALESCE=32
 # RX_PITCH_FORCED=1: with reactive flushing on, pitch linear images stay downloaded at every
 # bind (as with it off).
 #EDEN_NX2_RX_PITCH_FORCED=1

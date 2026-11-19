@@ -8,6 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Fences: copies back of GPU-written buffer memory that alone would make a fence real wait for a
+  later fence by default, as many fences as the game tolerates (`EDEN_NX2_RX_COALESCE`, now
+  adaptive, every 30 frames): many reads that had to fetch data a fence held back halve the
+  number, else it doubles (1 to 64), with read traps or reactive flushing only. Donkey Kong Bananza gained with
+  a fixed 32 (2-3x fewer submissions) where Mario Kart World lost (its reads come right after its
+  fences); the adaptive number serves both. `=<n>` keeps a fixed number, `=0` turns it off (Safe).
 - Presets: **Performance** (the default again, for a first start too) keeps read traps on: with
   Bananza's foliage off they run it faster than off. **Balanced** is now **Quality**: Performance's
   settings with Bananza as the game makes it (foliage, reflections, very high shadows); a stored
@@ -40,6 +46,18 @@ and `=0` brings back the 2.0.0 code path.
   interpolation and not AMD's FSR 3; the window filter "AMD FidelityFX Super Resolution 3" is
   now **FSR 1, softer sharpening** (it runs FSR 1's EASU and RCAS at 0.8x sharpness), and the
   plain FSR filter is **FSR 1**. From Lichii.
+- Buffer cache, `EDEN_NX2_ASYNC_READBACK` (on by default, `=0` turns it off; a port of Lichii's
+  read-back): a guest CPU read of GPU-written buffer memory (a read trap, or reactive flushing)
+  no longer has the GPU thread wait for the host GPU. It submits the download and goes on; the
+  reading thread waits for that submission and writes the bytes to guest memory itself, keeping
+  those of guest CPU writes not applied yet. With reactive flushing, pages the guest reads after
+  each GPU write get their download recorded right behind the write (early downloads) and are no
+  longer copied back at every fence; with read traps the fences' copies back serve them better
+  (`EARLY_DOWNLOADS=1` turns them on there). Writes to guest memory from the GPU's side
+  (semaphores, reports, engine copies) land the downloads under them first. `READER_LANDING`,
+  `EARLY_DOWNLOADS`, `RX_READBACK` and `EARLY_SKIP_COPYBACK=0` turn the parts off; `=2` checks
+  every read against the GPU's bytes at its point (slow). Vulkan only; cut c keeps the waiting
+  flush. Donkey Kong Bananza with read traps: 30 to 40 fps in its heavy areas.
 - Split GPU thread: an equal semaphore acquire goes on without draining the back when the last
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are

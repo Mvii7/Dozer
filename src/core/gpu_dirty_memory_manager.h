@@ -44,7 +44,28 @@ public:
         return current.load(std::memory_order_acquire).mask != 0;
     }
 
+    /// Calls `callback` for each write collected and not yet gathered, without consuming them
+    /// (EDEN_NX2_READER_LANDING: a download landing off the GPU thread keeps their bytes).
+    void ForEachPending(const std::function<void(PAddr, size_t)>& callback) {
+        std::vector<TransformAddress> pending;
+        {
+            std::scoped_lock gather_lk(gather_guard);
+            std::scoped_lock lk(guard);
+            pending = back_buffer;
+            pending.insert(pending.end(), front_buffer.begin(), front_buffer.end());
+            const TransformAddress t = current.load(std::memory_order_acquire);
+            if (IsValid(t.address)) {
+                pending.push_back(t);
+            }
+        }
+        for (const auto& transform : pending) {
+            ForEachRun(transform, callback);
+        }
+    }
+
     void Gather(std::function<void(PAddr, size_t)>& callback) {
+        // ForEachPending reads front_buffer while it is handed out.
+        std::scoped_lock gather_lk(gather_guard);
         {
             std::scoped_lock lk(guard);
             TransformAddress t = current.exchange(default_transform, std::memory_order_relaxed);
@@ -54,19 +75,7 @@ public:
             }
         }
         for (auto& transform : front_buffer) {
-            size_t offset = 0;
-            u64 mask = transform.mask;
-            while (mask != 0) {
-                const size_t empty_bits = std::countr_zero(mask);
-                offset += empty_bits << align_bits;
-                mask = mask >> empty_bits;
-
-                const size_t continuous_bits = std::countr_one(mask);
-                callback((static_cast<PAddr>(transform.address) << page_bits) + offset,
-                         continuous_bits << align_bits);
-                mask = continuous_bits < align_size ? (mask >> continuous_bits) : 0;
-                offset += continuous_bits << align_bits;
-            }
+            ForEachRun(transform, callback);
         }
         front_buffer.clear();
     }
@@ -76,6 +85,23 @@ private:
         u32 address;
         u32 mask;
     };
+
+    template <typename Callback>
+    static void ForEachRun(const TransformAddress& transform, Callback& callback) {
+        size_t offset = 0;
+        u64 mask = transform.mask;
+        while (mask != 0) {
+            const size_t empty_bits = std::countr_zero(mask);
+            offset += empty_bits << align_bits;
+            mask = mask >> empty_bits;
+
+            const size_t continuous_bits = std::countr_one(mask);
+            callback((static_cast<PAddr>(transform.address) << page_bits) + offset,
+                     continuous_bits << align_bits);
+            mask = continuous_bits < align_size ? (mask >> continuous_bits) : 0;
+            offset += continuous_bits << align_bits;
+        }
+    }
 
     /// [address, address + size) lies in one page and size is not 0, so the mask has bits.
     void CollectInPage(PAddr address, size_t size) {
@@ -137,6 +163,7 @@ private:
 
     std::atomic<TransformAddress> current{};
     std::mutex guard;
+    std::mutex gather_guard;
     std::vector<TransformAddress> back_buffer;
     std::vector<TransformAddress> front_buffer;
 };

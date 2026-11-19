@@ -60,6 +60,7 @@
 #include "video_core/vulkan_common/vulkan_device.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 #include "video_core/nx2.h"
+#include "video_core/nx2_async_readback.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/nx2_uniform_census.h"
 #include "video_core/nx2_stage_api.h"
@@ -1943,6 +1944,12 @@ void RasterizerVulkan::DispatchCompute() {
         if (kepler_compute->IsNativeMode()) throw Shader::RuntimeError("Native compute resources unavailable");
         return;
     }
+    // EDEN_NX2_EARLY_DOWNLOADS: downloads of the pages it writes go right behind it.
+    SCOPE_EXIT {
+        if (VideoCommon::Nx2AsyncReadback::EarlyDownloads()) {
+            buffer_cache.NoteReadBackPoint(true);
+        }
+    };
 
     const auto& qmd{kepler_compute->launch_description};
     // WaterSurfaceCollisionHeightMap publishes a pitch-linear image. Queue it for the next fence
@@ -2149,6 +2156,77 @@ void RasterizerVulkan::FlushRegion(DAddr addr, u64 size, VideoCommon::CacheType 
     }
 }
 
+std::optional<VideoCore::ReadPoint> RasterizerVulkan::FlushRegionForRead(DAddr addr, u64 size) {
+    if (!VideoCommon::Nx2AsyncReadback::Enabled() || addr == 0 || size == 0) {
+        FlushRegion(addr, size);
+        return std::nullopt;
+    }
+    if (SplitOnB()) [[unlikely]] {
+        // As FlushRegionB: the body in a join where a cache may hold GPU data.
+        const DAddr begin = Common::AlignDown(addr, Core::DEVICE_PAGESIZE);
+        const size_t span = Common::AlignUp(addr + size, Core::DEVICE_PAGESIZE) - begin;
+        std::optional<VideoCore::ReadPoint> point;
+        if (HoldsGpuWrittenDataB(begin, span)) {
+            JoinB([&] { point = FlushRegionForRead(addr, size); });
+        } else {
+            NoteLightWork();
+        }
+        return point;
+    }
+    if (split_draws && !VideoCommon::Nx2Stages::MayTakeBufferLock()) [[unlikely]] {
+        FlushRegion(addr, size);
+        return std::nullopt;
+    }
+    NoteLightWork();
+    {
+        std::scoped_lock lock{texture_cache.mutex};
+        texture_cache.DownloadMemory(addr, size);
+    }
+    std::optional<VideoCore::ReadPoint> point;
+    {
+        CheckBufferLockOffB("RasterizerVulkan::FlushRegionForRead");
+        std::scoped_lock lock{buffer_cache.mutex};
+        point = buffer_cache.DownloadMemoryForRead(addr, size);
+    }
+    query_cache.FlushRegion(addr, size);
+    return point;
+}
+
+void RasterizerVulkan::WaitForRead(u64 tick) {
+    buffer_cache.WaitForReadDownload(tick);
+}
+
+void RasterizerVulkan::FinishRead(DAddr addr, u64 size, u64 seq, bool on_gpu_thread) {
+    namespace AsyncReadback = VideoCommon::Nx2AsyncReadback;
+    if (on_gpu_thread && split_draws && !VideoCommon::Nx2Stages::MayTakeBufferLock())
+        [[unlikely]] {
+        // FlushRegionForRead records nothing here; a landing never waits for B's lock either.
+        VideoCommon::Nx2Stages::ReportStageHazard("read download landing on C in a record");
+        return;
+    }
+    // The reading thread, or the GPU thread's request (EDEN_NX2_READER_LANDING=0). The lock is
+    // let go while waiting for the host GPU off the GPU thread.
+    std::unique_lock lock{buffer_cache.mutex};
+    buffer_cache.FinishReadDownloads(addr, size,
+                                     on_gpu_thread ? AsyncReadback::Landing::Gpu
+                                                   : AsyncReadback::Landing::Reader,
+                                     on_gpu_thread ? nullptr : &lock, seq);
+    if (AsyncReadback::Verify()) [[unlikely]] {
+        buffer_cache.CompareReadChecks(addr, size, seq);
+    }
+}
+
+void RasterizerVulkan::FinishGpuSideWrite(DAddr addr, u64 size) {
+    if (!VideoCore::ReadDownloadsMayCover(addr, size) &&
+        !VideoCore::g_read_checks.load(std::memory_order_relaxed)) {
+        return;
+    }
+    std::unique_lock lock{buffer_cache.mutex};
+    buffer_cache.FinishReadDownloads(addr, size, VideoCommon::Nx2AsyncReadback::Landing::Writer,
+                                     &lock);
+    buffer_cache.NoteGpuSideWrite(addr, size);
+}
+
 bool RasterizerVulkan::MustFlushRegion(DAddr addr, u64 size, VideoCommon::CacheType which) {
     if (SplitOnB()) [[unlikely]] {
         return MustFlushRegionB(addr, size, which);
@@ -2246,6 +2324,12 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
                                      Common::Nx2Reactive::MicrosecondsSince(lock_ns));
         }
         const bool newly_noted = buffer_cache.NoteCpuRead(page_start, page_end - page_start);
+        namespace AsyncReadback = VideoCommon::Nx2AsyncReadback;
+        if (AsyncReadback::EarlyDownloads()) {
+            buffer_cache.NoteCpuReadBack(
+                page_start, page_end,
+                buffer_cache.IsRegionGpuModified(page_start, page_end - page_start));
+        }
         if (VideoCommon::Nx2Reactive::FlushFirstRead()) [[unlikely]] {
             flush_buffer = VideoCommon::Nx2Reactive::FirstReadFlushes(
                 true, newly_noted,
@@ -2260,6 +2344,19 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
                 flush_buffer = !buffer_cache.WaitForCopyBack(lock, page_start, page_end - page_start);
             }
             buffer_cache.ForgetReadTraps(page_start, page_end - page_start);
+        } else if (AsyncReadback::RxReadback() &&
+                   Settings::values.use_reactive_flushing.GetValue()) {
+            // EDEN_NX2_RX_READBACK: reactive flushing downloads GPU-written buffer data on the
+            // read too, unless the fences' copies back bring all of it.
+            flush_buffer = buffer_cache.IsRegionGpuModified(page_start, page_end - page_start);
+            if (flush_buffer) {
+                flush_buffer = !buffer_cache.WaitForCopyBack(lock, page_start, page_end - page_start);
+            }
+        }
+        if (AsyncReadback::Verify() && !flush_buffer &&
+            buffer_cache.EarlyLandedIn(page_start, page_end - page_start)) [[unlikely]] {
+            // A read early downloads served: flushed anyway, so its bytes are checked.
+            flush_buffer = true;
         }
     }
     if (!MayHoldImages(addr, size)) {

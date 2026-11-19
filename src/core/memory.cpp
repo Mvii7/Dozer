@@ -951,6 +951,9 @@ struct Memory::Impl {
                 }
             }
             gpu_dirty_managers[core].Collect(address, size);
+            // A download landing here off the GPU thread may have looked at the collected
+            // writes before this one: its bytes would land over the ones stored after this.
+            VideoCore::DownloadLanding::Await(address, size);
         });
     }
 

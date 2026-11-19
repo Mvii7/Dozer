@@ -63,6 +63,11 @@ public:
     void NoteEngineWork() override;
     [[nodiscard]] u64 WorkEpoch() const noexcept override;
     VideoCore::RasterizerDownloadArea GetFlushArea(DAddr addr, u64 size) override;
+    /// The real one directly, on any thread (EDEN_NX2_ASYNC_READBACK: it takes only the buffer
+    /// cache's lock).
+    void FinishGpuSideWrite(DAddr addr, u64 size) override {
+        real.FinishGpuSideWrite(addr, size);
+    }
     void InvalidateRegion(DAddr addr, u64 size,
                           VideoCommon::CacheType which = VideoCommon::CacheType::All) override;
     void InnerInvalidation(std::span<const std::pair<DAddr, std::size_t>> sequences) override;
