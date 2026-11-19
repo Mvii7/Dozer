@@ -258,35 +258,21 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
         }
     }
 
-    // EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>, EDEN_NX2_DK_REFLECTIONS_OFF=1 (unset by default):
-    // Bananza's reflection cube map (nx2_dk_reflections.h).
+    // EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240> (unset by default): how often Bananza's reflection
+    // cube map is captured (nx2_dk_reflections.h).
     static const int dk_cubemap_interval =
         Nx2DkReflections::IntervalFrom(std::getenv(Nx2DkReflections::IntervalSwitch));
-    static const bool dk_reflections_off =
-        Nx2DkReflections::OffFrom(std::getenv(Nx2DkReflections::OffSwitch));
-    if (!dk_reflections_off && Nx2DkReflections::IsTarget(process.GetProgramId(), name)) {
-        LOG_INFO(Loader, "Donkey Kong Bananza: reflections the game's own ({} unset or 0)",
-                 Nx2DkReflections::OffSwitch);
-    }
-    if ((dk_cubemap_interval != 0 || dk_reflections_off) &&
-        Nx2DkReflections::IsTarget(process.GetProgramId(), name)) {
-        const auto& text = nso_header.segments[0];
-        const size_t text_start = module_start + text.location;
-        const std::span<u8> image{codeset.memory};
-        const auto reflections = Nx2DkReflections::Apply(
-            text_start <= image.size() ? image.subspan(text_start) : std::span<u8>{}, text.size,
-            dk_cubemap_interval, dk_reflections_off);
-        if (dk_reflections_off) {
-            if (reflections.off) {
-                LOG_INFO(Loader,
-                         "Donkey Kong Bananza: reflections off, captured every {} frames ({})",
-                         Nx2DkReflections::OffInterval, Nx2DkReflections::OffSwitch);
-            } else {
-                LOG_WARNING(Loader, "Donkey Kong Bananza: {} not applied: not where expected",
-                            Nx2DkReflections::OffSwitch);
-            }
-        } else if (dk_cubemap_interval != Nx2DkReflections::GameInterval) {
-            if (reflections.interval) {
+    if (Nx2DkReflections::IsTarget(process.GetProgramId(), name)) {
+        if (dk_cubemap_interval == 0 || dk_cubemap_interval == Nx2DkReflections::GameInterval) {
+            LOG_INFO(Loader, "Donkey Kong Bananza: reflections the game's own ({} unset)",
+                     Nx2DkReflections::IntervalSwitch);
+        } else {
+            const auto& text = nso_header.segments[0];
+            const size_t text_start = module_start + text.location;
+            const std::span<u8> image{codeset.memory};
+            if (Nx2DkReflections::Apply(
+                    text_start <= image.size() ? image.subspan(text_start) : std::span<u8>{},
+                    text.size, dk_cubemap_interval)) {
                 LOG_INFO(Loader, "Donkey Kong Bananza: reflections captured every {} frames ({})",
                          dk_cubemap_interval, Nx2DkReflections::IntervalSwitch);
             } else {

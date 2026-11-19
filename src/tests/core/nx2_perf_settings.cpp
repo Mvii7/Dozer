@@ -33,7 +33,7 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_DK_DYN", "1"},
     {"EDEN_NX2_DK_FOLIAGE_OFF", "1"},
     {"EDEN_NX2_DK_SHADOW_CASCADES", "2"},
-    {"EDEN_NX2_DK_REFLECTIONS_OFF", "1"},
+    {"EDEN_NX2_DK_CUBEMAP_INTERVAL", "240"},
     {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
     {"EDEN_NX2_MODE_PACE", "2"},
     {"EDEN_NX2_PACE_SPIN_US", "1500"},
@@ -74,7 +74,7 @@ const std::set<std::string_view> BananzaOnly{
     "EDEN_NX2_PACE_SPIN_US",
     "EDEN_NX2_DK_FOLIAGE_OFF",
     "EDEN_NX2_DK_SHADOW_CASCADES",
-    "EDEN_NX2_DK_REFLECTIONS_OFF",
+    "EDEN_NX2_DK_CUBEMAP_INTERVAL",
 };
 
 // An ini group as the config sees it: the on / off keys and "preset".
@@ -654,7 +654,7 @@ TEST_CASE("Nx2PerfSettings: Bananza's foliage, shadows and reflections follow th
     for (const Preset preset : {Preset::Performance, Preset::Reactive}) {
         const Switches switches = FromPreset(preset, Quality());
         REQUIRE(switches.dk_foliage_off);
-        REQUIRE(switches.dk_reflections == ReflectionsStatic);
+        REQUIRE(switches.dk_reflections == ReflectionsVeryLow);
         REQUIRE(switches.dk_shadow == ShadowMedium);
     }
     for (const Preset preset : {Preset::Safe, Preset::Quality}) {
@@ -676,7 +676,7 @@ TEST_CASE("Nx2PerfSettings: Bananza's foliage, shadows and reflections follow th
                                  [](const Var& var) {
                                      return var.name == "EDEN_NX2_DK_FOLIAGE_OFF" ||
                                             var.name == "EDEN_NX2_DK_SHADOW_CASCADES" ||
-                                            var.name == "EDEN_NX2_DK_REFLECTIONS_OFF";
+                                            var.name == "EDEN_NX2_DK_CUBEMAP_INTERVAL";
                                  }),
                   quality.end());
     REQUIRE(Wanted(Quality(), Game::Bananza) == quality);
@@ -752,18 +752,17 @@ TEST_CASE("Nx2PerfSettings: Bananza's reflection updates", "[core]") {
     const auto reflection_vars = [](const Switches& switches, Game game) {
         std::vector<Var> vars;
         for (const Var& var : Wanted(switches, game)) {
-            if (var.name == "EDEN_NX2_DK_REFLECTIONS_OFF" ||
-                var.name == "EDEN_NX2_DK_CUBEMAP_INTERVAL") {
+            if (var.name == "EDEN_NX2_DK_CUBEMAP_INTERVAL") {
                 vars.push_back(var);
             }
         }
         return vars;
     };
-    // Static in Performance and Experimental, High (the game's own, nothing set) in Quality and
+    // Very low in Performance and Experimental, High (the game's own, nothing set) in Quality and
     // Safe.
     REQUIRE(reflection_vars(Performance(), Game::Bananza) ==
-            std::vector<Var>{{"EDEN_NX2_DK_REFLECTIONS_OFF", "1"}});
-    REQUIRE(FromPreset(Preset::Reactive, Quality()).dk_reflections == ReflectionsStatic);
+            std::vector<Var>{{"EDEN_NX2_DK_CUBEMAP_INTERVAL", "240"}});
+    REQUIRE(FromPreset(Preset::Reactive, Quality()).dk_reflections == ReflectionsVeryLow);
     REQUIRE(reflection_vars(Quality(), Game::Bananza).empty());
     REQUIRE(reflection_vars(AllOff(), Game::Bananza).empty());
     REQUIRE(reflection_vars(Performance(), Game::MarioKartWorld).empty());
@@ -790,12 +789,12 @@ TEST_CASE("Nx2PerfSettings: Bananza's reflection updates", "[core]") {
     REQUIRE(load() == own);
     ini["bananza_reflection_updates"] = 5;
     REQUIRE_FALSE(load().dk_reflections);
-    // The box it replaces: ticked is Static, unticked High; the step wins over it.
+    // The box it replaces: ticked is Very low, unticked High; the step wins over it.
     ini["bananza_reflection_updates"] = -1;
     ini["bananza_reflections_off"] = 0;
     REQUIRE(load().dk_reflections == ReflectionsHigh);
     ini["bananza_reflections_off"] = 1;
-    REQUIRE(load().dk_reflections == ReflectionsStatic);
+    REQUIRE(load().dk_reflections == ReflectionsVeryLow);
     ini["bananza_reflection_updates"] = ReflectionsLow;
     REQUIRE(load().dk_reflections == ReflectionsLow);
 }

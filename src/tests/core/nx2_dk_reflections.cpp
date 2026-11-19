@@ -28,37 +28,22 @@ struct Text {
 };
 } // Anonymous namespace
 
-TEST_CASE("Nx2DkReflections: the variables", "[core]") {
+TEST_CASE("Nx2DkReflections: the variable", "[core]") {
     REQUIRE(IntervalFrom(nullptr) == 0);
     REQUIRE(IntervalFrom("24") == 24);
     REQUIRE(IntervalFrom("240") == 240);
     REQUIRE(IntervalFrom("241") == 0);
     REQUIRE(IntervalFrom("0") == 0);
     REQUIRE(IntervalFrom("2x") == 0);
-    REQUIRE(OffFrom("1"));
-    REQUIRE_FALSE(OffFrom("0"));
-    REQUIRE_FALSE(OffFrom(nullptr));
 }
 
-TEST_CASE("Nx2DkReflections: the interval and off", "[core]") {
+TEST_CASE("Nx2DkReflections: the interval", "[core]") {
     Text text;
     std::vector<u32> expected = text.words;
-    Result result = Apply(text.Bytes(), TextSize, 24, false);
-    REQUIRE(result.interval);
-    REQUIRE_FALSE(result.off);
-    expected[Getter] = 0x52800300; // movz w0, #24
+    REQUIRE(Apply(text.Bytes(), TextSize, 240));
+    expected[Getter] = 0x52801E00; // movz w0, #240
     expected[Getter + 1] = Ret;
     REQUIRE(text.words == expected);
-
-    // Off keeps the cube map and only stops its captures, whatever the interval asked.
-    Text off;
-    expected = off.words;
-    result = Apply(off.Bytes(), TextSize, 24, true);
-    REQUIRE(result.off);
-    REQUIRE_FALSE(result.interval);
-    expected[Getter] = 0x529FFFE0; // movz w0, #0xffff
-    expected[Getter + 1] = Ret;
-    REQUIRE(off.words == expected);
 }
 
 TEST_CASE("Nx2DkReflections: left alone when not found once, or the game's own", "[core]") {
@@ -67,13 +52,13 @@ TEST_CASE("Nx2DkReflections: left alone when not found once, or the game's own",
     twice.words[Getter + 0x21] = ValueLoad;
     twice.words[Getter + 0x22] = Ret;
     const std::vector<u32> before = twice.words;
-    const Result result = Apply(twice.Bytes(), TextSize, 24, true);
-    REQUIRE_FALSE(result.interval);
-    REQUIRE_FALSE(result.off);
+    REQUIRE_FALSE(Apply(twice.Bytes(), TextSize, 24));
     REQUIRE(twice.words == before);
 
     Text game;
     const std::vector<u32> unchanged = game.words;
-    REQUIRE_FALSE(Apply(game.Bytes(), TextSize, GameInterval, false).interval);
+    REQUIRE_FALSE(Apply(game.Bytes(), TextSize, GameInterval));
+    REQUIRE_FALSE(Apply(game.Bytes(), TextSize, 0));
+    REQUIRE_FALSE(Apply(game.Bytes(), TextSize, MostInterval + 1));
     REQUIRE(game.words == unchanged);
 }

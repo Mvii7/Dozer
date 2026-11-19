@@ -59,7 +59,7 @@ inline constexpr int ShadowMedium = 2;
 inline constexpr int ShadowVeryHigh = 4;
 
 /// Bananza's reflection update steps: how often the reflection cube map is captured again.
-inline constexpr int ReflectionsStatic = 1; ///< never again: the last capture stays
+inline constexpr int ReflectionsVeryLow = 1; ///< every 240 frames, the most the patch takes
 inline constexpr int ReflectionsLow = 2;    ///< every 32 frames
 inline constexpr int ReflectionsMedium = 3; ///< every 16 frames
 inline constexpr int ReflectionsHigh = 4;   ///< every 8 frames, the game's own
@@ -78,10 +78,10 @@ struct Switches {
     // Game-specific, but set by the presets (FromPreset): on in Performance and Experimental,
     // off in Quality and Safe.
     bool dk_foliage_off = true;    ///< EDEN_NX2_DK_FOLIAGE_OFF=1, Bananza only
-    /// Bananza's reflection updates, kept per game only: Static (EDEN_NX2_DK_REFLECTIONS_OFF=1),
-    /// Low and Medium (EDEN_NX2_DK_CUBEMAP_INTERVAL=32 or 16), High the game's own. Static in
-    /// Performance and Experimental, High in Quality and Safe.
-    int dk_reflections = ReflectionsStatic;
+    /// Bananza's reflection updates, kept per game only: Very low, Low and Medium
+    /// (EDEN_NX2_DK_CUBEMAP_INTERVAL=240, 32 or 16), High the game's own. Very low in Performance
+    /// and Experimental, High in Quality and Safe.
+    int dk_reflections = ReflectionsVeryLow;
     /// Bananza's shadow quality, kept per game only: the sun shadow's most cascades, Low 1 to
     /// Very high 4 (the game's own); below it EDEN_NX2_DK_SHADOW_CASCADES=<n>. Medium in
     /// Performance and Experimental, Very high in Quality and Safe.
@@ -168,7 +168,7 @@ struct Overrides {
     bool global_preset = false;
     std::array<std::optional<bool>, KeyCount> boxes{};
     std::optional<int> dk_shadow; ///< Bananza's shadow quality, ShadowLow to ShadowVeryHigh
-    std::optional<int> dk_reflections; ///< ReflectionsStatic to ReflectionsHigh
+    std::optional<int> dk_reflections; ///< ReflectionsVeryLow to ReflectionsHigh
 
     constexpr bool Empty() const {
         if (preset || global_preset || dk_shadow || dk_reflections) {
@@ -208,7 +208,7 @@ inline constexpr int FollowGlobalPreset = -2;
 /// a preset number, FollowGlobalPreset, or -1 (Custom, or anything else, is none);
 /// "bananza_shadow_quality" a shadow quality step or -1, "bananza_reflection_updates" a
 /// reflection update step or -1 (else the box it replaces, "bananza_reflections_off": on is
-/// Static, off High).
+/// Very low, off High).
 template <typename Read>
 Overrides LoadOverrides(Read&& read) {
     Overrides overrides;
@@ -229,10 +229,10 @@ Overrides LoadOverrides(Read&& read) {
         overrides.dk_shadow = shadow;
     }
     if (const int updates = read("bananza_reflection_updates");
-        updates >= ReflectionsStatic && updates <= ReflectionsHigh) {
+        updates >= ReflectionsVeryLow && updates <= ReflectionsHigh) {
         overrides.dk_reflections = updates;
     } else if (const int off = read("bananza_reflections_off"); off == 0 || off == 1) {
-        overrides.dk_reflections = off == 1 ? ReflectionsStatic : ReflectionsHigh;
+        overrides.dk_reflections = off == 1 ? ReflectionsVeryLow : ReflectionsHigh;
     }
     return overrides;
 }
@@ -526,7 +526,7 @@ inline constexpr std::array<std::string_view, 69> SafeOff{
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
-inline constexpr std::array<std::string_view, 18> Names{
+inline constexpr std::array<std::string_view, 17> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
@@ -535,7 +535,7 @@ inline constexpr std::array<std::string_view, 18> Names{
     "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
     "EDEN_NX2_DK_FOLIAGE_OFF", "EDEN_NX2_DK_SHADOW_CASCADES",
-    "EDEN_NX2_DK_REFLECTIONS_OFF", "EDEN_NX2_DK_CUBEMAP_INTERVAL",
+    "EDEN_NX2_DK_CUBEMAP_INTERVAL",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -585,8 +585,8 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
             vars.push_back({"EDEN_NX2_DK_SHADOW_CASCADES",
                             Cascades[static_cast<std::size_t>(switches.dk_shadow - 1)]});
         }
-        if (switches.dk_reflections == ReflectionsStatic) {
-            vars.push_back({"EDEN_NX2_DK_REFLECTIONS_OFF", "1"});
+        if (switches.dk_reflections == ReflectionsVeryLow) {
+            vars.push_back({"EDEN_NX2_DK_CUBEMAP_INTERVAL", "240"});
         } else if (switches.dk_reflections == ReflectionsLow) {
             vars.push_back({"EDEN_NX2_DK_CUBEMAP_INTERVAL", "32"});
         } else if (switches.dk_reflections == ReflectionsMedium) {

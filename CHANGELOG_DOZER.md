@@ -35,11 +35,13 @@ and `=0` brings back the 2.0.0 code path.
   (`Read64 @ 0xd0`, `Read32 @ 0x18` and `0x1c`), from 40 to 100 s in. Both Bananza patches now log
   their state at load, the game's own included.
 - Donkey Kong Bananza: Static reflections is now **Reflection updates**, a choice of how often the
-  reflection cube map is captured again: Static (never), Low (every 32 frames), Medium (16) and
-  High (the game's 8). Static in Performance and Experimental, High in Quality and Safe. Each
-  capture draws the scene again; the interval changes how fresh reflections are, not their detail.
-- Donkey Kong Bananza's presets: Performance and Experimental turn foliage off, make reflections
-  static and set Medium shadows; Quality and Safe leave the game's own. The launchers set the same.
+  reflection cube map is captured again: Very low (every 240 frames), Low (32), Medium (16) and
+  High (the game's 8), all through `EDEN_NX2_DK_CUBEMAP_INTERVAL`. Very low in Performance and
+  Experimental, High in Quality and Safe. Each capture draws the scene again; the interval changes
+  how fresh reflections are, not their detail. `EDEN_NX2_DK_REFLECTIONS_OFF` is gone: the interval
+  does its job without a second patch path.
+- Donkey Kong Bananza's presets: Performance and Experimental turn foliage off, set Very low
+  reflection updates and Medium shadows; Quality and Safe leave the game's own. The launchers set the same.
 - Frame generation (LSFG and Optical Flow) now runs while HDR output is active instead of turning off.
   LSFG takes its HDR mode on an scRGB swapchain (as lsfg-vk's); HDR10's PQ frames go through it
   like SDR ones. Not tried on an HDR display yet.

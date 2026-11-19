@@ -187,18 +187,18 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         // How often the reflection cube map is captured again, one interval per step
         reflections = new QComboBox(this);
         reflections->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-        reflections->addItem(tr("Static"));
+        reflections->addItem(tr("Very low"));
         reflections->addItem(tr("Low"));
         reflections->addItem(tr("Medium"));
         reflections->addItem(tr("High"));
         reflections->setToolTip(
             tr("How often the scene around the camera is captured again into the reflection cube "
-               "map that shiny and wet surfaces reflect: Static never (the last capture stays), "
-               "Low every 32 frames, Medium every 16, High every 8 (the game's own). Each capture "
-               "draws the scene again; less often, reflections follow what is around them later."));
+               "map that shiny and wet surfaces reflect: Very low every 240 frames, Low every 32, "
+               "Medium every 16, High every 8 (the game's own). Each capture draws the scene "
+               "again; less often, reflections follow what is around them later."));
         form->addRow(tr("Reflection updates"), reflections);
         connect(reflections, &QComboBox::activated, this, [this](int index) {
-            const int chosen = Perf::ReflectionsStatic + index;
+            const int chosen = Perf::ReflectionsVeryLow + index;
             Perf::Overrides without = own;
             without.dk_reflections.reset();
             const int base =
@@ -246,7 +246,7 @@ void ConfigureNx2PerfPerGame::Refresh() {
     }
     if (reflections != nullptr) {
         const QSignalBlocker blocker{reflections};
-        reflections->setCurrentIndex(now.dk_reflections - Perf::ReflectionsStatic);
+        reflections->setCurrentIndex(now.dk_reflections - Perf::ReflectionsVeryLow);
     }
 }
 

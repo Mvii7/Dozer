@@ -14,15 +14,12 @@
 // Donkey Kong Bananza's reflections: the cube map the game captures of the scene around the camera
 // (drawing the scene again into its faces) and its shiny and wet surfaces reflect.
 //   EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>: frames between two captures (the game's: 8); higher,
-//   fewer draws, reflections follow later. Reflection updates Low (32) and Medium (16).
-//   EDEN_NX2_DK_REFLECTIONS_OFF=1: the cube map is kept but no longer captured (once in
-//   OffInterval frames), so it stops redrawing the scene. Reflection updates Static.
-//   Both are in Bananza's Properties > Tuning.
-// Both are put in the main module as it loads, only where the instructions are exactly as expected.
+//   fewer draws, reflections follow later. Bananza's Reflection updates in its Properties >
+//   Tuning: Very low 240, Low 32, Medium 16, High the game's own.
+// Put in the main module as it loads, only where the instructions are exactly as expected.
 namespace Loader::Nx2DkReflections {
 
 constexpr const char* IntervalSwitch = "EDEN_NX2_DK_CUBEMAP_INTERVAL";
-constexpr const char* OffSwitch = "EDEN_NX2_DK_REFLECTIONS_OFF";
 constexpr int GameInterval = 8;
 constexpr int MostInterval = 240;
 
@@ -41,34 +38,21 @@ constexpr int IntervalFrom(const char* value) {
     return interval >= 1 && interval <= MostInterval ? interval : 0;
 }
 
-constexpr bool OffFrom(const char* value) {
-    return value != nullptr && std::string_view{value} == "1";
-}
-
 // A graphics parameter is an object with its value at +0x64, held by GraphicsParam at a fixed
 // offset. CubeMapShotInterval (+0x220) is read by one getter:
 //   ldr x8, [x0, #0x220]; ldr w0, [x8, #0x64]; ret        -> movz w0, #interval; ret
-// Off goes through the same getter. Turning IsUseCubeMap off where the directors are built leaves
-// the cube map director unbuilt, and the game's drawing code still reads it through a null
-// pointer (Unmapped Read64 @ 0xd0, Read32 @ 0x18 and 0x1c, about 300,000 a session).
+// IsUseCubeMap is left alone: the game's drawing code reads the cube map director whether or not
+// it is used, so a cube map turned off is read through a null pointer.
 constexpr u32 IntervalLoad = 0xF9411008U; // ldr x8, [x0, #0x220]
 constexpr u32 ValueLoad = 0xB9406500U;    // ldr w0, [x8, #0x64]
 constexpr u32 Ret = 0xD65F03C0U;
-/// Off's interval: the most a movz takes, over 18 minutes at 60 frames a second.
-constexpr u32 OffInterval = 0xFFFF;
 
-struct Result {
-    bool interval = false; ///< the interval was put in
-    bool off = false;      ///< the captures were stopped
-};
-
-// `text` starts at the text segment; `text_size` is its size in the NSO header. Off wins over
-// `interval`.
-inline Result Apply(std::span<u8> text, u32 text_size, int interval, bool off) {
-    Result result;
-    const bool own_interval = interval >= 1 && interval <= MostInterval && interval != GameInterval;
-    if (text.size() < text_size || (!off && !own_interval)) {
-        return result;
+// `text` starts at the text segment; `text_size` is its size in the NSO header. Whether the
+// interval was put in (never for the game's own).
+inline bool Apply(std::span<u8> text, u32 text_size, int interval) {
+    if (text.size() < text_size || interval < 1 || interval > MostInterval ||
+        interval == GameInterval) {
+        return false;
     }
     const size_t count = text_size / sizeof(u32);
     const auto word = [&](size_t index) {
@@ -87,13 +71,11 @@ inline Result Apply(std::span<u8> text, u32 text_size, int interval, bool off) {
         }
     }
     if (found != 1) {
-        return result;
+        return false;
     }
-    const u32 frames = off ? OffInterval : static_cast<u32>(interval);
-    put(at, 0x52800000U | (frames << 5)); // movz w0, #frames
+    put(at, 0x52800000U | (static_cast<u32>(interval) << 5)); // movz w0, #interval
     put(at + 1, Ret);
-    (off ? result.off : result.interval) = true;
-    return result;
+    return true;
 }
 
 /// Whether a module is the one the settings are for: Bananza's main.
