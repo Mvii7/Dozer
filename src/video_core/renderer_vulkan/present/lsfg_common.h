@@ -97,8 +97,10 @@ using LsfgImageHistory = std::array<LsfgImagePair, LSFG_HISTORY_SLOTS>;
 class LsfgResources {
 public:
     LsfgResources() = default;
-    LsfgResources(const Device& device_, MemoryAllocator& memory_allocator_, f32 flow_scale_)
-        : device{&device_}, memory_allocator{&memory_allocator_}, flow_scale{flow_scale_} {}
+    LsfgResources(const Device& device_, MemoryAllocator& memory_allocator_, f32 flow_scale_,
+                  bool hdr_)
+        : device{&device_}, memory_allocator{&memory_allocator_}, flow_scale{flow_scale_},
+          hdr{hdr_} {}
 
     [[nodiscard]] VkSampler GetSampler(
         VkSamplerAddressMode address_mode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
@@ -113,6 +115,7 @@ private:
     const Device* device{};
     MemoryAllocator* memory_allocator{};
     f32 flow_scale{1.0f};
+    bool hdr{};
 
     std::map<u64, vk::Sampler> samplers;
     std::map<u64, vk::Buffer> buffers;

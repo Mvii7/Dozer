@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "common/common_types.h"
+#include "common/settings_enums.h"
 #include "video_core/renderer_vulkan/present/frame_gen_pacer.h"
 #include "video_core/renderer_vulkan/present/lsfg_chain.h"
 #include "video_core/renderer_vulkan/present/lsfg_shaders.h"
@@ -28,9 +29,6 @@ public:
 
     void Process(const Device& device, Frame* frame, VkFormat format, VkExtent2D guest_extent);
 
-    /// Retains resources while invalidating pacing and history across a presentation gap.
-    void Pause();
-
     [[nodiscard]] size_t WantedGenerations(size_t capacity);
 
     [[nodiscard]] size_t GeneratedFrameCount() const;
@@ -38,7 +36,8 @@ public:
     void GenerateInto(const Device& device, Frame* destination, size_t generation);
 
 private:
-    void Rebuild(const Device& device, VkExtent2D extent, VkFormat format, f32 flow_scale);
+    void Rebuild(const Device& device, VkExtent2D extent, VkFormat format, f32 flow_scale,
+                 Settings::FrameGenType type);
     void DumpDebugImages(u64 count);
     void UpdateTiming(bool use_fsr3);
     [[nodiscard]] f32 RefreshPeriod();
@@ -83,6 +82,7 @@ private:
     VkExtent2D peak_guest_extent{};
     VkExtent2D built_extent{};
     VkFormat built_format{VK_FORMAT_UNDEFINED};
+    Settings::FrameGenType built_type{};
     f32 built_flow_scale{};
     u64 frame_count{};
     u64 last_count{};

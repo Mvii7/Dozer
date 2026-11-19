@@ -8,17 +8,35 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Frame generation (LSFG and Optical Flow) now runs while HDR output is active instead of turning off.
+  LSFG takes its HDR mode on an scRGB swapchain (as lsfg-vk's); HDR10's PQ frames go through it
+  like SDR ones. Not tried on an HDR display yet.
+- Frame generation: switching between LSFG and Optical Flow during play rebuilds the chain for
+  the new type, a missing Lossless.dll no longer keeps Optical Flow off afterwards, and Optical
+  Flow no longer loads the LSFG shaders. From Lichii #1493.
+- Status bar: an **FG** button next to the others. Click turns frame generation on and off,
+  also during play; right click picks Optical Flow or LSFG. It shows the type and multiplier
+  ("FG OPTICAL FLOW 2X", "AUTO" with a target frame rate), and "(IDLE)" while a game runs and
+  no frames were generated in the last half second. The frames frame generation presents through
+  are made at start for the most it can use and parked until needed, so turning it on during
+  play gets the frames it needs instead of the count the game started with. From Lichii #537.
+- Renamed to what they do (labels only; settings and configs keep their values): frame
+  generation type "FSR 3" is now **Optical Flow Interpolation**, Eglantine's own optical-flow
+  interpolation and not AMD's FSR 3; the window filter "AMD FidelityFX Super Resolution 3" is
+  now **FSR 1, softer sharpening** (it runs FSR 1's EASU and RCAS at 0.8x sharpness), and the
+  plain FSR filter is **FSR 1**. From Lichii.
 - Buffer cache, `EDEN_NX2_ASYNC_READBACK` (on by default, `=0` turns it off; a port of Lichii's
-  read-back): a guest CPU read of GPU-written buffer memory (a read trap, or reactive flushing) no longer has the GPU
-  thread wait for the host GPU. It submits the download and goes on; the reading thread waits for
-  that submission and writes the bytes to guest memory itself, keeping those of guest CPU writes
-  not applied yet. Pages the guest reads after each GPU write get their download recorded right
-  behind the write (early downloads, with reactive flushing; `EARLY_DOWNLOADS=1` for read traps,
-  where the fences' copies back serve them better), and are no longer copied back at every fence. Writes to
-  guest memory from the GPU's side (semaphores, reports, engine copies) land the downloads under
-  them first. `READER_LANDING`, `EARLY_DOWNLOADS`, `RX_READBACK` and `EARLY_SKIP_COPYBACK=0` turn
-  the parts off; `=2` checks every read against the GPU's bytes at its point (slow). Vulkan only;
-  cut c keeps the waiting flush.
+  read-back): a guest CPU read of GPU-written buffer memory (a read trap, or reactive flushing)
+  no longer has the GPU thread wait for the host GPU. It submits the download and goes on; the
+  reading thread waits for that submission and writes the bytes to guest memory itself, keeping
+  those of guest CPU writes not applied yet. With reactive flushing, pages the guest reads after
+  each GPU write get their download recorded right behind the write (early downloads) and are no
+  longer copied back at every fence; with read traps the fences' copies back serve them better
+  (`EARLY_DOWNLOADS=1` turns them on there). Writes to guest memory from the GPU's side
+  (semaphores, reports, engine copies) land the downloads under them first. `READER_LANDING`,
+  `EARLY_DOWNLOADS`, `RX_READBACK` and `EARLY_SKIP_COPYBACK=0` turn the parts off; `=2` checks
+  every read against the GPU's bytes at its point (slow). Vulkan only; cut c keeps the waiting
+  flush. Donkey Kong Bananza with read traps: 30 to 40 fps in its heavy areas.
 - Split GPU thread: an equal semaphore acquire goes on without draining the back when the last
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are
