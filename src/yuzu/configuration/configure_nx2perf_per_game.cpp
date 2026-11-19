@@ -47,11 +47,11 @@ const Entry* EntryOf(std::size_t key) {
         {&S::dk_dyn, Perf::Game::Bananza, QT_TR_NOOP("Dynamic frame rate")},
         {&S::mkw_dyn, Perf::Game::MarioKartWorld, QT_TR_NOOP("Dynamic frame rate")},
         {&S::dk_foliage_off, Perf::Game::Bananza, QT_TR_NOOP("Foliage off")},
-        {&S::dk_reflections_off, Perf::Game::Bananza, QT_TR_NOOP("Dynamic reflections off"),
-         QT_TR_NOOP("Stops the game redrawing the scene around the camera into its reflection "
-                    "cube map every 8 frames, which saves those draws. Shiny and wet surfaces no "
-                    "longer follow what is around them; some may still reflect the sky or an old "
-                    "capture, and some areas may look a little flatter.")},
+        {&S::dk_reflections_off, Perf::Game::Bananza, QT_TR_NOOP("Static reflections"),
+         QT_TR_NOOP("The game captures the scene around the camera into its reflection cube map "
+                    "once instead of every 8 frames, which saves those draws (a small gain). "
+                    "Shiny and wet surfaces keep reflecting that capture instead of following "
+                    "what is around them.")},
     };
     return &entries[key];
 }

@@ -84,7 +84,7 @@ struct Switches {
 };
 
 /// What the performance launcher sets: everything on, read traps too (with Bananza's foliage off
-/// they are faster than off), Bananza's foliage and dynamic reflections off and medium shadows.
+/// they are faster than off), Bananza's foliage off, static reflections and medium shadows.
 constexpr Switches Performance() {
     return Switches{};
 }

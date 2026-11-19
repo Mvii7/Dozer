@@ -87,7 +87,7 @@ files in `Games`, and the `user` folder (your keys, firmware and saves).
   choose **Convert to NX...** (see "Game files"). Dozer also offers to convert a `.nup` the first
   time you start it.
 - **Performance is the default preset.** Read traps are on, and Donkey Kong Bananza runs
-  without foliage, with medium shadows and no dynamic reflections. To see Bananza as the game
+  without foliage, with medium shadows and static reflections. To see Bananza as the game
   makes it, pick **Quality** in its **Properties > Tuning**.
 - **If your system is struggling, try handheld mode.** It trades resolution for performance. It
   made little difference on the maintainer's machine, so it mainly helps weaker systems.
@@ -133,7 +133,7 @@ under it.
 
 | Preset | What it sets | Same as |
 |---|---|---|
-| **Performance** (the first start's choice) | the fastest settings: all nine settings below on, read traps too, *Enable Reactive Flushing* off (Graphics > Advanced). Donkey Kong Bananza: foliage and dynamic reflections off, medium shadows. Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Performance or Quality later turns it off too | `start-performance.bat` |
+| **Performance** (the first start's choice) | the fastest settings: all nine settings below on, read traps too, *Enable Reactive Flushing* off (Graphics > Advanced). Donkey Kong Bananza: foliage off, static reflections, medium shadows. Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Performance or Quality later turns it off too | `start-performance.bat` |
 | **Quality** | Performance's settings with Donkey Kong Bananza as the game makes it: foliage, reflections and very high shadows (it was called Balanced) | `start-quality.bat` |
 | **Experimental** | the performance settings with Reactive Flushing instead of read traps: barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and `EDEN_NX2_RX_RT_FIT=3` | `start-reactive-experimental.bat` |
 | **Safe** | all nine off, Frame generation off, and the GPU shortcuts Dozer keeps on by default off too (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
@@ -185,7 +185,7 @@ changes them (not even Safe), and they have no global setting. For Bananza the
 program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`,
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
 it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
-**Foliage off** box under its Dynamic frame rate box (`DK_FOLIAGE_OFF=1`), a **Dynamic reflections off**
+**Foliage off** box under its Dynamic frame rate box (`DK_FOLIAGE_OFF=1`), a **Static reflections**
 box (`DK_REFLECTIONS_OFF=1`; unticked, the game's own) and
 **Shadow quality** (Low, Medium, High, Very high: the sun shadow's 1 to 4 cascades, Very high the
 game's own; `DK_SHADOW_CASCADES=<1-3>`). The presets set all three: Performance and Experimental
@@ -244,7 +244,7 @@ The game starts in full screen; dozer-cli has no menu. **Quit with Alt+F4.**
 
 | Launcher | When to use it |
 |---|---|
-| `start-performance.bat` | **Performance (the default).** The fastest settings, read traps on, reactive flushing off. Bananza without foliage, with medium shadows and no dynamic reflections. |
+| `start-performance.bat` | **Performance (the default).** The fastest settings, read traps on, reactive flushing off. Bananza without foliage, with medium shadows and static reflections. |
 | `start-quality.bat` | **Quality.** The performance settings with Bananza as the game makes it: foliage, reflections, very high shadows. |
 | `start-reactive-experimental.bat` | **Experimental.** The performance settings with Reactive Flushing instead of read traps. |
 | `start-safe.bat` | The GPU shortcuts Dozer keeps on by default off, read traps off, the opt-in switches that change play cleared; Dozer's fixes and its changes without a switch stay in: for troubleshooting and for games other than Bananza. |
@@ -280,8 +280,8 @@ error. Take the launchers from the release zip: they need Windows line endings (
   Bananza-specific lines are marked; for other games use the safe launcher, or remove them. It
   is meant for reactive flushing **off**: it turns it off in an `sdl2-config.ini` it makes,
   and only prints a note when an existing one has it on. Read traps stay
-  on: the launcher clears `EDEN_NX2_READ_TRAPS`, and unset means on. For Bananza, foliage and
-  dynamic reflections off and medium shadows (`DK_FOLIAGE_OFF=1`, `DK_REFLECTIONS_OFF=1`,
+  on: the launcher clears `EDEN_NX2_READ_TRAPS`, and unset means on. For Bananza, foliage off,
+  static reflections and medium shadows (`DK_FOLIAGE_OFF=1`, `DK_REFLECTIONS_OFF=1`,
   `DK_SHADOW_CASCADES=2`).
 - **`start-quality.bat`** - the same as `start-performance.bat`, with Bananza as the game makes
   it: foliage, reflections and very high shadows (those three lines cleared).
@@ -381,7 +381,7 @@ and reflections that follow changes later; it changes how fresh the reflections 
 detailed. The menu program leaves it unset (the game's own); set it in `nx2_switches.txt` to try one.
 `EDEN_NX2_DK_REFLECTIONS_OFF=1` stops the captures (one every 65535 frames): the cube map is kept,
 since the game's drawing code reads it whether or not it is used, but no longer follows the scene. In the menu
-program it is the **Dynamic reflections off** box in Bananza's Properties > Tuning, ticked by
+program it is the **Static reflections** box in Bananza's Properties > Tuning, ticked by
 Performance and Experimental (and their launchers), unticked by Quality and Safe.
 Both are patched in the main module as it loads; the log says whether they were. They apply when
 the game starts.
