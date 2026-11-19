@@ -28,6 +28,10 @@ and `=0` brings back the 2.0.0 code path.
   drawing code still read it through a null pointer: about 300,000 `Unmapped Read` lines a session
   (`Read64 @ 0xd0`, `Read32 @ 0x18` and `0x1c`), from 40 to 100 s in. Both Bananza patches now log
   their state at load, the game's own included.
+- Donkey Kong Bananza: Static reflections is now **Reflection updates**, a choice of how often the
+  reflection cube map is captured again: Static (never), Low (every 32 frames), Medium (16) and
+  High (the game's 8). Static in Performance and Experimental, High in Quality and Safe. Each
+  capture draws the scene again; the interval changes how fresh reflections are, not their detail.
 - Donkey Kong Bananza's presets: Performance and Experimental turn foliage off, make reflections
   static and set Medium shadows; Quality and Safe leave the game's own. The launchers set the same.
 - Frame generation (LSFG and Optical Flow) now runs while HDR output is active instead of turning off.

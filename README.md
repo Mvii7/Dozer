@@ -185,12 +185,13 @@ changes them (not even Safe), and they have no global setting. For Bananza the
 program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`,
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
 it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
-**Foliage off** box under its Dynamic frame rate box (`DK_FOLIAGE_OFF=1`), a **Static reflections**
-box (`DK_REFLECTIONS_OFF=1`; unticked, the game's own) and
+**Foliage off** box under its Dynamic frame rate box (`DK_FOLIAGE_OFF=1`), **Reflection updates**
+(Static, Low, Medium, High: the reflection cube map captured never again, every 32, 16 or 8
+frames, High the game's own; `DK_REFLECTIONS_OFF=1` or `DK_CUBEMAP_INTERVAL=32` / `16`) and
 **Shadow quality** (Low, Medium, High, Very high: the sun shadow's 1 to 4 cascades, Very high the
 game's own; `DK_SHADOW_CASCADES=<1-3>`). The presets set all three: Performance and Experimental
-foliage and reflections off and Medium shadows; Quality and Safe the game's own (foliage,
-reflections, Very high shadows). Each is changeable per game; see "Donkey Kong Bananza foliage off", "... shadow
+foliage off, Static reflections and Medium shadows; Quality and Safe the game's own (foliage,
+High reflection updates, Very high shadows). Each is changeable per game; see "Donkey Kong Bananza foliage off", "... shadow
 quality" and "... reflections" below. The log says which were set ("Dozer settings for <title id>
 ...").
 
@@ -378,11 +379,14 @@ Bananza captures the scene around the camera into a reflection cube map every 8 
 capture draws the scene again), which its shiny and wet surfaces reflect.
 `EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>` sets the frames between captures: higher means fewer draws
 and reflections that follow changes later; it changes how fresh the reflections are, not how
-detailed. The menu program leaves it unset (the game's own); set it in `nx2_switches.txt` to try one.
+detailed.
 `EDEN_NX2_DK_REFLECTIONS_OFF=1` stops the captures (one every 65535 frames): the cube map is kept,
 since the game's drawing code reads it whether or not it is used, but no longer follows the scene. In the menu
-program it is the **Static reflections** box in Bananza's Properties > Tuning, ticked by
-Performance and Experimental (and their launchers), unticked by Quality and Safe.
+program they are **Reflection updates** in Bananza's Properties > Tuning: Static
+(`DK_REFLECTIONS_OFF=1`), Low (`DK_CUBEMAP_INTERVAL=32`), Medium (`16`) and High (the game's 8,
+nothing set). Performance and Experimental (and their launchers) set Static; Quality and Safe
+High. A game's choice of the Static reflections box this replaces is kept (ticked: Static,
+unticked: High).
 Both are patched in the main module as it loads; the log says whether they were. They apply when
 the game starts.
 

@@ -48,5 +48,6 @@ private:
     QComboBox* preset = nullptr;
     QPushButton* preset_reset = nullptr;
     QComboBox* shadow = nullptr; ///< Bananza's shadow quality
+    QComboBox* reflections = nullptr; ///< Bananza's reflection updates
     std::vector<Row> rows;
 };

@@ -13,11 +13,11 @@
 
 // Donkey Kong Bananza's reflections: the cube map the game captures of the scene around the camera
 // (drawing the scene again into its faces) and its shiny and wet surfaces reflect.
-//   EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>: frames between two captures (the game's: 8), only by
-//   hand; higher, fewer draws, reflections follow later.
+//   EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>: frames between two captures (the game's: 8); higher,
+//   fewer draws, reflections follow later. Reflection updates Low (32) and Medium (16).
 //   EDEN_NX2_DK_REFLECTIONS_OFF=1: the cube map is kept but no longer captured (once in
-//   OffInterval frames), so it stops redrawing the scene. The Static reflections box in
-//   Bananza's Properties > Tuning.
+//   OffInterval frames), so it stops redrawing the scene. Reflection updates Static.
+//   Both are in Bananza's Properties > Tuning.
 // Both are put in the main module as it loads, only where the instructions are exactly as expected.
 namespace Loader::Nx2DkReflections {
 
