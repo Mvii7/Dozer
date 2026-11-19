@@ -17,6 +17,7 @@
 #include <mutex>
 #include <numeric>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "common/container/unordered_map.h"
@@ -580,6 +581,30 @@ public:
                !AsyncBufferDownloads();
     }
 
+    /// EDEN_NX2_RX_COALESCE: a fence leaves the copies back pending so far for a later one; they
+    /// are kept apart, so reads that fetch them count (NoteDeferredRead).
+    void DeferCopyBacks() {
+        if (uncommitted_gpu_modified_ranges.Empty()) {
+            return;
+        }
+        // Into the last held back set while nothing came after it, so the sets stay few.
+        if (deferred_copy_back_sets != 0 &&
+            deferred_copy_back_sets == committed_gpu_modified_ranges.size()) {
+            auto& held = committed_gpu_modified_ranges.back();
+            uncommitted_gpu_modified_ranges.ForEach(
+                [&held](DAddr start, DAddr end) { held.Add(start, end - start); });
+            uncommitted_gpu_modified_ranges.Clear();
+            return;
+        }
+        AccumulateFlushes();
+        deferred_copy_back_sets = committed_gpu_modified_ranges.size();
+    }
+
+    /// Reads that fetched data a fence held back, since the last call.
+    [[nodiscard]] u64 TakeDeferredReads() noexcept {
+        return std::exchange(deferred_reads, 0);
+    }
+
     /// The guest CPU read these pages, which used up their read traps: the next GPU write here
     /// arms them again, so a read after it flushes instead of finding data the fences have not
     /// copied back yet. EDEN_NX2_TRAP_REARM=0: they stay unarmed after their first read.
@@ -1028,6 +1053,12 @@ private:
     }
     SummarizedRangeSet<true> gpu_modified_ranges;
     std::deque<SummarizedRangeSet<false>> committed_gpu_modified_ranges;
+    /// The first of them a fence held back (DeferCopyBacks), until the next commit
+    size_t deferred_copy_back_sets{};
+    u64 deferred_reads{};
+
+    /// A read fetches [addr, addr + size): counts it if a fence held its data back.
+    void NoteDeferredRead(DAddr addr, u64 size);
     /// Buffer pages the guest CPU reads (NoteCpuRead). Without AsyncBufferDownloads, GPU writes
     /// to them are still copied back at fences: Pokemon Pokopia builds its sky, fog and exposure
     /// constants from values the GPU computes, and drew a black, flickering sky without them.

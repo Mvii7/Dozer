@@ -184,10 +184,72 @@ private:
 /// default / immediate): there a fence's operations (syncpoint, semaphore) run when it is signaled,
 /// before the GPU even ran, so the copy back is not ordered with them anyway; with delayed fences
 /// it is (data before the syncpoint), and every fence commits as before.
+/// =auto or unset: the number adapts per game (CoalesceTuner), where a read catches a copy back
+/// not landed yet (read traps or reactive flushing); else off. 0 / 1: off.
 [[nodiscard]] inline u64 CoalesceFences() noexcept {
     static const u64 fences = ReadCount("EDEN_NX2_RX_COALESCE");
     return fences;
 }
+
+[[nodiscard]] inline bool CoalesceAuto() noexcept {
+    static const bool enabled = [] {
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_RX_COALESCE");
+        return value == nullptr || value[0] == '\0' || value[0] == 'a' || value[0] == 'A';
+    }();
+    return enabled;
+}
+
+/// EDEN_NX2_RX_COALESCE=auto: picks the number of fences a copy back may wait, once a frame.
+/// A guest read that has to fetch GPU data a fence held back (BufferCache::NoteDeferredRead)
+/// costs about as much as ReadCost fences saved; a frame where reads cost more than the fences
+/// saved halves the number and holds it there for a while (longer after each halving), and
+/// GrowFrames frames without such reads double it, up to MaxLimit.
+class CoalesceTuner {
+public:
+    static constexpr u64 MaxLimit = 64;
+    static constexpr u64 StartLimit = 8;
+    static constexpr u64 ReadCost = 32;
+    static constexpr u32 GrowFrames = 30;
+    static constexpr u32 HoldFrames = 60;
+    static constexpr u32 MaxBackoffs = 5;
+
+    [[nodiscard]] u64 Limit() const noexcept {
+        return limit;
+    }
+
+    void NoteDeferred() noexcept {
+        ++deferred;
+    }
+
+    /// A frame ended: `reads` held-back reads since the last call.
+    void EndFrame(u64 reads) noexcept {
+        const bool costly = reads != 0 && reads * ReadCost > deferred;
+        deferred = 0;
+        if (costly) {
+            limit = (std::max)(limit / 2, u64{1});
+            backoffs = (std::min)(backoffs + 1, MaxBackoffs);
+            hold = HoldFrames << backoffs;
+            good = 0;
+            return;
+        }
+        if (hold != 0) {
+            --hold;
+            return;
+        }
+        if (++good >= GrowFrames && limit < MaxLimit) {
+            limit *= 2;
+            backoffs = backoffs != 0 ? backoffs - 1 : 0;
+            good = 0;
+        }
+    }
+
+private:
+    u64 limit = StartLimit;
+    u64 deferred{};
+    u32 good{};
+    u32 hold{};
+    u32 backoffs{};
+};
 
 /// Whether a fence commits the buffer cache's pending copy backs now (CoalesceFences): `deferred`
 /// fences already left them, `made_anyway` when the fence is made with or without them, `force`
