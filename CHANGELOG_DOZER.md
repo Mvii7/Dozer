@@ -8,12 +8,17 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
-- Frame generation (LSFG and FSR 3) now runs while HDR output is active instead of turning off.
+- Frame generation (LSFG and Optical Flow) now runs while HDR output is active instead of turning off.
   LSFG takes its HDR mode on an scRGB swapchain (as lsfg-vk's); HDR10's PQ frames go through it
   like SDR ones. Not tried on an HDR display yet.
-- Frame generation: switching between LSFG and FSR 3 during play rebuilds the chain for the new
-  type, a missing Lossless.dll no longer keeps FSR 3 off afterwards, and FSR 3 no longer loads
-  the LSFG shaders. From Lichii #1493.
+- Frame generation: switching between LSFG and Optical Flow during play rebuilds the chain for
+  the new type, a missing Lossless.dll no longer keeps Optical Flow off afterwards, and Optical
+  Flow no longer loads the LSFG shaders. From Lichii #1493.
+- Renamed to what they do (labels only; settings and configs keep their values): frame
+  generation type "FSR 3" is now **Optical Flow Interpolation**, Eglantine's own optical-flow
+  interpolation and not AMD's FSR 3; the window filter "AMD FidelityFX Super Resolution 3" is
+  now **FSR 1, softer sharpening** (it runs FSR 1's EASU and RCAS at 0.8x sharpness), and the
+  plain FSR filter is **FSR 1**. From Lichii.
 - Split GPU thread: an equal semaphore acquire goes on without draining the back when the last
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are

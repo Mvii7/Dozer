@@ -27,8 +27,8 @@ swapchain. An HDR image shown on an SDR swapchain, and every screenshot or captu
 frame, is tone mapped to SDR: the reference white becomes SDR white and highlights roll off to
 the peak.
 
-While HDR is active, anti-aliasing, post-processing and FSR/SGSR/FSR 3 upscaling are off, and
-the window is scaled bilinearly. Frame generation (LSFG and FSR 3) works in both HDR10 and scRGB.
+While HDR is active, anti-aliasing, post-processing and FSR/SGSR upscaling are off, and the
+window is scaled bilinearly. Frame generation (LSFG and Optical Flow) works in both HDR10 and scRGB.
 
 On Windows, Auto follows changes during play: toggling Windows HDR, moving the window to
 another monitor, changing the SDR content brightness or running the Windows HDR Calibration app
@@ -76,7 +76,7 @@ Various graphical filters exist - each of them aimed at a specific target/image 
   - **Cons**: Slow.
 - **ScaleForce**: Experimental texture upscale method, see [ScaleFish](https://github.com/BreadFish64/ScaleFish).
   - **Pros**: Relatively fast.
-- **FSR**: Uses AMD FidelityFX Super Resolution to enhance image quality.
+- **FSR 1**: Uses AMD FidelityFX Super Resolution 1 to enhance image quality.
   - **Pros**: Great for upscaling, and offers sharper visual quality.
   - **Cons**: Somewhat slow, and may be offputtingly sharp.
 - **Area**: Area interpolation (high kernel count).
