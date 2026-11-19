@@ -8,8 +8,8 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
-- Buffer cache, opt-in `EDEN_NX2_ASYNC_READBACK=1` (a port of Lichii's read-back): a guest CPU
-  read of GPU-written buffer memory (a read trap, or reactive flushing) no longer has the GPU
+- Buffer cache, `EDEN_NX2_ASYNC_READBACK` (on by default, `=0` turns it off; a port of Lichii's
+  read-back): a guest CPU read of GPU-written buffer memory (a read trap, or reactive flushing) no longer has the GPU
   thread wait for the host GPU. It submits the download and goes on; the reading thread waits for
   that submission and writes the bytes to guest memory itself, keeping those of guest CPU writes
   not applied yet. Pages the guest reads after each GPU write get their download recorded right

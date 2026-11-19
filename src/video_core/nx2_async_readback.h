@@ -14,8 +14,8 @@
 // memory (GPU::OnCPURead) has the GPU thread record the copies and submit them without waiting
 // for the host GPU (BufferCache::DownloadMemoryForRead). The reading thread waits for that
 // submission, then writes the bytes to guest memory (BufferCache::FinishReadDownloads).
-// - unset or 0: off, the GPU thread waits for the host GPU at every such read (runtime.Finish).
-// - 1: on.
+// - 0: off, the GPU thread waits for the host GPU at every such read (runtime.Finish).
+// - unset or 1: on.
 // - 2: on, and checked: each read also copies the bytes it needs at its point of the GPU's work,
 //   and once its downloads landed guest memory is compared with them ("Async read-back check"
 //   errors name where the bytes came from).
@@ -41,7 +41,10 @@ namespace VideoCommon::Nx2AsyncReadback {
 [[nodiscard]] inline int Mode() noexcept {
     static const int mode = [] {
         const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_ASYNC_READBACK");
-        if (value == nullptr || value[0] == '\0' || value[0] == '0') {
+        if (value == nullptr || value[0] == '\0') {
+            return 1;
+        }
+        if (value[0] == '0') {
             return 0;
         }
         return value[0] == '2' ? 2 : 1;
