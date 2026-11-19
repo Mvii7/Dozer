@@ -392,9 +392,11 @@
 #EDEN_NX2_RX_ONE_SUBMIT=0
 # RX_COALESCE: a buffer copy back that alone would turn a fence real waits for a fence made anyway,
 # at most n - 1 fences (only without delayed fences). Unset or =auto: only where a read catches a
-# copy back not landed yet (read traps or reactive flushing), n adapts per game and area, once a
-# frame: it halves when reads had to fetch data a fence held back (each costs about 32 fences
-# saved), and doubles after 30 frames without (1 to 64). =<n>: fixed n. 0 / 1: off (Safe).
+# copy back not landed yet (read traps or reactive flushing), n adapts per game and area every 30
+# frames: it halves when reads had to fetch data a fence held back (2 a frame or more, and costing
+# more than the fences saved), else doubles (1 to 64); a number that failed is tried again only
+# after a hold (4 s, longer after each failure, up to about a minute). =<n>: fixed n. 0 / 1: off
+# (Safe).
 # The reactive stats line shows "coalesce limit N (M reads of held back copies)".
 #EDEN_NX2_RX_COALESCE=32
 # RX_PITCH_FORCED=1: with reactive flushing on, pitch linear images stay downloaded at every

@@ -199,18 +199,22 @@ private:
     return enabled;
 }
 
-/// EDEN_NX2_RX_COALESCE=auto: picks the number of fences a copy back may wait, once a frame.
-/// A guest read that has to fetch GPU data a fence held back (BufferCache::NoteDeferredRead)
-/// costs about as much as ReadCost fences saved; a frame where reads cost more than the fences
-/// saved halves the number and holds it there for a while (longer after each halving), and
-/// GrowFrames frames without such reads double it, up to MaxLimit.
+/// EDEN_NX2_RX_COALESCE=auto: picks the number of fences a copy back may wait, every
+/// WindowFrames frames. Guest reads that had to fetch GPU data a fence held back
+/// (BufferCache::NoteDeferredRead) halve it when they are many (MinReadsPerFrame on average) and
+/// cost more than the fences saved (ReadCost each); a window without that doubles it, up to
+/// MaxLimit, but the number that failed is tried again only after a hold (HoldWindows, doubled
+/// with each failure up to about a minute, halved with each success). A stray read (Donkey Kong
+/// Bananza: about one in a hundred frames) changes nothing; Mario Kart World's, right after its
+/// fences (about a hundred a frame at 32), take it down within a few windows.
 class CoalesceTuner {
 public:
     static constexpr u64 MaxLimit = 64;
     static constexpr u64 StartLimit = 8;
-    static constexpr u64 ReadCost = 32;
-    static constexpr u32 GrowFrames = 30;
-    static constexpr u32 HoldFrames = 60;
+    static constexpr u32 WindowFrames = 30;
+    static constexpr u64 MinReadsPerFrame = 2;
+    static constexpr u64 ReadCost = 8;
+    static constexpr u32 HoldWindows = 4;
     static constexpr u32 MaxBackoffs = 5;
 
     [[nodiscard]] u64 Limit() const noexcept {
@@ -221,34 +225,53 @@ public:
         ++deferred;
     }
 
-    /// A frame ended: `reads` held-back reads since the last call.
+    /// A frame ended: `reads` held back reads since the last call.
     void EndFrame(u64 reads) noexcept {
-        const bool costly = reads != 0 && reads * ReadCost > deferred;
+        window_reads += reads;
+        if (++frames < WindowFrames) {
+            return;
+        }
+        const bool costly = window_reads >= MinReadsPerFrame * WindowFrames &&
+                            window_reads * ReadCost > deferred;
+        frames = 0;
+        window_reads = 0;
         deferred = 0;
         if (costly) {
+            failed = limit;
             limit = (std::max)(limit / 2, u64{1});
             backoffs = (std::min)(backoffs + 1, MaxBackoffs);
-            hold = HoldFrames << backoffs;
-            good = 0;
+            hold = HoldWindows << backoffs;
+            probing = false;
             return;
         }
-        if (hold != 0) {
-            --hold;
-            return;
-        }
-        if (++good >= GrowFrames && limit < MaxLimit) {
-            limit *= 2;
+        if (probing) {
+            // A window at the number that failed last went well.
+            probing = false;
+            failed = 0;
             backoffs = backoffs != 0 ? backoffs - 1 : 0;
-            good = 0;
         }
+        if (limit >= MaxLimit) {
+            return;
+        }
+        if (failed != 0 && limit * 2 >= failed) {
+            if (hold != 0) {
+                --hold;
+                return;
+            }
+            probing = true;
+        }
+        limit *= 2;
     }
 
 private:
     u64 limit = StartLimit;
     u64 deferred{};
-    u32 good{};
-    u32 hold{};
+    u64 window_reads{};
+    u32 frames{};
+    u64 failed{}; ///< The number reads last took down (0: none), tried again after `hold`
+    u32 hold{};   ///< Windows to wait before trying `failed` again
     u32 backoffs{};
+    bool probing{};
 };
 
 /// Whether a fence commits the buffer cache's pending copy backs now (CoalesceFences): `deferred`

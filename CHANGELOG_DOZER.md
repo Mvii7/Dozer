@@ -10,8 +10,8 @@ and `=0` brings back the 2.0.0 code path.
 
 - Fences: copies back of GPU-written buffer memory that alone would make a fence real wait for a
   later fence by default, as many fences as the game tolerates (`EDEN_NX2_RX_COALESCE`, now
-  adaptive): reads that had to fetch data a fence held back halve the number, frames without
-  double it (1 to 64), with read traps or reactive flushing only. Donkey Kong Bananza gained with
+  adaptive, every 30 frames): many reads that had to fetch data a fence held back halve the
+  number, else it doubles (1 to 64), with read traps or reactive flushing only. Donkey Kong Bananza gained with
   a fixed 32 (2-3x fewer submissions) where Mario Kart World lost (its reads come right after its
   fences); the adaptive number serves both. `=<n>` keeps a fixed number, `=0` turns it off (Safe).
 - Presets: **Performance** (the default again, for a first start too) keeps read traps on: with
