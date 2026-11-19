@@ -360,8 +360,8 @@
 #EDEN_NX2_RX_COALESCE_LOOSE=1
 
 # --- frame generation and on-screen display ---
-# FG_TIMED=1: FSR3 frame generation blends each generated frame for the time it is shown
-# (off; FSR3 only).
+# FG_TIMED=1: Optical Flow frame generation blends each generated frame for the time it is
+# shown (off; Optical Flow only).
 #EDEN_NX2_FG_TIMED=1
 # FG_REFRESH_HZ=<20-1000>: the display refresh FG_TIMED assumes and Dynamic frame generation
 # takes as its ceiling (default: asked from Windows).
