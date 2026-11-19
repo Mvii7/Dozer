@@ -27,8 +27,8 @@ swapchain. An HDR image shown on an SDR swapchain, and every screenshot or captu
 frame, is tone mapped to SDR: the reference white becomes SDR white and highlights roll off to
 the peak.
 
-While HDR is active, anti-aliasing, post-processing, FSR/SGSR/FSR 3 upscaling and frame
-generation are off, and the window is scaled bilinearly.
+While HDR is active, anti-aliasing, post-processing and FSR/SGSR/FSR 3 upscaling are off, and
+the window is scaled bilinearly. Frame generation (LSFG and FSR 3) works in both HDR10 and scRGB.
 
 On Windows, Auto follows changes during play: toggling Windows HDR, moving the window to
 another monitor, changing the SDR content brightness or running the Windows HDR Calibration app
