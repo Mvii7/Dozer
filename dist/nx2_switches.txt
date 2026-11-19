@@ -149,7 +149,9 @@
 # split's back (and is flushed) only when the GPU wrote its page in the last n to 2n frames
 # (default 600). Before, a page the GPU wrote once counted for the whole session: after other
 # worlds, Donkey Kong Bananza's lists landed on pages their buffers had written, and the waits
-# made a world slower on each return to it. 0: ever written, as before (Safe).
+# made a world slower on each return to it. 0: ever written, as before (Safe). With
+# REACTIVE_STATS=1, a line every 600 frames counts aged out pages read without a wait and how
+# many of them the GPU wrote again within 4 frames (a write still queued: possibly older words).
 #EDEN_NX2_WRITTEN_AGE=0
 # SKIP_EMPTY_DRAWS=1: draws without indices, vertices or instances are dropped (off).
 #EDEN_NX2_SKIP_EMPTY_DRAWS=1
@@ -371,6 +373,7 @@
 # =2 checks it (slow): each read also copies its bytes as the GPU has them at its point, and once
 # they landed guest memory is compared ("Async read-back check" errors; reads early downloads
 # served are flushed for it). A line "Async read-back, last 600 frames" sums it all up.
+# Safe sets ASYNC_READBACK=0.
 #EDEN_NX2_ASYNC_READBACK=0
 #EDEN_NX2_READER_LANDING=0
 #EDEN_NX2_EARLY_DOWNLOADS=0

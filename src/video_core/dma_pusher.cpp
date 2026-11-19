@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstdio>
 
+#include "common/nx2_reactive.h"
 #include "common/settings.h"
 #include "core/core.h"
 #include "core/memory.h"
@@ -769,9 +770,15 @@ void DmaPusher::NoteBackSemaphore(Engines::EngineTypes type, u32 method, u32 arg
 
 bool DmaPusher::IsGpuWrittenRange(GPUVAddr address, size_t size) const {
     for (GPUVAddr page = address & ~GPUVAddr{0xfff}; page < address + size; page += 0x1000) {
-        if (const auto device = memory_manager.GpuToCpuAddress(page);
-            device && Tegra::Nx2RecentlyGpuWritten(*device)) {
+        const auto device = memory_manager.GpuToCpuAddress(page);
+        if (!device) {
+            continue;
+        }
+        if (Tegra::Nx2RecentlyGpuWritten(*device)) {
             return true;
+        }
+        if (Common::Nx2Reactive::StatsEnabled()) {
+            Tegra::Nx2NoteAgedSkip(*device);
         }
     }
     return false;

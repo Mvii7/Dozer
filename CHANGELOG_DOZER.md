@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Safe now turns off async read-back too (`EDEN_NX2_ASYNC_READBACK=0`), in the launcher and the
+  in-app preset.
+- `EDEN_NX2_WRITTEN_AGE`: two sets of recently written pages instead of three (2 MiB less). With
+  `EDEN_NX2_REACTIVE_STATS=1`, a line every 600 frames counts aged out pages read without a wait
+  and how many of them the GPU wrote again right after, the case the old check guarded against.
 - GPU thread: a command list or macro parameter block on a page the GPU wrote waits for the
   split's back only if the GPU wrote that page in the last 600 to 1,200 frames
   (`EDEN_NX2_WRITTEN_AGE`); before, any page it ever wrote counted. In Donkey Kong Bananza, coming
