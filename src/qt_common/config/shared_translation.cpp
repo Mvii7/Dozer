@@ -235,7 +235,9 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, bg_blue, QString(), QString());
 
     INSERT(Settings, frame_gen, tr("Enable Frame Generation"),
-           tr("Paused while HDR output is active."));
+           tr("Generates intermediate frames for smoother motion. Requires Vulkan.\n"
+              "FSR3 is built in. LSFG requires Lossless.dll in the user directory's lossless "
+              "folder."));
     INSERT(Settings, frame_gen_type, tr("Frame Generation Type"), QString());
     INSERT(Settings, frame_gen_multiplier, tr("Frame Generation Multiplier"), QString());
     INSERT(Settings, frame_gen_target_rate, tr("Target Frame Rate"), QString());

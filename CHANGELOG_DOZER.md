@@ -11,6 +11,9 @@ and `=0` brings back the 2.0.0 code path.
 - Frame generation (LSFG and FSR 3) now runs while HDR output is active instead of turning off.
   LSFG takes its HDR mode on an scRGB swapchain (as lsfg-vk's); HDR10's PQ frames go through it
   like SDR ones. Not tried on an HDR display yet.
+- Frame generation: switching between LSFG and FSR 3 during play rebuilds the chain for the new
+  type, a missing Lossless.dll no longer keeps FSR 3 off afterwards, and FSR 3 no longer loads
+  the LSFG shaders. From Lichii #1493.
 - Split GPU thread: an equal semaphore acquire goes on without draining the back when the last
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are
