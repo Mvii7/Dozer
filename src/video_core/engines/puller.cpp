@@ -440,14 +440,14 @@ bool NoDrainEqual() {
     return enabled;
 }
 
-// EDEN_NX2_ACQUIRE_SUSPEND=1: an equal acquire that needs a drain to decide and that memory does
-// not meet suspends its channel without the drain, its waiter registered first. In Donkey Kong
-// Bananza the release such an acquire waits for came from work sent after it (another channel's)
-// for ~85% of them, so the drain waited for the back for nothing.
+// EDEN_NX2_ACQUIRE_SUSPEND (on unless =0): an equal acquire that needs a drain to decide and that
+// memory does not meet suspends its channel without the drain, its waiter registered first. In
+// Donkey Kong Bananza the release such an acquire waits for came from work sent after it (another
+// channel's) for ~85% of them, so the drain waited for the back for nothing.
 bool SuspendFirst() {
     static const bool enabled = [] {
         const char* value = std::getenv("EDEN_NX2_ACQUIRE_SUSPEND");
-        return value != nullptr && value[0] == '1';
+        return value == nullptr || value[0] != '0';
     }();
     return enabled;
 }
