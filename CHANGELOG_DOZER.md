@@ -8,6 +8,9 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_SLOW_FRAME_MS=<ms>` (diagnostic, off unless set): one "nx2 slow frame:" log line
+  for each frame longer than `<ms>`, with the images created and deleted, MB uploaded,
+  pipelines built, waits for the split's back and read trap flushes in it.
 - Read traps: a copy back at a fence no longer disarms the traps of its pages
   (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
   fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World

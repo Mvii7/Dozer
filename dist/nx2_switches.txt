@@ -288,6 +288,11 @@
 # EDEN_NX2_MODE_GOV_<NAME> (MODE_GOV=1): HOLD=10 UP=36 DOWN=34 SPIKE=70 TO60=17 FROM60=19.5
 #   TO30=31 FROM30=36, and UP_FRAMES, DOWN_FRAMES, COOLDOWN (video_core/nx2_mode_gov.h).
 #EDEN_NX2_MODE_PACE21_DOWN_HOLD=37
+# SLOW_FRAME_MS=<ms> (diagnostic, off unless set): one "nx2 slow frame:" log line for each
+# present more than <ms> after the previous one, with what happened in between: images created
+# and deleted, MB uploaded, pipelines built and their lowering and driver time, waits for the
+# split's back and read trap flushes.
+#EDEN_NX2_SLOW_FRAME_MS=100
 
 # --- Donkey Kong Bananza dynamic frame rate (game-specific; core/loader/nx2_dk_dynamic_fps.h) ---
 # DK_DYN=1: while Bananza's main module loads, patch its frame rate controller in memory (a

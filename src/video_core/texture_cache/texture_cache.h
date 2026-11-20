@@ -35,6 +35,7 @@
 #include "video_core/nx2.h"
 #include "video_core/nx2_gpu_pages.h"
 #include "video_core/nx2_profile.h"
+#include "common/nx2_slow_frame.h"
 #include "video_core/nx2_stages.h"
 #include "video_core/nx2_mode_diag.h"
 #include "video_core/textures/decoders.h"
@@ -1879,6 +1880,7 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     }
     ++images_uploaded;
     uploaded_bytes += image.guest_size_bytes;
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::UploadBytes, image.guest_size_bytes);
     largest_upload = (std::max<u64>)(largest_upload, image.guest_size_bytes);
     if (!UploadInChunks(image)) {
         auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
@@ -2004,6 +2006,8 @@ void TextureCache<P>::UploadLayers(Image& image, std::span<const u32> layers) {
             image.UploadMemory(staging, copies);
             ++images_uploaded;
             uploaded_bytes += u64{image.info.layer_stride} * layers.size();
+            Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::UploadBytes,
+                                      u64{image.info.layer_stride} * layers.size());
             ++layer_uploads;
             return;
         }
@@ -2025,6 +2029,7 @@ void TextureCache<P>::UploadLayers(Image& image, std::span<const u32> layers) {
         runtime.AccelerateImageUploadLayers(image, staging, uploads, layers);
         ++images_uploaded;
         uploaded_bytes += tail * layers.size();
+        Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::UploadBytes, tail * layers.size());
         ++layer_uploads;
     }
 }
@@ -2629,6 +2634,7 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
         ++shape.first;
         shape.second = gpu_addr;
         ++images_created;
+        Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::ImagesCreated, 1);
     }
 
     if (!gpu_memory->IsContinuousRange(new_image.gpu_addr, new_image.guest_size_bytes) &&
@@ -3610,6 +3616,7 @@ template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     ImageBase& image = slot_images[image_id];
     ++images_deleted;
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::ImagesDeleted, 1);
     if (image.nx2_read_latched && track_read_latches) [[unlikely]] {
         read_latches.Remove(image_id);
     }

@@ -26,6 +26,7 @@
 #include "common/alignment.h"
 #include "common/display_hdr.h"
 #include "common/div_ceil.h"
+#include "common/nx2_slow_frame.h"
 #include "common/settings.h"
 #include "common/thread.h"
 #include "core/core.h"
@@ -1275,6 +1276,9 @@ private:
                 m_stats.frame_us += frame;
                 m_stats.max_frame_us = (std::max)(m_stats.max_frame_us, frame);
                 m_stats.hitches += frame > 100'000 ? 1 : 0;
+                if (Common::Nx2SlowFrame::Enabled()) [[unlikely]] {
+                    LogSlowFrame(frame, to_us(waited - entered), to_us(composited - waited));
+                }
                 if (m_pace_one && m_dk_dyn_applied) {
                     m_stats.dyn_step.Add(frame);
                 }
@@ -1689,6 +1693,33 @@ private:
         LOG_INFO(Service, "nx2:vi2 diag request {} ({} data words, present #{}):{}{}", command,
                  w[1] & 0x3FFU, m_presents, text,
                  m_diag.requests.size() == 256 ? " (further new requests not logged)" : "");
+    }
+
+    // EDEN_NX2_SLOW_FRAME_MS: what happened since the previous present, when it came late.
+    void LogSlowFrame(long long frame_us, long long fence_us, long long composite_us) {
+        namespace Slow = Common::Nx2SlowFrame;
+        const auto c = Slow::Take();
+        if (static_cast<u64>(frame_us) <= Slow::ThresholdUs()) {
+            return;
+        }
+        const auto get = [&](Slow::Counter counter) { return c[static_cast<size_t>(counter)]; };
+        const auto ms = [&](Slow::Counter counter) {
+            return static_cast<double>(get(counter)) / 1e6;
+        };
+        LOG_INFO(Service,
+                 "nx2 slow frame: {:.1f} ms (present #{}) | present wait {:.1f} ms composite {:.1f} "
+                 "ms | images +{} -{} upload {:.1f} MB | pipelines {} lower {:.1f} ms driver "
+                 "{:.1f} ms | back drains {} {:.1f} ms (max {:.1f}) | read flushes {} {:.1f} ms "
+                 "(max {:.1f})",
+                 static_cast<double>(frame_us) / 1e3, m_presents,
+                 static_cast<double>(fence_us) / 1e3, static_cast<double>(composite_us) / 1e3,
+                 get(Slow::Counter::ImagesCreated), get(Slow::Counter::ImagesDeleted),
+                 static_cast<double>(get(Slow::Counter::UploadBytes)) / (1 << 20),
+                 get(Slow::Counter::Pipelines), ms(Slow::Counter::LowerNs),
+                 ms(Slow::Counter::DriverNs), get(Slow::Counter::Drains),
+                 ms(Slow::Counter::DrainNs), ms(Slow::Counter::DrainMaxNs),
+                 get(Slow::Counter::ReadFlushes), ms(Slow::Counter::ReadFlushNs),
+                 ms(Slow::Counter::ReadFlushMaxNs));
     }
 
     void DiagPresent(const u32* w, std::chrono::steady_clock::time_point entered,

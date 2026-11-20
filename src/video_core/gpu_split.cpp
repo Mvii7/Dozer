@@ -17,6 +17,7 @@
 #include <cstdio>
 
 #include "common/logging.h"
+#include "common/nx2_slow_frame.h"
 #include "common/settings.h"
 #include "common/thread.h"
 #include "core/core.h"
@@ -249,10 +250,14 @@ bool GpuSplit::Drain() {
     Publish();
     Nx2BackCpu::NoteFront();
     Nx2Profile::Scope scope{Nx2Profile::Zone::SplitDrain};
+    namespace Slow = Common::Nx2SlowFrame;
+    const s64 slow_ns = Slow::Enabled() ? Slow::NowNs() : 0;
     for (u32 spins = 0;; ++spins) {
         consumed_cache = consumed.load(std::memory_order_acquire);
         if (consumed_cache == write_position) {
             publish_every = 8;
+            Slow::AddWait(Slow::Counter::Drains, Slow::Counter::DrainNs, Slow::Counter::DrainMaxNs,
+                          slow_ns);
             return true;
         }
         if (spins < 16384) {
