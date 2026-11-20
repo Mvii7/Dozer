@@ -76,7 +76,8 @@ inline int ReadPeekMode() {
         if (acquire != nullptr && acquire[0] == '1' && value != nullptr) {
             result = value[0] == '2' ? 2 : value[0] == '1' ? 1 : 0;
         }
-        LOG_INFO(HW_GPU, "MME DMA read peek {} (EDEN_NX2_DMA_READ_PEEK {}, EDEN_NX2_ACQUIRE_PEEK {})",
+        LOG_INFO(HW_GPU,
+                 "MME DMA read peek {} (EDEN_NX2_DMA_READ_PEEK {}, EDEN_NX2_ACQUIRE_PEEK {})",
                  result == 0 ? "off" : result == 1 ? "on" : "verify",
                  value != nullptr ? fmt::format("'{}'", value) : std::string{"unset"},
                  acquire != nullptr ? fmt::format("'{}'", acquire) : std::string{"unset"});
