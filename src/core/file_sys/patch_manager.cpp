@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
+#include <mutex>
 
 #include "common/assert.h"
 #include "common/hex_util.h"
@@ -71,6 +72,124 @@ VirtualDir MakeFoliageOffLayer(const VirtualDir& extracted) {
     }
     // All three are in ClusteredRendering/
     auto folder = std::make_shared<VectorVfsDirectory>(std::move(files), std::vector<VirtualDir>{},
+                                                       "ClusteredRendering");
+    return std::make_shared<VectorVfsDirectory>(std::vector<VirtualFile>{},
+                                                std::vector<VirtualDir>{std::move(folder)});
+}
+
+// A stage's ProceduralPlacement file thinned by the foliage density, patched when the game reads
+// it (there are some 170, 315 MB in all) and let go once read to the end.
+class FoliagePlacementFile : public VfsFile {
+public:
+    FoliagePlacementFile(VirtualFile base_, Loader::Nx2DkFoliage::Levels levels_)
+        : base{std::move(base_)}, levels{levels_} {}
+
+    std::string GetName() const override {
+        return base->GetName();
+    }
+    std::size_t GetSize() const override {
+        return base->GetSize();
+    }
+    bool Resize(std::size_t) override {
+        return false;
+    }
+    VirtualDir GetContainingDirectory() const override {
+        return nullptr;
+    }
+    bool IsWritable() const override {
+        return false;
+    }
+    bool IsReadable() const override {
+        return true;
+    }
+    std::size_t Read(u8* out, std::size_t length, std::size_t offset) const override {
+        std::scoped_lock lock{mutex};
+        if (data.empty()) {
+            data = base->ReadAllBytes();
+            const size_t removed = Loader::Nx2DkFoliage::PatchPlacement(data, levels);
+            LOG_INFO(Loader, "Donkey Kong Bananza: {} of the foliage placed in {} thinned out",
+                     removed, base->GetName());
+        }
+        if (offset >= data.size()) {
+            return 0;
+        }
+        const std::size_t read = std::min(length, data.size() - offset);
+        std::memcpy(out, data.data() + offset, read);
+        if (offset + read == data.size()) {
+            std::vector<u8>{}.swap(data);
+        }
+        return read;
+    }
+    std::size_t Write(const u8*, std::size_t, std::size_t) override {
+        return 0;
+    }
+    bool Rename(std::string_view) override {
+        return false;
+    }
+
+private:
+    VirtualFile base;
+    Loader::Nx2DkFoliage::Levels levels;
+    mutable std::mutex mutex;
+    mutable std::vector<u8> data;
+};
+
+// A layer with Donkey Kong Bananza's foliage thinned and its draw distance brought down to the
+// Foliage dropdown's level (EDEN_NX2_DK_FOLIAGE_DENSITY, EDEN_NX2_DK_FOLIAGE_DISTANCE), made from
+// the game's own files. Null when the game does not have them.
+VirtualDir MakeFoliageLevelsLayer(const VirtualDir& extracted,
+                                  const Loader::Nx2DkFoliage::Levels& levels) {
+    if (extracted == nullptr) {
+        return nullptr;
+    }
+    std::vector<VirtualFile> settings;
+    const auto patch = [&](std::string_view path,
+                           bool (*patcher)(std::span<u8>, const Loader::Nx2DkFoliage::Levels&)) {
+        const auto file = extracted->GetFileRelative(path);
+        if (file == nullptr) {
+            return;
+        }
+        auto data = Common::Compression::DecompressDataZSTD(file->ReadAllBytes());
+        if (data.empty() || !patcher(std::span<u8>{data}, levels)) {
+            return;
+        }
+        auto packed = Common::Compression::CompressDataZSTD(data.data(), data.size(), 19);
+        settings.push_back(std::make_shared<VectorVfsFile>(
+            std::move(packed), std::string{path.substr(path.find_last_of('/') + 1)}));
+    };
+    patch(Loader::Nx2DkFoliage::SystemSettingsPath, Loader::Nx2DkFoliage::PatchSystemSettings);
+    patch(Loader::Nx2DkFoliage::MaterialSettingsPath,
+          Loader::Nx2DkFoliage::PatchMaterialSettings);
+    patch(Loader::Nx2DkFoliage::ModelSettingsPath, Loader::Nx2DkFoliage::PatchModelSettings);
+
+    // ClusteredRendering/StageData/<stage>/*.ProceduralPlacement.byml
+    std::vector<VirtualDir> stages;
+    if (Loader::Nx2DkFoliage::PlacementsWanted(levels)) {
+        if (const auto data =
+                extracted->GetDirectoryRelative(Loader::Nx2DkFoliage::PlacementFolder)) {
+            for (const auto& stage : data->GetSubdirectories()) {
+                std::vector<VirtualFile> placements;
+                for (const auto& file : stage->GetFiles()) {
+                    if (file->GetName().ends_with(Loader::Nx2DkFoliage::PlacementSuffix)) {
+                        placements.push_back(std::make_shared<FoliagePlacementFile>(file, levels));
+                    }
+                }
+                if (!placements.empty()) {
+                    stages.push_back(std::make_shared<VectorVfsDirectory>(
+                        std::move(placements), std::vector<VirtualDir>{}, stage->GetName()));
+                }
+            }
+        }
+    }
+    if (settings.empty() && stages.empty()) {
+        return nullptr;
+    }
+    std::vector<VirtualDir> sub;
+    if (!stages.empty()) {
+        sub.push_back(std::make_shared<VectorVfsDirectory>(std::vector<VirtualFile>{},
+                                                           std::move(stages), "StageData"));
+    }
+    auto folder = std::make_shared<VectorVfsDirectory>(std::move(settings), std::move(sub),
                                                        "ClusteredRendering");
     return std::make_shared<VectorVfsDirectory>(std::vector<VirtualFile>{},
                                                 std::vector<VirtualDir>{std::move(folder)});
@@ -579,9 +698,13 @@ void PatchManager::ApplyLayeredFS(VirtualFile& romfs, ContentRecordType type) co
     const auto sdmc_load_dir = GetModificationLoadRoot(true);
     const bool foliage_off =
         type == ContentRecordType::Program && Loader::Nx2DkFoliage::OffFromEnvironment();
+    const auto foliage_levels = type == ContentRecordType::Program
+                                    ? Loader::Nx2DkFoliage::LevelsFromEnvironment()
+                                    : Loader::Nx2DkFoliage::Levels{};
+    const bool foliage = foliage_off || foliage_levels.Active();
     if ((type != ContentRecordType::Program && type != ContentRecordType::Data &&
          type != ContentRecordType::HtmlDocument) ||
-        (load_dir == nullptr && sdmc_load_dir == nullptr && !foliage_off)) {
+        (load_dir == nullptr && sdmc_load_dir == nullptr && !foliage)) {
         return;
     }
 
@@ -625,7 +748,7 @@ void PatchManager::ApplyLayeredFS(VirtualFile& romfs, ContentRecordType type) co
     }
 
     // When there are no layers to apply, return early as there is no need to rebuild the RomFS
-    if (layers.empty() && layers_ext.empty() && !foliage_off) {
+    if (layers.empty() && layers_ext.empty() && !foliage) {
         return;
     }
 
@@ -639,6 +762,15 @@ void PatchManager::ApplyLayeredFS(VirtualFile& romfs, ContentRecordType type) co
         if (auto layer = MakeFoliageOffLayer(extracted)) {
             layers.emplace_back(std::move(layer));
             mods.emplace_back("Dozer: Donkey Kong Bananza foliage off");
+        }
+    } else if (foliage_levels.Active()) {
+        if (auto layer = MakeFoliageLevelsLayer(extracted, foliage_levels)) {
+            layers.emplace_back(std::move(layer));
+            mods.emplace_back(fmt::format(
+                "Dozer: Donkey Kong Bananza foliage density {}%, distance {}",
+                foliage_levels.density == 0 ? 100 : foliage_levels.density,
+                foliage_levels.distance == 0 ? std::string{"each model's own"}
+                                             : std::to_string(foliage_levels.distance)));
         }
     }
     if (layers.empty() && layers_ext.empty()) {

@@ -1,6 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
-rem Dozer - PERFORMANCE (the default): the fastest settings, read traps on, reactive flushing off. Bananza: foliage off.
+rem Dozer - PERFORMANCE (the default): the fastest settings, read traps on, reactive flushing off. Bananza: low foliage.
 rem Dozer launcher for dozer-cli.exe (Dozer's program without menus).
 rem Put this file next to dozer-cli.exe.
 rem Start: put your game (.nsp .xci .nsz .xcz .nup .nx) in the Games folder next to this file and double-click
@@ -95,8 +95,10 @@ set EDEN_NX2_MODE_PACE=2
 set EDEN_NX2_PACE_SPIN_US=1500
 rem Donkey Kong Bananza dynamic frame rate (DK_DYN above; 0 = the game's own 60/30 rule).
 set EDEN_NX2_DK_DYN=%DK_DYN%
-rem Donkey Kong Bananza foliage off: its grass, flowers and plants are not drawn (README).
-set EDEN_NX2_DK_FOLIAGE_OFF=1
+rem Donkey Kong Bananza foliage low: 10% of its grass, flowers and plants, in patches, drawn up to 200 units (README).
+set EDEN_NX2_DK_FOLIAGE_OFF=
+set EDEN_NX2_DK_FOLIAGE_DENSITY=10
+set EDEN_NX2_DK_FOLIAGE_DISTANCE=200
 rem Donkey Kong Bananza: medium shadows (the sun shadow in 2 cascades) and very low reflection
 rem updates (the reflection cube map captured every 240 frames instead of 8, README).
 set EDEN_NX2_DK_SHADOW_CASCADES=2

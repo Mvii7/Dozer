@@ -47,7 +47,6 @@ const Entry* EntryOf(std::size_t key) {
         {&S::osd, Perf::Game::Other, QT_TR_NOOP("FPS overlay in RivaTuner")},
         {&S::dk_dyn, Perf::Game::Bananza, QT_TR_NOOP("Dynamic frame rate")},
         {&S::mkw_dyn, Perf::Game::MarioKartWorld, QT_TR_NOOP("Dynamic frame rate")},
-        {&S::dk_foliage_off, Perf::Game::Bananza, QT_TR_NOOP("Foliage off")},
     };
     return &entries[key];
 }
@@ -163,8 +162,30 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         });
     }
 
-    // Bananza's shadow quality, under its boxes: the sun shadow's most cascades, one per step
+    // Bananza's foliage, under its boxes: off, two levels between, and the game's own
     if (game == Perf::Game::Bananza) {
+        foliage = new QComboBox(this);
+        foliage->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        foliage->addItem(tr("Off"));
+        foliage->addItem(tr("Low"));
+        foliage->addItem(tr("Medium"));
+        foliage->addItem(tr("High"));
+        foliage->setToolTip(
+            tr("The grass, flowers and plants. Off: none. Low: 10% of them, thinned in patches, "
+               "drawn up to 200 units. Medium: 50%, drawn up to 400 units. High: as the game "
+               "makes them. Fewer plants and a shorter distance mean fewer draws. Needs a "
+               "restart."));
+        form->addRow(tr("Foliage"), foliage);
+        connect(foliage, &QComboBox::activated, this, [this](int index) {
+            const int chosen = Perf::FoliageOff + index;
+            Perf::Overrides without = own;
+            without.dk_foliage.reset();
+            const int base = Perf::ForGame(UISettings::values.nx2perf, game, without).dk_foliage;
+            own.dk_foliage = chosen == base ? std::nullopt : std::optional<int>{chosen};
+            Refresh();
+        });
+
+        // The sun shadow's most cascades, one per step
         shadow = new QComboBox(this);
         shadow->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         shadow->addItem(tr("Low"));
@@ -241,6 +262,10 @@ void ConfigureNx2PerfPerGame::Refresh() {
         // The game's own boxes have no global setting to go back to.
         ShowReset(row.reset, row.key < Perf::Keys.size() && own.boxes[row.key].has_value());
     }
+    if (foliage != nullptr) {
+        const QSignalBlocker blocker{foliage};
+        foliage->setCurrentIndex(now.dk_foliage - Perf::FoliageOff);
+    }
     if (shadow != nullptr) {
         const QSignalBlocker blocker{shadow};
         shadow->setCurrentIndex(now.dk_shadow - Perf::ShadowLow);
@@ -256,12 +281,7 @@ void ConfigureNx2PerfPerGame::ChoosePreset(Perf::Preset chosen) {
     own.preset.reset();
     own.global_preset = false;
     // Bananza's foliage, reflections and shadows are the preset's again
-    for (std::size_t key = 0; key < Perf::KeyCount; ++key) {
-        const auto field = Perf::KeyAt(key).field;
-        if (field == &Perf::Switches::dk_foliage_off) {
-            own.boxes[key].reset();
-        }
-    }
+    own.dk_foliage.reset();
     own.dk_shadow.reset();
     own.dk_reflections.reset();
     // Only what differs from where the game starts is kept.

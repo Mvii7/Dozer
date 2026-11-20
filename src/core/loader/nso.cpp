@@ -26,6 +26,7 @@
 #include "core/hle/kernel/k_thread.h"
 #include "core/loader/nso.h"
 #include "core/loader/nx2_dk_dynamic_fps.h"
+#include "core/loader/nx2_dk_foliage.h"
 #include "core/loader/nx2_dk_reflections.h"
 #include "core/loader/nx2_dk_shadow.h"
 #include "core/loader/nx2_mkw_dynamic_fps.h"
@@ -255,6 +256,27 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
                         "Donkey Kong Bananza: {} not applied: the shadow setup is not where "
                         "expected",
                         Nx2DkShadow::Switch);
+        }
+    }
+
+    // EDEN_NX2_DK_FOLIAGE_DISTANCE=<20-700> (unset by default): the foliage models without a draw
+    // distance of their own take the code's default, brought down to it here (nx2_dk_foliage.h;
+    // the others are in the game's data).
+    static const auto dk_foliage = Nx2DkFoliage::LevelsFromEnvironment();
+    if (dk_foliage.distance != 0 && Nx2DkReflections::IsTarget(process.GetProgramId(), name)) {
+        const auto& text = nso_header.segments[0];
+        const size_t text_start = module_start + text.location;
+        const std::span<u8> image{codeset.memory};
+        if (text_start <= image.size() &&
+            Nx2DkFoliage::PatchDefaultDistance(image.subspan(text_start), text.size,
+                                               PageAlignSize(text.size), dk_foliage)) {
+            LOG_INFO(Loader, "Donkey Kong Bananza: foliage drawn up to {} units ({})",
+                     dk_foliage.distance, Nx2DkFoliage::DistanceSwitch);
+        } else {
+            LOG_WARNING(Loader,
+                        "Donkey Kong Bananza: {} not applied to the default distance: not where "
+                        "expected",
+                        Nx2DkFoliage::DistanceSwitch);
         }
     }
 
