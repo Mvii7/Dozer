@@ -440,6 +440,18 @@ bool NoDrainEqual() {
     return enabled;
 }
 
+// EDEN_NX2_ACQUIRE_SUSPEND=1: an equal acquire that needs a drain to decide and that memory does
+// not meet suspends its channel without the drain, its waiter registered first. In Donkey Kong
+// Bananza the release such an acquire waits for came from work sent after it (another channel's)
+// for ~85% of them, so the drain waited for the back for nothing.
+bool SuspendFirst() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_ACQUIRE_SUSPEND");
+        return value != nullptr && value[0] == '1';
+    }();
+    return enabled;
+}
+
 // Whether the back writes a payload release to memory when it runs it: below High GPU accuracy,
 // with fences that run their operations at once (FenceManager::SignalFence).
 bool ReleasesLandAtOnce() {
@@ -472,6 +484,7 @@ struct NoDrainStats {
     u64 drain_queued{};
     u64 drain_not_met{};
     u64 drain_compute{}; ///< Equal, a compute launch sent after the queued release
+    u64 suspended{};     ///< Equal, suspended without a drain (EDEN_NX2_ACQUIRE_SUSPEND)
     u64 polls{};     ///< Polls that kept waiting without a drain
     u64 valve{};     ///< Polls that kept waiting and drained (once per 1 ms)
     u64 mismatches{}; ///< Verify: passed, yet the word after a drain doesn't meet it
@@ -497,12 +510,13 @@ void CountNoDrain(u64 NoDrainStats::*counter) {
              "Acquires without a drain in 10 s: {} passed ({} by a queued release), {} drained "
              "({} equal or mask, {} settings, {} back engine release queued, {} unmapped or "
              "GPU-written word, {} queued release unknown or short, {} not met, {} equal with a "
-             "compute launch after the release), {} polls kept "
+             "compute launch after the release), {} suspended without a drain, {} polls kept "
              "waiting, {} polls drained by the 1 ms valve; verify: {} passed but not met after a "
              "drain, {} kept waiting but met after it",
              stats.passed, stats.by_queued, stats.drained, stats.drain_operation,
              stats.drain_settings, stats.drain_unknown, stats.drain_word, stats.drain_queued,
-             stats.drain_not_met, stats.drain_compute, stats.polls, stats.valve, stats.mismatches,
+             stats.drain_not_met, stats.drain_compute, stats.suspended, stats.polls, stats.valve,
+             stats.mismatches,
              stats.late);
     stats = NoDrainStats{};
     stats.next = now + std::chrono::seconds{10};
@@ -689,6 +703,33 @@ void NoteResume(ResumeHow how, const Puller::PendingAcquire& acquire, const void
 
 } // Anonymous namespace
 
+namespace {
+
+// EDEN_NX2_ACQUIRE_SUSPEND: registers the waiter, then reads the word. False (waiter removed) when
+// memory meets it: a value from before the work still queued may be met by that work no longer,
+// so the drain decides as before.
+bool SuspendUndrainedFor(const void* owner, DmaPusher& dma_pusher, Puller::PendingAcquire& acquire) {
+    const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address);
+    if (!device) {
+        return false;
+    }
+    u32* word = reinterpret_cast<u32*>(dma_pusher.memory_manager.GetPointer(acquire.address));
+    if (reinterpret_cast<uintptr_t>(word) % alignof(u32) != 0) {
+        word = nullptr;
+    }
+    auto& waiters = Nx2SemaphoreWaiters::Get();
+    waiters.Add(owner, *device, acquire.value, acquire.operation, word);
+    if (acquire.Matches(dma_pusher.memory_manager.Read<u32>(acquire.address))) {
+        waiters.Remove(owner);
+        return false;
+    }
+    acquire.undrained = true;
+    acquire.last_drain = std::chrono::steady_clock::now();
+    return true;
+}
+
+} // Anonymous namespace
+
 bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
     if (!pending_acquire) {
         return true;
@@ -705,6 +746,7 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
                      pending_acquire->value, now);
         }
     };
+    bool valve_passed = false;
     switch (const AcquireCheck check = CheckWithoutDrain(dma_pusher, *pending_acquire); check) {
     case AcquireCheck::MetByQueued:
         CountNoDrain(&NoDrainStats::by_queued);
@@ -730,11 +772,27 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         }
         pending_acquire->last_drain = now;
         CountNoDrain(&NoDrainStats::valve);
+        valve_passed = true;
         break;
     }
     case AcquireCheck::Drain:
         CountNoDrain(&NoDrainStats::drained);
         break;
+    }
+    if (pending_acquire->undrained && !valve_passed) {
+        // A release the back runs latches the waiter, registered before the channel suspended.
+        // Anything else (a guest CPU store, a write in the caches) is seen after a drain, at
+        // most once per 1 ms.
+        if (Nx2SemaphoreWaiters::Get().Latched(this)) {
+            return resumed(ResumeHow::Latched);
+        }
+        // A guest CPU store to the word drains at once (it changes no latch).
+        const auto now = std::chrono::steady_clock::now();
+        if (now - pending_acquire->last_drain < std::chrono::milliseconds{1} &&
+            !pending_acquire->Matches(dma_pusher.memory_manager.Read<u32>(pending_acquire->address))) {
+            return false;
+        }
+        pending_acquire->last_drain = now;
     }
     const PeekRead peek = PeekBefore(dma_pusher, pending_acquire->address,
                                      pending_acquire->operation, pending_acquire->value,
@@ -957,6 +1015,13 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             return;
         } else if (check == AcquireCheck::NotMet) {
             CountNoDrain(&NoDrainStats::drain_not_met);
+        }
+        if (SuspendFirst() && op == GpuSemaphoreOperation::AcquireEqual &&
+            VideoCommon::GpuSplit::Get().Active() && SuspendUndrainedFor(this, dma_pusher, acquire)) {
+            CountNoDrain(&NoDrainStats::suspended);
+            pending_acquire = acquire;
+            VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::AcquireWaits, 1);
+            return;
         }
         CountNoDrain(&NoDrainStats::drained);
         const UnmetClass unmet = ClassifyUnmet(peek, acquire.operation, acquire.value);

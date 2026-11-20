@@ -131,6 +131,11 @@
 #EDEN_NX2_FRONT_MACRO_LEAN=1
 # SEMEXEC_DEFER=1: experimental handling of SemaphoreExecute with the split (off).
 #EDEN_NX2_SEMEXEC_DEFER=1
+# ACQUIRE_SUSPEND=1: an equal semaphore acquire memory does not meet suspends its channel at once,
+# without waiting for the split's back (experimental, off). A release the back runs resumes it;
+# anything else is checked after a drain at most once per 1 ms. With GPU_PROFILE=1 the "Acquires
+# without a drain" line counts them ("suspended without a drain").
+#EDEN_NX2_ACQUIRE_SUSPEND=1
 # HLE_INDIRECT=0: run NVN's indexed indirect draw macro as it is, reading its records on the
 # CPU (default: one host indirect draw from the GPU-written records).
 #EDEN_NX2_HLE_INDIRECT=0
