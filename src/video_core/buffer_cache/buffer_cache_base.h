@@ -1124,7 +1124,7 @@ private:
     /// Whether every GPU write in this range is in a committed copy back (async_downloads).
     [[nodiscard]] bool CopyBackCovers(DAddr addr, u64 size) const;
     /// A copy back landed in [addr, addr + size): disarms the read traps of its pages the GPU
-    /// has not written since (EDEN_NX2_TRAP_POP_DISARM=0: they stay armed until a read).
+    /// has not written since (EDEN_NX2_TRAP_POP_DISARM=1; unset: they stay armed until a read).
     void DisarmCopiedReadTraps(DAddr addr, u64 size);
     /// Notified after each PopAsyncBuffers (WaitForCopyBack).
     std::condition_variable_any copy_back_cv;

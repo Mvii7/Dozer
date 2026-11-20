@@ -461,12 +461,14 @@ enum class FitFeedback : u32 {
     return enabled;
 }
 
-/// EDEN_NX2_TRAP_POP_DISARM=0: a copy back to a read-trapped page leaves the trap armed until the
-/// guest's next read. Unset: the copy back disarms it (BufferCache::DisarmCopiedReadTraps).
+/// EDEN_NX2_TRAP_POP_DISARM=1: a copy back disarms the read traps of its pages
+/// (BufferCache::DisarmCopiedReadTraps). Unset: they stay armed until the guest's next read; the
+/// page protection changes cost the fence thread more (Mario Kart World: ~0.2 s per 10 s) than
+/// the faults of the pages read again.
 [[nodiscard]] inline bool TrapPopDisarm() noexcept {
     static const bool enabled = [] {
         const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_TRAP_POP_DISARM");
-        return value == nullptr || value[0] != '0';
+        return value != nullptr && value[0] != '0';
     }();
     return enabled;
 }

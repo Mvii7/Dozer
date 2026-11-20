@@ -363,10 +363,12 @@
 # read before the next fence can find older data. Unset (on): each read lets the next GPU write
 # arm the page again, and a read after that write flushes it.
 #EDEN_NX2_TRAP_REARM=0
-# TRAP_POP_DISARM=0: a copy back at a fence leaves the read traps of its pages armed, so the
-# guest's next read still faults (and finds nothing left to flush). Unset (on): the copy back
-# disarms the pages the GPU has not written since; the next GPU write arms them again.
-#EDEN_NX2_TRAP_POP_DISARM=0
+# TRAP_POP_DISARM=1: a copy back at a fence disarms the read traps of its pages the GPU has not
+# written since; the next GPU write arms them again. Unset (off): they stay armed, and the
+# guest's next read of one faults (and finds nothing left to flush). The page protection
+# changes cost the fence thread more than those faults (Mario Kart World: ~0.2 s per 10 s, and
+# reads waited longer for the copies back behind them).
+#EDEN_NX2_TRAP_POP_DISARM=1
 # COPYBACK_WAIT=0: a read trap that finds GPU writes not in guest memory yet always sync flushes
 # (the CPU waits for the GPU thread to reach it and for a new download). Unset (on): when all of
 # them are in copies back already committed at a fence, it waits for those to land instead
