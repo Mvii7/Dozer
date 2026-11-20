@@ -529,13 +529,13 @@ private:
     Common::Event event;
 };
 
-/// Channels suspended on a semaphore acquire. A console channel polls and sees every release;
-/// Eden writes releases in bursts when fences signal and resumes waiters only between command
-/// lists, so an acquire-equal could miss its value. Writes latch the waiters they satisfy.
 /// What wrote the value that latched a waiter (Nx2SemaphoreWaiters::OnWrite; EDEN_NX2_GPU_PROFILE's
 /// acquire wait line).
 enum class Nx2LatchSource : u8 { Other, QmdAdd, QmdMax, QueryFence, Query, Count };
 
+/// Channels suspended on a semaphore acquire. A console channel polls and sees every release;
+/// Eden writes releases in bursts when fences signal and resumes waiters only between command
+/// lists, so an acquire-equal could miss its value. Writes latch the waiters they satisfy.
 class Nx2SemaphoreWaiters {
 public:
     // Puller GpuSemaphoreOperation values.

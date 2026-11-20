@@ -527,45 +527,51 @@ void CountNoDrain(u64 NoDrainStats::*counter) {
 // once the back ran the queued work. Only the last release the front sent to the word decides
 // instead, while the back may not have run it (GpuSplit::NoteSemaphoreWrite: the puller's, the
 // 3D and compute report semaphores, the copy engine's). Port of Lichii's #949.
-AcquireCheck CheckWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcquire& acquire) {
+AcquireCheck CheckWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcquire& acquire,
+                               bool count = true) {
+    const auto note = [count](u64 NoDrainStats::*counter) {
+        if (count) {
+            CountNoDrain(counter);
+        }
+    };
     auto& split = VideoCommon::GpuSplit::Get();
     if (NoDrain() == NoDrainMode::Off) {
         return AcquireCheck::Drain;
     }
     const bool equal = acquire.operation == Peek::OpEqual && NoDrainEqual();
     if (acquire.operation != Peek::OpGequal && !equal) {
-        CountNoDrain(&NoDrainStats::drain_operation);
+        note(&NoDrainStats::drain_operation);
         return AcquireCheck::Drain;
     }
     if (!split.Active() || !split.FrontMacros() || !ReleasesLandAtOnce()) {
-        CountNoDrain(&NoDrainStats::drain_settings);
+        note(&NoDrainStats::drain_settings);
         return AcquireCheck::Drain;
     }
     if (split.UnknownSemaphoreWriteQueued()) {
-        CountNoDrain(&NoDrainStats::drain_unknown);
+        note(&NoDrainStats::drain_unknown);
         return AcquireCheck::Drain;
     }
     // A word the buffer cache may hold newer than memory is read through the back.
     const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address);
     if (!device || Tegra::Nx2IsGpuWritten(*device)) {
-        CountNoDrain(&NoDrainStats::drain_word);
+        note(&NoDrainStats::drain_word);
         return AcquireCheck::Drain;
     }
     if (const auto queued = split.QueuedSemaphoreWriteAt(*device)) {
         // A QMD the front can't read may release the word after it (NVN2's maxima).
         if (equal && queued->launch_after) {
-            CountNoDrain(&NoDrainStats::drain_compute);
+            note(&NoDrainStats::drain_compute);
             return AcquireCheck::Drain;
         }
         if (queued->known && acquire.Matches(queued->payload)) {
             return AcquireCheck::MetByQueued;
         }
-        CountNoDrain(&NoDrainStats::drain_queued);
+        note(&NoDrainStats::drain_queued);
         return AcquireCheck::Drain;
     }
     // Without a queued release the word in memory decides only for the words that only advance.
     if (equal) {
-        CountNoDrain(&NoDrainStats::drain_operation);
+        note(&NoDrainStats::drain_operation);
         return AcquireCheck::Drain;
     }
     return acquire.Matches(dma_pusher.memory_manager.Read<u32>(acquire.address))
@@ -701,16 +707,19 @@ void NoteResume(ResumeHow how, const Puller::PendingAcquire& acquire, const void
     stats.next = next;
 }
 
-} // Anonymous namespace
-
-namespace {
-
 // EDEN_NX2_ACQUIRE_SUSPEND: registers the waiter, then reads the word. False (waiter removed) when
 // memory meets it: a value from before the work still queued may be met by that work no longer,
 // so the drain decides as before.
+// Only where a release lands at once and latches the waiter when the back runs it: not with the
+// releases in fences, a release the front can't see queued, or a word the caches may hold newer.
 bool SuspendUndrainedFor(const void* owner, DmaPusher& dma_pusher, Puller::PendingAcquire& acquire) {
+    auto& split = VideoCommon::GpuSplit::Get();
+    if (NoDrain() == NoDrainMode::Off || !split.Active() || !split.FrontMacros() ||
+        !ReleasesLandAtOnce() || split.UnknownSemaphoreWriteQueued()) {
+        return false;
+    }
     const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address);
-    if (!device) {
+    if (!device || Tegra::Nx2IsGpuWritten(*device)) {
         return false;
     }
     u32* word = reinterpret_cast<u32*>(dma_pusher.memory_manager.GetPointer(acquire.address));
@@ -747,7 +756,10 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         }
     };
     bool valve_passed = false;
-    switch (const AcquireCheck check = CheckWithoutDrain(dma_pusher, *pending_acquire); check) {
+    // A suspended acquire's polls count once, as kept waiting or drained, below.
+    const bool undrained = pending_acquire->undrained;
+    switch (const AcquireCheck check = CheckWithoutDrain(dma_pusher, *pending_acquire, !undrained);
+            check) {
     case AcquireCheck::MetByQueued:
         CountNoDrain(&NoDrainStats::by_queued);
         [[fallthrough]];
@@ -776,10 +788,12 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         break;
     }
     case AcquireCheck::Drain:
-        CountNoDrain(&NoDrainStats::drained);
+        if (!undrained) {
+            CountNoDrain(&NoDrainStats::drained);
+        }
         break;
     }
-    if (pending_acquire->undrained && !valve_passed) {
+    if (undrained && !valve_passed) {
         // A release the back runs latches the waiter, registered before the channel suspended.
         // Anything else (a guest CPU store, a write in the caches) is seen after a drain: at once
         // when memory meets the word, else at most once per 1 ms while the back has nothing left
@@ -796,8 +810,10 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         const bool back_idle = since_drain >= std::chrono::milliseconds{1} &&
                                VideoCommon::GpuSplit::Get().BackCaughtUp();
         if (!word_met && !back_idle && since_drain < std::chrono::milliseconds{8}) {
+            CountNoDrain(&NoDrainStats::polls);
             return false;
         }
+        CountNoDrain(&NoDrainStats::drained);
         pending_acquire->last_drain = now;
     }
     const PeekRead peek = PeekBefore(dma_pusher, pending_acquire->address,
@@ -1023,7 +1039,7 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             CountNoDrain(&NoDrainStats::drain_not_met);
         }
         if (SuspendFirst() && op == GpuSemaphoreOperation::AcquireEqual &&
-            VideoCommon::GpuSplit::Get().Active() && SuspendUndrainedFor(this, dma_pusher, acquire)) {
+            SuspendUndrainedFor(this, dma_pusher, acquire)) {
             CountNoDrain(&NoDrainStats::suspended);
             pending_acquire = acquire;
             VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::AcquireWaits, 1);
