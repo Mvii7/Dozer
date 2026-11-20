@@ -8,10 +8,17 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
-- Shader cache: a cache whose last record was cut off (the emulator crashed or was closed while
-  appending a pipeline) keeps the records before it; before, the whole `vulkan.bin` was deleted
-  and every pipeline was built again. A zero-filled tail no longer crashes the boot load, a record
-  that fails to write is cut back off, and a compute record saved twice is built once.
+- Shader cache (Vulkan and OpenGL): a cache whose last record was cut off (the emulator crashed
+  or was closed while appending a pipeline) keeps the records before it; before, the whole cache
+  file was deleted and every pipeline was built again. A zero-filled tail no longer crashes the
+  boot load, a record that fails to write is cut back off, and a compute record saved twice is
+  built once.
+- GPU thread: an equal semaphore acquire that memory does not meet yet suspends its channel at
+  once instead of first waiting for the split's back to finish its queue
+  (`EDEN_NX2_ACQUIRE_SUSPEND`). The back's release resumes it; other writes are checked after a
+  drain, once per 1 ms while the back is idle and at most every 8 ms otherwise. In Donkey Kong
+  Bananza this removed 80 to 90% of these waits and the deep dips when smashing gold; Mario Kart
+  World is unchanged or slightly smoother. `=0` brings back the drain (Safe).
 - Safe now turns off async read-back too (`EDEN_NX2_ASYNC_READBACK=0`), in the launcher and the
   in-app preset.
 - `EDEN_NX2_WRITTEN_AGE`: two sets of recently written pages instead of three (2 MiB less). With
