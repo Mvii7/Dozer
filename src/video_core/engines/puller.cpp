@@ -744,6 +744,13 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         return true;
     }
     const auto resumed = [&](ResumeHow how) {
+        // A latch means the back ran the release, maybe before the draws sent ahead of it: with
+        // DMA_READ_PEEK=1 the channel's MME DMA reads would not wait for those (flickering rocks
+        // in Bananza).
+        if ((how == ResumeHow::Latched || how == ResumeHow::PeekLatched) &&
+            VideoCommon::Nx2FrontDiag::ReadPeekMode() != 0) {
+            DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerResume);
+        }
         NoteResume(how, *pending_acquire, this);
         return true;
     };
@@ -801,11 +808,6 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         // the back runs other channels' work waited for that work, which the latch already
         // covers (Bananza: ~15% of the GPU thread with a drain every 1 ms).
         if (Nx2SemaphoreWaiters::Get().Latched(this)) {
-            // The release ran, maybe before the draws sent ahead of it: with DMA_READ_PEEK=1 the
-            // channel's MME DMA reads would not wait for those (flickering rocks in Bananza).
-            if (VideoCommon::Nx2FrontDiag::ReadPeekMode() != 0) {
-                DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerResume);
-            }
             return resumed(ResumeHow::Latched);
         }
         const auto now = std::chrono::steady_clock::now();
