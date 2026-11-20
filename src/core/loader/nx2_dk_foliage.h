@@ -4,11 +4,13 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "common/common_types.h"
 #include "core/loader/nx2_dk_quality.h"
@@ -398,6 +400,185 @@ inline bool PatchSceneParam(std::span<u8> archive, const Settings& settings) {
         });
     });
     return changed;
+}
+
+/// Each stage's foliage placed ahead of time (ClusteredRendering/StageData/<stage>/<scenario>
+/// .ProceduralPlacement.byml, big endian BYMLs of every plant's position): the density row thins
+/// these too, in patches.
+constexpr std::string_view PlacementFolder = "ClusteredRendering/StageData";
+constexpr std::string_view PlacementSuffix = ".ProceduralPlacement.byml";
+
+inline bool PlacementsWanted(const Settings& settings) {
+    return !settings.off && settings.density != 0 && settings.density < 100;
+}
+
+namespace Detail {
+
+inline u32 Big32(const Reader& in, size_t offset) {
+    const u32 v = in.U32(offset);
+    return (v >> 24) | ((v >> 8) & 0xFF00U) | ((v << 8) & 0xFF0000U) | (v << 24);
+}
+
+inline void PutBig32(Reader& in, size_t offset, u32 value) {
+    Put(in, offset, (value >> 24) | ((value >> 8) & 0xFF00U) | ((value << 8) & 0xFF0000U) |
+                        (value << 24));
+}
+
+inline float Hash01(s64 x, s64 z, u32 seed) {
+    u64 h = static_cast<u64>(x) * 0x9E3779B97F4A7C15ULL ^ static_cast<u64>(z) * 0xC2B2AE3D27D4EB4FULL ^
+            seed;
+    h ^= h >> 31;
+    h *= 0xBF58476D1CE4E5B9ULL;
+    h ^= h >> 29;
+    return static_cast<float>(h >> 40) / static_cast<float>(1ULL << 24);
+}
+
+/// Smooth noise over the ground, about `PatchSize` units across, so thinning leaves clumps and
+/// bare patches rather than an even thin carpet
+inline float PatchNoise(float x, float z) {
+    constexpr float PatchSize = 8.0f;
+    const float fx = x / PatchSize, fz = z / PatchSize;
+    const float ix = std::floor(fx), iz = std::floor(fz);
+    const float tx = fx - ix, tz = fz - iz;
+    const float sx = tx * tx * (3 - 2 * tx), sz = tz * tz * (3 - 2 * tz);
+    const s64 x0 = static_cast<s64>(ix), z0 = static_cast<s64>(iz);
+    const float a = Hash01(x0, z0, 1), b = Hash01(x0 + 1, z0, 1);
+    const float c = Hash01(x0, z0 + 1, 1), d = Hash01(x0 + 1, z0 + 1, 1);
+    return (a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sz;
+}
+
+} // namespace Detail
+
+/// Keeps `settings.density` % of the plants of a ProceduralPlacement BYML in place: the others are
+/// moved far below the stage and scaled to 0, so the counts the file keeps stay right. Plants on
+/// Money materials (gold) are kept. Returns how many were removed.
+inline size_t PatchPlacement(std::span<u8> file, const Settings& settings) {
+    if (!PlacementsWanted(settings)) {
+        return 0;
+    }
+    Detail::Reader in{file};
+    if (!in.Has(0, 16) || in.data[0] != 'B' || in.data[1] != 'Y') {
+        return 0;
+    }
+    const u32 key_table = Detail::Big32(in, 4);
+    const u32 string_table = Detail::Big32(in, 8);
+    const u32 root = Detail::Big32(in, 12);
+    if (key_table == 0 || root == 0) {
+        return 0;
+    }
+    const auto name_at = [&](u32 table, u32 index) -> std::string_view {
+        if (table == 0 || index >= (Detail::Big32(in, table) & 0xFFFFFF)) {
+            return {};
+        }
+        const size_t start = table + size_t{Detail::Big32(in, table + 4 + size_t{index} * 4)};
+        size_t end = start;
+        while (in.Has(end, 1) && in.data[end] != 0) {
+            ++end;
+        }
+        return in.Has(start, end - start)
+                   ? std::string_view{reinterpret_cast<const char*>(in.data.data()) + start,
+                                      end - start}
+                   : std::string_view{};
+    };
+
+    struct Plant {
+        float x, z, score;
+        size_t y_at, scale_at[3];
+        u32 material;
+    };
+    std::vector<Plant> plants;
+    std::vector<std::string_view> materials;
+    size_t budget = 1u << 22;
+    const auto walk = [&](auto&& self, size_t node, std::string_view parent, int depth) -> void {
+        if (depth > 24 || budget == 0 || !in.Has(node, 4)) {
+            return;
+        }
+        --budget;
+        const u8 type = in.data[node];
+        const u32 count = Detail::Big32(in, node) & 0xFFFFFF;
+        if (type == Detail::TypeArray) {
+            const size_t values = node + 4 + (size_t{count} + 3) / 4 * 4;
+            for (u32 i = 0; i < count && in.Has(values + size_t{i} * 4, 4); ++i) {
+                const u8 element = in.data[node + 4 + i];
+                const u32 value = Detail::Big32(in, values + size_t{i} * 4);
+                if (element == Detail::TypeDict || element == Detail::TypeArray) {
+                    self(self, value, parent, depth + 1);
+                } else if (element == 0xA0 && parent == "ReferencedMaterials") {
+                    materials.push_back(name_at(string_table, value));
+                }
+            }
+            return;
+        }
+        if (type != Detail::TypeDict) {
+            return;
+        }
+        Plant plant{0, 0, 0, 0, {0, 0, 0}, ~0U};
+        bool has_x = false, has_z = false;
+        for (u32 i = 0; i < count && in.Has(node + 4 + size_t{i} * 8, 8); ++i) {
+            const size_t entry = node + 4 + size_t{i} * 8;
+            const u32 head = Detail::Big32(in, entry);
+            const u8 entry_type = static_cast<u8>(head & 0xFF);
+            const std::string_view key = name_at(key_table, head >> 8);
+            const size_t at = entry + 4;
+            if (entry_type == Detail::TypeDict || entry_type == Detail::TypeArray) {
+                self(self, Detail::Big32(in, at), key, depth + 1);
+                continue;
+            }
+            if (parent != "Posture") {
+                continue;
+            }
+            if (entry_type == Detail::TypeFloat) {
+                const float value = Detail::AsFloat(Detail::Big32(in, at));
+                if (key == "X") {
+                    plant.x = value;
+                    has_x = true;
+                } else if (key == "Z") {
+                    plant.z = value;
+                    has_z = true;
+                } else if (key == "Y") {
+                    plant.y_at = at;
+                } else if (key == "SX" || key == "SY" || key == "SZ") {
+                    plant.scale_at[key[1] - 'X'] = at;
+                }
+            } else if (key == "ReferencedMaterialIndex" &&
+                       (entry_type == Detail::TypeInt || entry_type == Detail::TypeUInt)) {
+                plant.material = Detail::Big32(in, at);
+            }
+        }
+        if (parent == "Posture" && has_x && has_z && plant.y_at != 0) {
+            plants.push_back(plant);
+        }
+    };
+    walk(walk, root, {}, 0);
+
+    // Each plant's place in the patches, with a little of its own so patch edges are not sharp
+    std::vector<Plant*> thinned;
+    for (auto& plant : plants) {
+        if (plant.material < materials.size() && materials[plant.material].starts_with("Money")) {
+            continue;
+        }
+        plant.score = 0.8f * Detail::PatchNoise(plant.x, plant.z) +
+                      0.2f * Detail::Hash01(static_cast<s64>(plant.x * 16.0f),
+                                            static_cast<s64>(plant.z * 16.0f), 2);
+        thinned.push_back(&plant);
+    }
+    const size_t keep = thinned.size() * static_cast<size_t>(settings.density) / 100;
+    if (keep >= thinned.size()) {
+        return 0;
+    }
+    std::nth_element(thinned.begin(), thinned.begin() + static_cast<std::ptrdiff_t>(keep),
+                     thinned.end(), [](const Plant* a, const Plant* b) { return a->score < b->score; });
+    for (auto it = thinned.begin() + static_cast<std::ptrdiff_t>(keep); it != thinned.end(); ++it) {
+        const Plant& plant = **it;
+        const float y = Detail::AsFloat(Detail::Big32(in, plant.y_at));
+        Detail::PutBig32(in, plant.y_at, Detail::AsBits(y - 10000.0f));
+        for (const size_t at : plant.scale_at) {
+            if (at != 0) {
+                Detail::PutBig32(in, at, Detail::AsBits(0.0f));
+            }
+        }
+    }
+    return thinned.size() - keep;
 }
 
 } // namespace Loader::Nx2DkFoliage

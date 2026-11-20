@@ -232,8 +232,10 @@ void ConfigureBananza::RetranslateUI() {
            "foliage outside the picture, but it may pop in at the edges when turning.")};
     texts[Quality::FoliageDensity] = {
         tr("Foliage placement density"),
-        tr("Scales the chance and the rate of the foliage the game places while you play. "
-           "Foliage already placed in the stage's data is not changed (use the cap for that).")};
+        tr("Thins the grass and plants each stage places ahead of time, in patches: the rest "
+           "keeps its look, with bare ground between clumps instead of an even carpet. Also "
+           "scales the chance and the rate of the foliage the game places while you play. "
+           "Needs a restart.")};
     texts[Quality::FoliageFarClip] = {
         tr("Foliage draw distance"),
         tr("Scales how far each foliage model (grass, flowers, plants, rocks) is drawn, from its "

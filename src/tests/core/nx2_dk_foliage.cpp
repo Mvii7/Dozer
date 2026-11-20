@@ -287,3 +287,147 @@ TEST_CASE("Nx2DkFoliage: object clipping in every stage", "[core]") {
     REQUIRE(Read32(scene, root + 8 + 4) == 1);
     REQUIRE(Read32(scene, root + 16 + 4) == 4000); // the draw buffer only with the cap
 }
+
+namespace {
+
+// A big endian ProceduralPlacement-like BYML: root {ReferencedMaterials: ["Grass050",
+// "Money000"], Posture: [plants]}, each plant {X, Y, Z, SX, ReferencedMaterialIndex}.
+struct BigPlant {
+    float x, y, z;
+    u32 material;
+};
+
+void PutBig(std::vector<u8>& out, u32 value) {
+    out.insert(out.end(), {static_cast<u8>(value >> 24), static_cast<u8>(value >> 16),
+                           static_cast<u8>(value >> 8), static_cast<u8>(value)});
+}
+
+u32 ReadBig(const std::vector<u8>& data, size_t at) {
+    return u32{data[at]} << 24 | u32{data[at + 1]} << 16 | u32{data[at + 2]} << 8 | data[at + 3];
+}
+
+void PutTable(std::vector<u8>& out, const std::vector<std::string>& names) {
+    PutBig(out, 0xC2000000U | static_cast<u32>(names.size()));
+    u32 offset = 4 + 4 * static_cast<u32>(names.size() + 1);
+    for (const auto& name : names) {
+        PutBig(out, offset);
+        offset += static_cast<u32>(name.size() + 1);
+    }
+    PutBig(out, offset);
+    for (const auto& name : names) {
+        out.insert(out.end(), name.begin(), name.end());
+        out.push_back(0);
+    }
+    while (out.size() % 4 != 0) {
+        out.push_back(0);
+    }
+}
+
+// Keys sorted as a BYML wants them
+const std::vector<std::string> PlacementKeys{"Posture", "ReferencedMaterialIndex",
+                                             "ReferencedMaterials", "SX", "X", "Y", "Z"};
+
+std::vector<u8> Placement(const std::vector<BigPlant>& plants) {
+    std::vector<u8> out{'B', 'Y', 0, 4};
+    PutBig(out, 16);
+    PutBig(out, 0); // strings, below
+    PutBig(out, 0); // root, below
+    PutTable(out, PlacementKeys);
+    const u32 strings = static_cast<u32>(out.size());
+    PutTable(out, {"Grass050", "Money000"});
+    const auto key = [](std::string_view name) {
+        for (size_t i = 0; i < PlacementKeys.size(); ++i) {
+            if (PlacementKeys[i] == name) {
+                return static_cast<u32>(i) << 8;
+            }
+        }
+        return 0U;
+    };
+    const u32 root = static_cast<u32>(out.size());
+    const u32 materials = root + 4 + 2 * 8;
+    const u32 postures = materials + 4 + 4 + 2 * 4;
+    const u32 first_plant = postures + 4 + (static_cast<u32>(plants.size()) + 3) / 4 * 4 +
+                            4 * static_cast<u32>(plants.size());
+    PutBig(out, 0xC1000002U);
+    PutBig(out, key("Posture") | 0xC0);
+    PutBig(out, postures);
+    PutBig(out, key("ReferencedMaterials") | 0xC0);
+    PutBig(out, materials);
+    PutBig(out, 0xC0000002U);
+    out.insert(out.end(), {0xA0, 0xA0, 0, 0});
+    PutBig(out, 0);
+    PutBig(out, 1);
+    PutBig(out, 0xC0000000U | static_cast<u32>(plants.size()));
+    for (size_t i = 0; i < plants.size(); ++i) {
+        out.push_back(0xC1);
+    }
+    while (out.size() % 4 != 0) {
+        out.push_back(0);
+    }
+    constexpr u32 PlantSize = 4 + 5 * 8;
+    for (size_t i = 0; i < plants.size(); ++i) {
+        PutBig(out, first_plant + static_cast<u32>(i) * PlantSize);
+    }
+    for (const auto& plant : plants) {
+        PutBig(out, 0xC1000005U);
+        PutBig(out, key("ReferencedMaterialIndex") | 0xD1);
+        PutBig(out, plant.material);
+        PutBig(out, key("SX") | 0xD2);
+        PutBig(out, Bits(1.0f));
+        PutBig(out, key("X") | 0xD2);
+        PutBig(out, Bits(plant.x));
+        PutBig(out, key("Y") | 0xD2);
+        PutBig(out, Bits(plant.y));
+        PutBig(out, key("Z") | 0xD2);
+        PutBig(out, Bits(plant.z));
+    }
+    out[8] = static_cast<u8>(strings >> 24);
+    out[9] = static_cast<u8>(strings >> 16);
+    out[10] = static_cast<u8>(strings >> 8);
+    out[11] = static_cast<u8>(strings);
+    out[12] = static_cast<u8>(root >> 24);
+    out[13] = static_cast<u8>(root >> 16);
+    out[14] = static_cast<u8>(root >> 8);
+    out[15] = static_cast<u8>(root);
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("Nx2DkFoliage: the foliage placed in a stage thinned in patches", "[core]") {
+    std::vector<BigPlant> plants;
+    for (int i = 0; i < 100; ++i) {
+        plants.push_back({static_cast<float>(i % 10) * 2.5f, 5.0f,
+                          static_cast<float>(i / 10) * 2.5f, i < 90 ? 0U : 1U});
+    }
+    const auto game = Placement(plants);
+    Settings settings;
+    settings.density = 100; // the game's
+    auto file = game;
+    REQUIRE_FALSE(PlacementsWanted(settings));
+    REQUIRE(PatchPlacement(file, settings) == 0);
+    settings.density = 40;
+    settings.off = true; // foliage off has its own way
+    REQUIRE(PatchPlacement(file, settings) == 0);
+    REQUIRE(file == game);
+    settings.off = false;
+    REQUIRE(PlacementsWanted(settings));
+    REQUIRE(PatchPlacement(file, settings) == 54); // 60% of the 90 on grass
+    REQUIRE(file.size() == game.size());
+
+    const size_t first = file.size() - plants.size() * 44;
+    size_t moved = 0;
+    for (size_t i = 0; i < plants.size(); ++i) {
+        const size_t plant = first + i * 44;
+        const float y = Detail::AsFloat(ReadBig(file, plant + 4 + 3 * 8 + 4));
+        if (y < -5000.0f) {
+            ++moved;
+            REQUIRE(i < 90); // the gold is kept
+            REQUIRE(ReadBig(file, plant + 4 + 8 + 4) == Bits(0.0f));
+        } else {
+            REQUIRE(y == 5.0f);
+            REQUIRE(ReadBig(file, plant + 4 + 8 + 4) == Bits(1.0f));
+        }
+    }
+    REQUIRE(moved == 54);
+}

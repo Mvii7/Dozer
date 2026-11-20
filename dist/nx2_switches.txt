@@ -352,7 +352,9 @@
 # FOLIAGE_CAP=<1-100>: the most foliage models drawn and kept alive at once, in % of the game's
 # (25000 and 50000) and each stage's own draw buffer (Pack/SceneParam's DrawBufferSize, 1200-6000).
 # FOLIAGE_FRUSTUM_OFF=1: no extra view margin for foliage (the game's: 50%).
-# FOLIAGE_DENSITY=<1-100>: the chance and rate of the foliage placed while playing, in %.
+# FOLIAGE_DENSITY=<1-100>: the foliage each stage places ahead of time (ClusteredRendering/
+# StageData/*.ProceduralPlacement.byml), thinned to this % in patches, and the chance and rate
+# of the foliage placed while playing, in %.
 # These three change the game's ClusteredRendering settings files as the RomFS is read (a mod
 # layer made in memory; nothing is written to disk), so they work only with the game's RomFS.
 #EDEN_NX2_DKQ_FOLIAGE_CAP=100

@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
+#include <mutex>
 
 #include "common/assert.h"
 #include "common/hex_util.h"
@@ -41,6 +42,63 @@ namespace FileSys {
 namespace {
 
 constexpr u32 SINGLE_BYTE_MODULUS = 0x100;
+
+// A stage's ProceduralPlacement file thinned by the foliage density row, patched when the game
+// reads it (there are some 170, 315 MB in all) and let go once read to the end.
+class FoliagePlacementFile : public VfsFile {
+public:
+    FoliagePlacementFile(VirtualFile base_, Loader::Nx2DkFoliage::Settings settings_)
+        : base{std::move(base_)}, settings{settings_} {}
+
+    std::string GetName() const override {
+        return base->GetName();
+    }
+    std::size_t GetSize() const override {
+        return base->GetSize();
+    }
+    bool Resize(std::size_t) override {
+        return false;
+    }
+    VirtualDir GetContainingDirectory() const override {
+        return nullptr;
+    }
+    bool IsWritable() const override {
+        return false;
+    }
+    bool IsReadable() const override {
+        return true;
+    }
+    std::size_t Read(u8* out, std::size_t length, std::size_t offset) const override {
+        std::scoped_lock lock{mutex};
+        if (data.empty()) {
+            data = base->ReadAllBytes();
+            const size_t removed = Loader::Nx2DkFoliage::PatchPlacement(data, settings);
+            LOG_INFO(Loader, "Donkey Kong Bananza: {} of the foliage placed in {} thinned out",
+                     removed, base->GetName());
+        }
+        if (offset >= data.size()) {
+            return 0;
+        }
+        const std::size_t read = std::min(length, data.size() - offset);
+        std::memcpy(out, data.data() + offset, read);
+        if (offset + read == data.size()) {
+            std::vector<u8>{}.swap(data);
+        }
+        return read;
+    }
+    std::size_t Write(const u8*, std::size_t, std::size_t) override {
+        return 0;
+    }
+    bool Rename(std::string_view) override {
+        return false;
+    }
+
+private:
+    VirtualFile base;
+    Loader::Nx2DkFoliage::Settings settings;
+    mutable std::mutex mutex;
+    mutable std::vector<u8> data;
+};
 
 // A layer with Donkey Kong Bananza's foliage and effect settings as the Quality tab and the Tuning
 // tab's Foliage off box change them, made from the game's own files (core/loader/nx2_dk_foliage.h).
@@ -82,6 +140,20 @@ VirtualDir MakeFoliageLayer(const VirtualDir& extracted) {
                     patch(std::string{Loader::Nx2DkFoliage::SceneParamFolder} + "/" +
                               scene->GetName(),
                           Loader::Nx2DkFoliage::PatchSceneParam, 3);
+                }
+            }
+        }
+    }
+    if (Loader::Nx2DkFoliage::PlacementsWanted(settings)) {
+        if (const auto stages =
+                extracted->GetDirectoryRelative(Loader::Nx2DkFoliage::PlacementFolder)) {
+            for (const auto& stage : stages->GetSubdirectories()) {
+                for (const auto& file : stage->GetFiles()) {
+                    if (file->GetName().ends_with(Loader::Nx2DkFoliage::PlacementSuffix)) {
+                        files.emplace_back(std::string{Loader::Nx2DkFoliage::PlacementFolder} +
+                                               "/" + stage->GetName(),
+                                           std::make_shared<FoliagePlacementFile>(file, settings));
+                    }
                 }
             }
         }
