@@ -397,8 +397,10 @@ struct GPU::Impl {
                      reads.load(std::memory_order_relaxed));
         }
         const s64 flush_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
-        const s64 budget_ns =
-            VideoCommon::Nx2ReadBudget::Enabled() ? VideoCommon::Nx2ReadBudget::NowNs() : 0;
+        // Only a read-trapped buffer flush counts against the read trap budget.
+        const s64 budget_ns = raster_area.read_trap && VideoCommon::Nx2ReadBudget::Enabled()
+                                  ? VideoCommon::Nx2ReadBudget::NowNs()
+                                  : 0;
         const u64 area_size = raster_area.end_address - raster_area.start_address;
         // EDEN_NX2_ASYNC_READBACK: the GPU thread submits buffer downloads without waiting for
         // the host GPU; this thread waits for them, then writes them (EDEN_NX2_READER_LANDING;
