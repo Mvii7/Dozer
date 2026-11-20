@@ -1591,16 +1591,16 @@ void BufferCache<P>::PopAsyncBuffers() {
     if (stats) [[unlikely]] {
         // Whether merging copies would leave fewer: the ones next to the previous copy.
         u64 adjacent = 0;
-        u64 near = 0;
+        u64 close_by = 0;
         for (size_t i = 1; i < downloads.size(); ++i) {
             const u64 prev_end = downloads[i - 1].src_offset + downloads[i - 1].size;
             const u64 start = downloads[i].src_offset;
             adjacent += start == prev_end ? 1 : 0;
-            near += start > prev_end && start - prev_end < Core::DEVICE_PAGESIZE ? 1 : 0;
+            close_by += start > prev_end && start - prev_end < Core::DEVICE_PAGESIZE ? 1 : 0;
         }
         Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::PopCopies, downloads.size());
         Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::PopCopiesAdjacent, adjacent);
-        Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::PopCopiesNear, near);
+        Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::PopCopiesNear, close_by);
     }
     part(Common::Nx2Reactive::Counter::PopWriteNs);
     if (ReadTrapsActive() && Nx2Reactive::TrapPopDisarm()) {
