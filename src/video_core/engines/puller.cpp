@@ -452,6 +452,17 @@ bool SuspendFirst() {
     return enabled;
 }
 
+// EDEN_NX2_ACQUIRE_SUSPEND_GEQUAL=1 (with ACQUIRE_SUSPEND): a greater-or-equal acquire memory does
+// not meet suspends the same way instead of draining. In Donkey Kong Bananza ~30 a second wait so
+// for a compute dispatch still queued, all met after the drain (16% of the GPU thread).
+bool SuspendGequal() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_ACQUIRE_SUSPEND_GEQUAL");
+        return SuspendFirst() && value != nullptr && value[0] == '1';
+    }();
+    return enabled;
+}
+
 // Whether the back writes a payload release to memory when it runs it: below High GPU accuracy,
 // with fences that run their operations at once (FenceManager::SignalFence).
 bool ReleasesLandAtOnce() {
@@ -783,6 +794,10 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
             CountNoDrain(&NoDrainStats::passed);
             return resumed(ResumeHow::Latched);
         }
+        if (undrained) {
+            // Suspended (ACQUIRE_SUSPEND_GEQUAL): drains as below, not by the valve.
+            break;
+        }
         const auto now = std::chrono::steady_clock::now();
         if (now - pending_acquire->last_drain < std::chrono::milliseconds{1}) {
             CountNoDrain(&NoDrainStats::polls);
@@ -1033,8 +1048,8 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             PeekSkipped();
             return;
         }
-        if (const AcquireCheck check = CheckWithoutDrain(dma_pusher, acquire);
-            check == AcquireCheck::Met || check == AcquireCheck::MetByQueued) {
+        const AcquireCheck check = CheckWithoutDrain(dma_pusher, acquire);
+        if (check == AcquireCheck::Met || check == AcquireCheck::MetByQueued) {
             if (check == AcquireCheck::MetByQueued) {
                 CountNoDrain(&NoDrainStats::by_queued);
             }
@@ -1045,8 +1060,11 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
         } else if (check == AcquireCheck::NotMet) {
             CountNoDrain(&NoDrainStats::drain_not_met);
         }
-        if (SuspendFirst() && op == GpuSemaphoreOperation::AcquireEqual &&
-            SuspendUndrainedFor(this, dma_pusher, acquire)) {
+        if (const bool suspend = op == GpuSemaphoreOperation::AcquireEqual
+                                     ? SuspendFirst()
+                                     : op == GpuSemaphoreOperation::AcquireGequal &&
+                                           check == AcquireCheck::NotMet && SuspendGequal();
+            suspend && SuspendUndrainedFor(this, dma_pusher, acquire)) {
             CountNoDrain(&NoDrainStats::suspended);
             pending_acquire = acquire;
             VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::AcquireWaits, 1);

@@ -138,6 +138,9 @@
 # the back is idle, once per 8 ms while it runs other work, at once when memory meets the word.
 # With GPU_PROFILE=1 the "Acquires without a drain" line counts them ("suspended without a drain").
 #EDEN_NX2_ACQUIRE_SUSPEND=0
+# ACQUIRE_SUSPEND_GEQUAL=1: a greater-or-equal acquire memory does not meet suspends the same way
+# instead of draining the back first (experimental, off; needs ACQUIRE_SUSPEND on).
+#EDEN_NX2_ACQUIRE_SUSPEND_GEQUAL=1
 # HLE_INDIRECT=0: run NVN's indexed indirect draw macro as it is, reading its records on the
 # CPU (default: one host indirect draw from the GPU-written records).
 #EDEN_NX2_HLE_INDIRECT=0

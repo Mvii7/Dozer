@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_ACQUIRE_SUSPEND_GEQUAL=1` (experimental, off): a greater-or-equal semaphore acquire
+  that memory does not meet yet suspends its channel as equal ones do, instead of waiting for
+  the split's back. In Donkey Kong Bananza about 30 a second waited so for a compute dispatch
+  still queued, 16% of the GPU thread while smashing gold.
 - MME DMA reads drain the split's back again by default (`EDEN_NX2_DMA_READ_PEEK`, now `=1` to
   go on without one). With `EDEN_NX2_ACQUIRE_SUSPEND` a channel the latch resumes may read
   before the back ran the draws sent ahead of the release, and the peek let such reads go on:
