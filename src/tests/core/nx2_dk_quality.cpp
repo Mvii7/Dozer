@@ -501,6 +501,12 @@ TEST_CASE("Nx2DkQuality: the foliage draw distance's default", "[core]") {
     float now;
     std::memcpy(&now, bytes.data() + DefaultAt, sizeof(now));
     REQUIRE(now == 40.0f);
+    // A distance past the default leaves it
+    std::memcpy(bytes.data() + DefaultAt, &game, sizeof(game));
+    REQUIRE(Apply(bytes, TextSize, AlignedSize, Only(FoliageFarClip, 300))[FoliageFarClip] ==
+            State::Applied);
+    std::memcpy(&now, bytes.data() + DefaultAt, sizeof(now));
+    REQUIRE(now == 100.0f);
 
     // Not the game's default there: left alone
     Text other;

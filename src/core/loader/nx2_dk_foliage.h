@@ -28,7 +28,7 @@ struct Settings {
     bool frustum_off = false;
     int density = 0;      ///< % of the dynamic placements, 0: the game's
     bool off = false;     ///< no foliage at all (the Tuning tab's Foliage off box)
-    int far_clip = 0;     ///< % of each model's far clip distance
+    int far_clip = 0;     ///< the most any foliage model is drawn to, in units
     int emit = 0;         ///< % of the effects started per frame
     int particles = 0;    ///< % of the particles in one emitter
     int alive = 0;        ///< % of the effects alive per effect rule
@@ -268,8 +268,9 @@ inline bool PatchMaterialSettings(std::span<u8> archive, const Settings& setting
     return changed;
 }
 
-/// Scales each model's FarClipDistance of a decompressed ClusteredRendering/ModelSettings archive
-/// in place. Returns whether it changed anything.
+/// Brings each model's FarClipDistance of a decompressed ClusteredRendering/ModelSettings archive
+/// down to the foliage distance in place (one line where all foliage ends, whatever each model's
+/// own distance). Returns whether it changed anything.
 inline bool PatchModelSettings(std::span<u8> archive, const Settings& settings) {
     if (settings.far_clip == 0 && !settings.off) {
         return false;
@@ -278,23 +279,13 @@ inline bool PatchModelSettings(std::span<u8> archive, const Settings& settings) 
     bool changed = false;
     Detail::ForEachSarcFile(in, [&](size_t base) {
         Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
-            if (type != Detail::TypeFloat) {
+            if (type != Detail::TypeFloat || key != "FarClipDistance") {
                 return;
             }
-            int percent = 0;
-            if (key == "FarClipDistance") {
-                if (settings.off) {
-                    // A distance of nothing: not 0, which might be divided by
-                    Detail::Put(in, at, Detail::AsBits(0.01f));
-                    changed = true;
-                    return;
-                }
-                percent = settings.far_clip;
-            }
-            if (percent != 0) {
-                Detail::Put(in, at,
-                            Detail::AsBits(Detail::AsFloat(in.U32(at)) *
-                                           static_cast<float>(percent) / 100.0f));
+            // Off: a distance of nothing, not 0, which might be divided by
+            const float limit = settings.off ? 0.01f : static_cast<float>(settings.far_clip);
+            if (Detail::AsFloat(in.U32(at)) > limit) {
+                Detail::Put(in, at, Detail::AsBits(limit));
                 changed = true;
             }
         });

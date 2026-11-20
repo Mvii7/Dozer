@@ -238,10 +238,10 @@ void ConfigureBananza::RetranslateUI() {
            "Needs a restart.")};
     texts[Quality::FoliageFarClip] = {
         tr("Foliage draw distance"),
-        tr("Scales how far each foliage model (grass, flowers, plants, rocks) is drawn, from its "
-           "own distance in the game's data (80 to 700 units), or the game's default of 100 for "
-           "the models without one (about a third of the foliage). Lower: foliage ends closer to "
-           "you but stays near you; 1% is about no foliage. "
+        tr("The farthest any foliage (grass, flowers, plants, rocks) is drawn, in units. Each "
+           "model has its own distance in the game's data (80 to 700 units; 100 for the ones "
+           "without one); those beyond this one are brought down to it, so all foliage ends at "
+           "the same line instead of the bigger plants reaching three times as far as the grass. "
            "Needs a restart.")};
     texts[Quality::EffectEmitCap] = {
         tr("Effects started per frame"),
@@ -331,6 +331,9 @@ void ConfigureBananza::ShowValue(std::size_t index) {
         break;
     case Quality::NonClipDistance:
         text = on ? tr("%1 units").arg(value * 10) : tr("never");
+        break;
+    case Quality::FoliageFarClip:
+        text = on ? tr("%1 units").arg(value) : tr("each model's own");
         break;
     case Quality::RadialBlurSamples:
     case Quality::ShadowCascades:

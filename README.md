@@ -257,7 +257,7 @@ starts, so a change asks for a restart like the Tuning tab's boxes. The settings
 | Pre-pass light off | on | Skips the pre-pass light. (for testing; may crash) |
 | Foliage models at once | 100% | scales the most grass, weeds and plants drawn and kept alive at once (the game's caps are 25000 and 50000, and each stage's own draw buffer of 1200-6000, which is the limit a stage draws with); changes the game's settings files as the RomFS is read |
 | Foliage view margin off | on | removes the extra margin around the view for foliage; it may pop in when turning |
-| Foliage draw distance | 100% | scales how far each foliage model (grass, flowers, plants) is drawn from the distance in the game's data (80-700 units), and the game's default of 100 for the models without one: foliage stays near you and ends sooner; 1% is about none |
+| Foliage draw distance | each model's own | the farthest any foliage is drawn, in units (20-700): each model's own distance (80-700, or the game's default of 100) above it is brought down to it, so all foliage ends at the same line |
 | Foliage placement density | 100% | thins the grass and plants each stage places ahead of time, in patches (bare ground between clumps), and scales the chance and rate of the foliage placed while playing |
 | Effects started per frame / Particles per emitter | 156 / 512 | scales the most effects the game starts in a frame and the most particles in one emitter (dust, debris, sparks); in the game's effect settings files as they are read |
 | Effect starts / Emitter particles / Alive effects / Terrain material effects off | off | one box per effect cap; ticked sets that cap to 1 (the game's: 156 / 512 / 64 / its own); something that expects an effect may break |

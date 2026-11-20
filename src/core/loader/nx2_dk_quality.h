@@ -60,7 +60,7 @@ enum Id : size_t {
     FoliageCap,        ///< foliage models drawn / kept alive at once, % (ClusteredRendering)
     FoliageFrustumOff, ///< foliage frustum expansion set to 0
     FoliageDensity,    ///< foliage dynamic placement chance and rate, %
-    FoliageFarClip,    ///< each foliage model's FarClipDistance, % of the game's
+    FoliageFarClip,    ///< the most any foliage model is drawn to, in units
     EffectEmitCap,     ///< EmitCountPerFrameMax (effects started per frame), % of the game's
     EffectParticleCap, ///< OneEmitterMaxParticleNum, % of the game's
     EffectAliveCap,    ///< the MaxAliveEffectsNum of the effect rules, % of the game's
@@ -121,7 +121,7 @@ inline constexpr std::array<Knob, Count> Knobs{{
     {"foliage_cap", "EDEN_NX2_DKQ_FOLIAGE_CAP", 1, 100, 100},
     {"foliage_frustum_off", "EDEN_NX2_DKQ_FOLIAGE_FRUSTUM_OFF", 1, 1, 0},
     {"foliage_density", "EDEN_NX2_DKQ_FOLIAGE_DENSITY", 1, 100, 100},
-    {"foliage_far_clip", "EDEN_NX2_DKQ_FOLIAGE_FAR_CLIP", 1, 100, 100},
+    {"foliage_distance", "EDEN_NX2_DKQ_FOLIAGE_DISTANCE", 20, 700, 700},
     {"effect_emit_cap", "EDEN_NX2_DKQ_EFFECT_EMIT_CAP", 5, 100, 100},
     {"effect_particle_cap", "EDEN_NX2_DKQ_EFFECT_PARTICLE_CAP", 5, 100, 100},
     {"effect_alive_cap", "EDEN_NX2_DKQ_EFFECT_ALIVE_CAP", 5, 100, 100},
@@ -735,7 +735,8 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
     }
 
     // Foliage draw distance: the models without a FarClipDistance of their own (174 of 418,
-    // a third of the placed foliage) take the reader's default, 100 in the read-only data:
+    // a third of the placed foliage) take the reader's default, 100 in the read-only data, which
+    // goes down to the distance like the others:
     //   adrp x9, "FarClipDistance"; add x9, x9, ...; 5 words; adrp x8, default; add x8, x8, ...
     if (set(FoliageFarClip) != 0) {
         constexpr std::string_view Name{"FarClipDistance", sizeof("FarClipDistance")};
@@ -777,7 +778,7 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
             }
         }
         if (found == 1) {
-            const float distance = GameDefault * static_cast<float>(set(FoliageFarClip)) / 100.0f;
+            const float distance = std::min(GameDefault, static_cast<float>(set(FoliageFarClip)));
             std::memcpy(code + at, &distance, sizeof(distance));
             result[FoliageFarClip] = State::Applied;
         }

@@ -190,16 +190,18 @@ TEST_CASE("Nx2DkFoliage: the material effect caps", "[core]") {
     REQUIRE(Read32(archive, root + 8 + 4) == Bits(30.0f));
 }
 
-TEST_CASE("Nx2DkFoliage: the models' far clip", "[core]") {
+TEST_CASE("Nx2DkFoliage: the models' far clip down to the foliage distance", "[core]") {
     auto archive = Sarc(Byml({{"FarClipDistance", 0xD2, Bits(200.0f)},
                               {"LodThreshold0", 0xD2, Bits(0.1f)},
                               {"NearClipDistance", 0xD2, Bits(9.0f)}}));
     Settings settings;
     REQUIRE_FALSE(PatchModelSettings(archive, settings));
-    settings.far_clip = 50;
+    settings.far_clip = 300; // past the model's own: left alone
+    REQUIRE_FALSE(PatchModelSettings(archive, settings));
+    settings.far_clip = 120;
     REQUIRE(PatchModelSettings(archive, settings));
     const size_t root = 0x60 + Read32(archive, 12 + 0x60) + 4;
-    REQUIRE(Read32(archive, root + 4) == Bits(100.0f));
+    REQUIRE(Read32(archive, root + 4) == Bits(120.0f));
     REQUIRE(Read32(archive, root + 8 + 4) == Bits(0.1f));  // the LOD thresholds are left alone
     REQUIRE(Read32(archive, root + 16 + 4) == Bits(9.0f)); // and the near clip
 }
