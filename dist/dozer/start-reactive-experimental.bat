@@ -113,6 +113,7 @@ rem Game FPS, display FPS and speed in RivaTuner Statistics Server's overlay (OS
 set EDEN_NX2_OSD=%OSD%
 rem Read traps off (with reactive flushing on they already do nothing).
 set EDEN_NX2_READ_TRAPS=0
+set EDEN_NX2_READ_TRAP_BUDGET_US=
 rem Reactive flushing: Bananza's opening renders into one image instead of a copy per draw
 rem (needs barrier_feedback_loops=true in the config); 3 keeps the render pass going with a
 rem barrier inside it, 1 ends it (slower). Do not add RX_MASKED_TARGETS (known defect) or

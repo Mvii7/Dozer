@@ -244,6 +244,11 @@ TEST_CASE("Nx2PerfSettings: a box changed by hand makes it Custom", "[core]") {
         old.Write(FromPreset(preset, Performance()));
         old.values.erase("read_traps");
         REQUIRE(old.Read() == FromPreset(preset, Performance()));
+        // The same for a file from before read_trap_budget: Safe keeps it off.
+        Ini before_budget;
+        before_budget.Write(FromPreset(preset, Performance()));
+        before_budget.values.erase("read_trap_budget");
+        REQUIRE(before_budget.Read() == FromPreset(preset, Performance()));
     }
     Ini stored_performance;
     stored_performance.preset = static_cast<int>(Preset::Performance);
@@ -267,17 +272,19 @@ TEST_CASE("Nx2PerfSettings: presets set the launchers' variables", "[core]") {
     for (const Game game : {Game::Bananza, Game::MarioKartWorld, Game::Other}) {
         const auto safe = Wanted(AllOff(), game);
         const auto own = GameVars(game);
-        REQUIRE(safe.size() == own.size() + SafeOff.size() + 1);
+        REQUIRE(safe.size() == own.size() + SafeOff.size() + 2);
         REQUIRE(std::vector<Var>(safe.begin(), safe.begin() + own.size()) == own);
         REQUIRE(safe[own.size()] == Var{"EDEN_NX2_READ_TRAPS", "0"});
+        REQUIRE(safe[own.size() + 1] == Var{"EDEN_NX2_READ_TRAP_BUDGET_US", "0"});
         for (std::size_t i = 0; i < SafeOff.size(); ++i) {
-            REQUIRE(safe[own.size() + 1 + i] == Var{SafeOff[i], "0"});
+            REQUIRE(safe[own.size() + 2 + i] == Var{SafeOff[i], "0"});
         }
     }
-    // Custom with everything off sets read traps off only; Custom with the boxes on: only the
-    // boxes' (read traps on sets nothing for that switch).
+    // Custom with everything off sets read traps and their budget off only; Custom with the boxes
+    // on: only the boxes' (read traps on sets nothing for that switch).
     auto only_traps = BananzaVars;
     only_traps.push_back({"EDEN_NX2_READ_TRAPS", "0"});
+    only_traps.push_back({"EDEN_NX2_READ_TRAP_BUDGET_US", "0"});
     REQUIRE(Wanted(Custom(AllOff()), Game::Bananza) == only_traps);
     REQUIRE(Wanted(Custom(Performance()), Game::Bananza) == BalancedBananza);
 }
@@ -366,9 +373,9 @@ TEST_CASE("Nx2PerfSettings: a variable set outside the program wins", "[core]") 
     off.jit_same = false;
     REQUIRE(Plan(AfterBoxChange(off), Game::Bananza, is_outside) == plan);
 
-    // Safe's shortcuts set outside: theirs too.
+    // Safe's shortcuts set outside: theirs too (READ_TRAPS and READ_TRAP_BUDGET_US =0 besides).
     const auto light = [](std::string_view name) { return name == "EDEN_NX2_LIGHT_DRAW"; };
-    REQUIRE(Plan(AllOff(), Game::Bananza, light).size() == SafeOff.size() + BananzaVars.size());
+    REQUIRE(Plan(AllOff(), Game::Bananza, light).size() == SafeOff.size() + 1 + BananzaVars.size());
 
     // Everything set outside: nothing to set.
     REQUIRE(Plan(Performance(), Game::Bananza, [](std::string_view) { return true; }).empty());
@@ -518,7 +525,7 @@ TEST_CASE("Nx2PerfSettings: a game's own boxes go over the global ones", "[core]
 TEST_CASE("Nx2PerfSettings: a game's overrides read back what was written", "[core]") {
     Overrides overrides;
     overrides.boxes[0] = true;
-    overrides.boxes[3] = false;
+    overrides.boxes[4] = false;
     overrides.boxes[KeyCount - 1] = true;
     overrides.preset = Preset::Safe;
 

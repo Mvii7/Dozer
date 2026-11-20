@@ -46,6 +46,7 @@
 #include "video_core/nx2_async_readback.h"
 #include "video_core/rasterizer_download_area.h"
 #include "video_core/nx2_profile.h"
+#include "video_core/nx2_read_budget.h"
 #include "video_core/nx2_busy_clock.h"
 #include "video_core/nx2_mode_gov.h"
 #include "video_core/nx2_stage_proxy.h"
@@ -396,6 +397,10 @@ struct GPU::Impl {
                      reads.load(std::memory_order_relaxed));
         }
         const s64 flush_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
+        // Only a read-trapped buffer flush counts against the read trap budget.
+        const s64 budget_ns = raster_area.read_trap && VideoCommon::Nx2ReadBudget::Enabled()
+                                  ? VideoCommon::Nx2ReadBudget::NowNs()
+                                  : 0;
         const u64 area_size = raster_area.end_address - raster_area.start_address;
         // EDEN_NX2_ASYNC_READBACK: the GPU thread submits buffer downloads without waiting for
         // the host GPU; this thread waits for them, then writes them (EDEN_NX2_READER_LANDING;
@@ -435,6 +440,7 @@ struct GPU::Impl {
             }
             AsyncReadback::NoteRead();
         }
+        VideoCommon::Nx2ReadBudget::AddSince(budget_ns, true);
         if (stats) [[unlikely]] {
             const u64 wait_us = Common::Nx2Reactive::MicrosecondsSince(flush_ns);
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::SyncFlushes, 1);

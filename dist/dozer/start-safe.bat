@@ -91,6 +91,8 @@ set EDEN_NX2_RX_NO_RT_LATCH=
 set EDEN_NX2_RX_COALESCE_LOOSE=
 rem Read traps are on unless this is 0. Safe turns them off.
 set EDEN_NX2_READ_TRAPS=0
+rem Read trap budget off: every read waits for its data.
+set EDEN_NX2_READ_TRAP_BUDGET_US=0
 rem Shortcuts that are on by default: off (=0, the code path of 2.0.0).
 set EDEN_NX2_LIGHT_DRAW=0
 set EDEN_NX2_LIGHT_UNIFORM=0

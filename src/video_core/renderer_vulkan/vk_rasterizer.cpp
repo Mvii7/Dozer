@@ -62,6 +62,7 @@
 #include "video_core/nx2.h"
 #include "video_core/nx2_async_readback.h"
 #include "video_core/nx2_profile.h"
+#include "video_core/nx2_read_budget.h"
 #include "video_core/nx2_uniform_census.h"
 #include "video_core/nx2_stage_api.h"
 #include "video_core/renderer_vulkan/nx2_record_list.h"
@@ -2314,6 +2315,7 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
     const DAddr page_end = Common::AlignUp(addr + size, Core::DEVICE_PAGESIZE);
     // EDEN_NX2_FLUSH_FIRST_READ: newly noted pages the GPU wrote are flushed once (nx2_reactive_flush.h)
     bool flush_buffer = false;
+    bool read_trap = false;
     {
         // Guest CPU reads of buffer memory decide which GPU-written buffer data is copied back.
         CheckBufferLockOffB("RasterizerVulkan::GetFlushArea");
@@ -2340,8 +2342,30 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
         } else if (buffer_cache.ReadTrapsActive()) {
             // A trapped read (or a slow-path read) of GPU-written buffer data: flush it now.
             flush_buffer = buffer_cache.IsRegionGpuModified(page_start, page_end - page_start);
-            if (flush_buffer) {
-                flush_buffer = !buffer_cache.WaitForCopyBack(lock, page_start, page_end - page_start);
+            if (flush_buffer && VideoCommon::Nx2ReadBudget::TakeLenient()) {
+                // EDEN_NX2_READ_TRAP_BUDGET_US spent: what memory holds, as with read traps off.
+                flush_buffer = false;
+            } else if (flush_buffer) {
+                namespace Budget = VideoCommon::Nx2ReadBudget;
+                // With the budget, a copy back on its way is waited for at most what is left of
+                // it; then the read goes on and the copy lands after it.
+                const bool budget = Budget::Enabled();
+                const s64 wait_ns = budget ? Budget::NowNs() : 0;
+                const u64 remaining_us = budget ? Budget::RemainingUs() : 8000;
+                // Past 8 ms with budget left: a sync flush, as without the budget.
+                const bool budget_timeout = remaining_us < 8000;
+                bool timed_out = false;
+                flush_buffer = !buffer_cache.WaitForCopyBack(
+                    lock, page_start, page_end - page_start,
+                    std::chrono::microseconds{(std::min<u64>)(remaining_us, 8000)}, &timed_out);
+                Budget::AddSince(wait_ns);
+                if (budget && budget_timeout && timed_out) {
+                    Budget::NoteLenient();
+                    flush_buffer = false;
+                } else if (flush_buffer && Budget::SkipDownload()) {
+                    flush_buffer = false;
+                }
+                read_trap = flush_buffer;
             }
             buffer_cache.ForgetReadTraps(page_start, page_end - page_start);
         } else if (AsyncReadback::RxReadback() &&
@@ -2361,8 +2385,10 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
     }
     if (!MayHoldImages(addr, size)) {
         // No image was ever registered here: the texture cache has no area to give.
-        return VideoCommon::Nx2Reactive::CombineFlushArea(std::nullopt, page_start, page_end,
-                                                          flush_buffer);
+        auto area = VideoCommon::Nx2Reactive::CombineFlushArea(std::nullopt, page_start,
+                                                               page_end, flush_buffer);
+        area.read_trap = read_trap;
+        return area;
     }
     {
         const s64 lock_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
@@ -2371,8 +2397,11 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::TextureLockUs,
                                      Common::Nx2Reactive::MicrosecondsSince(lock_ns));
         }
-        const auto area = texture_cache.GetFlushArea(addr, size);
-        return VideoCommon::Nx2Reactive::CombineFlushArea(area, page_start, page_end, flush_buffer);
+        const auto texture_area = texture_cache.GetFlushArea(addr, size);
+        auto area = VideoCommon::Nx2Reactive::CombineFlushArea(texture_area, page_start,
+                                                               page_end, flush_buffer);
+        area.read_trap = read_trap;
+        return area;
     }
 }
 

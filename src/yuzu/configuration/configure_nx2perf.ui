@@ -187,6 +187,32 @@
        </widget>
       </item>
       <item>
+       <widget class="QCheckBox" name="read_trap_budget">
+        <property name="text">
+         <string>Read trap budget</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="read_trap_budget_text">
+        <property name="text">
+         <string>With read traps on, the game's reads of GPU-written memory wait for its data at most 1 ms in each 1/60 s; past that a read goes on with what memory holds, as with read traps off. Smooths Bananza's destruction and Mario Kart World's races. Off sets EDEN_NX2_READ_TRAP_BUDGET_US=0: every read waits.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="indent">
+         <number>22</number>
+        </property>
+        <property name="buddy">
+         <cstring>read_trap_budget</cstring>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QCheckBox" name="split_gpu_thread">
         <property name="text">
          <string>Split GPU thread</string>

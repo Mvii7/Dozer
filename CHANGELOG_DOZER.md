@@ -8,6 +8,18 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Read traps: a copy back at a fence no longer disarms the traps of its pages
+  (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
+  fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World
+  and Donkey Kong Bananza, and reads waited for copies back behind it. With it gone Bananza's
+  destruction waits 0.07-0.17 s per 10 s instead of 0.3-0.4 s, and far fewer reads run out of
+  the read trap budget. The reactive stats line splits the copy back pops by part.
+- Read trap budget (Tuning tab, on; `EDEN_NX2_READ_TRAP_BUDGET_US`, 1000 unless set, `=0` off,
+  off in Safe): with read traps, the guest CPU's reads of GPU-written buffer memory wait for its
+  data at most 1 ms in each 1/60 s, then go on with what memory holds, as with read traps off. A
+  download that would not fit in what is left is skipped (`EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0`
+  starts it anyway). Donkey Kong Bananza's destruction waited 0.5-0.8 s per 10 s for those reads,
+  Mario Kart World's races 1.1-2.3 s; with the budget 0.15-0.4 s and 0.6-1 s.
 - MME DMA reads drain the split's back again by default (`EDEN_NX2_DMA_READ_PEEK`, now `=1` to
   go on without one). With `EDEN_NX2_ACQUIRE_SUSPEND` a channel the latch resumes may read
   before the back ran the draws sent ahead of the release, and the peek let such reads go on:

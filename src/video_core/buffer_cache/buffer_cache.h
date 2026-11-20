@@ -1555,11 +1555,22 @@ void BufferCache<P>::PopAsyncBuffers() {
         async_buffers.pop_front();
         return;
     }
+    // EDEN_NX2_REACTIVE_STATS: the parts' times
+    const bool stats = Common::Nx2Reactive::StatsEnabled();
+    s64 part_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
+    const auto part = [&](Common::Nx2Reactive::Counter counter) {
+        if (stats) [[unlikely]] {
+            const s64 now = Common::Nx2Reactive::NowNs();
+            Common::Nx2Reactive::Add(counter, static_cast<u64>(now - part_ns));
+            part_ns = now;
+        }
+    };
     // Read downloads recorded before this copy back are older: they land first. Its fence has
     // signalled, so their copies have run.
     WriteReadDownloads(pending_download_read_seqs.front(),
                        VideoCommon::Nx2AsyncReadback::Landing::Fence);
     pending_download_read_seqs.pop_front();
+    part(Common::Nx2Reactive::Counter::PopReadDownloadsNs);
     auto& downloads = pending_downloads.front();
     auto& async_buffer = async_buffers.front();
     u8* base = async_buffer->mapped_span.data();
@@ -1577,10 +1588,15 @@ void BufferCache<P>::PopAsyncBuffers() {
             gpu_modified_ranges.Subtract(start, end - start);
         });
     }
+    if (stats) [[unlikely]] {
+        Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::PopCopies, downloads.size());
+    }
+    part(Common::Nx2Reactive::Counter::PopWriteNs);
     if (ReadTrapsActive() && Nx2Reactive::TrapPopDisarm()) {
         for (const auto& copy : downloads) {
             DisarmCopiedReadTraps(static_cast<DAddr>(copy.src_offset), copy.size);
         }
+        part(Common::Nx2Reactive::Counter::PopDisarmNs);
     }
     async_buffers_death_ring.emplace_back(*async_buffer);
     async_buffers.pop_front();
@@ -1614,6 +1630,7 @@ void BufferCache<P>::DisarmCopiedReadTraps(DAddr addr, u64 size) {
     }
     if (pages != 0 && Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
         Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::TrapsDisarmedAtCopyBack, pages);
+        Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::PopDisarmRuns, runs.size());
     }
 }
 
@@ -1631,12 +1648,13 @@ bool BufferCache<P>::CopyBackCovers(DAddr addr, u64 size) const {
 
 template <class P>
 bool BufferCache<P>::WaitForCopyBack(std::unique_lock<Common::SpinRecursiveMutex>& lock,
-                                     DAddr addr, u64 size) {
+                                     DAddr addr, u64 size, std::chrono::microseconds timeout,
+                                     bool* timed_out) {
     if (!Nx2Reactive::CopyBackWait() || !CopyBackCovers(addr, size)) {
         return !IsRegionGpuModified(addr, size);
     }
-    // The fence thread lands copies as the host GPU finishes them; past this, a sync flush.
-    constexpr auto timeout = std::chrono::milliseconds{8};
+    // The fence thread lands copies as the host GPU finishes them; past the timeout, a sync
+    // flush (or, out of the read trap budget, nothing).
     const bool stats = Common::Nx2Reactive::StatsEnabled();
     const s64 start_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
     const bool landed =
@@ -1650,6 +1668,9 @@ bool BufferCache<P>::WaitForCopyBack(std::unique_lock<Common::SpinRecursiveMutex
         if (!landed || !fresh) {
             Common::Nx2Reactive::Add(Counter::CopyBackWaitMisses, 1);
         }
+    }
+    if (timed_out != nullptr) {
+        *timed_out = !landed;
     }
     return fresh;
 }

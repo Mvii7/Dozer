@@ -341,6 +341,17 @@
 # Performance and Quality leave this unset; Experimental and Safe set 0
 # (start-reactive-experimental.bat, start-safe.bat). With Bananza's foliage off, on is faster.
 #EDEN_NX2_READ_TRAPS=0
+# READ_TRAP_BUDGET_US=<n> (unset: 1000, 0: off; the Tuning tab's "Read trap budget" box, off
+# in Safe): with read traps, reads of GPU-written buffer memory wait for its data at most n
+# microseconds in each 1/60 s; past that a read goes on with what memory holds, as with read
+# traps off, and a copy back on its way still lands (one is waited for at most what is left of
+# the budget). Scenes that read little stay exact; bursts (Bananza's destruction, Mario Kart
+# World's races) stop waiting. A line every 10 s counts the waits and the reads that went on.
+#EDEN_NX2_READ_TRAP_BUDGET_US=0
+# READ_TRAP_BUDGET_PREDICT=0: with the budget, a download (no copy back on its way) starts
+# even when what is left is less than downloads have been taking, and overshoots the budget.
+# Unset (on): such a read goes on without it; the budget line counts "downloads skipped".
+#EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0
 # TRAP_FASTMEM=0: a guest instruction whose read hits a read trap leaves fastmem for good, as
 # after any other fastmem fault (every later read of a GPU-cached page it makes then takes the
 # slow path). Unset (on): it takes the slow path for that one read and keeps fastmem; one that
@@ -352,10 +363,12 @@
 # read before the next fence can find older data. Unset (on): each read lets the next GPU write
 # arm the page again, and a read after that write flushes it.
 #EDEN_NX2_TRAP_REARM=0
-# TRAP_POP_DISARM=0: a copy back at a fence leaves the read traps of its pages armed, so the
-# guest's next read still faults (and finds nothing left to flush). Unset (on): the copy back
-# disarms the pages the GPU has not written since; the next GPU write arms them again.
-#EDEN_NX2_TRAP_POP_DISARM=0
+# TRAP_POP_DISARM=1: a copy back at a fence disarms the read traps of its pages the GPU has not
+# written since; the next GPU write arms them again. Unset (off): they stay armed, and the
+# guest's next read of one faults (and finds nothing left to flush). The page protection
+# changes cost the fence thread more than those faults (Mario Kart World: ~0.2 s per 10 s, and
+# reads waited longer for the copies back behind them).
+#EDEN_NX2_TRAP_POP_DISARM=1
 # COPYBACK_WAIT=0: a read trap that finds GPU writes not in guest memory yet always sync flushes
 # (the CPU waits for the GPU thread to reach it and for a new download). Unset (on): when all of
 # them are in copies back already committed at a fence, it waits for those to land instead

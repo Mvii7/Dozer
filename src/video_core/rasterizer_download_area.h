@@ -15,6 +15,8 @@ struct RasterizerDownloadArea {
     VAddr start_address;
     VAddr end_address;
     bool preemtive;
+    /// A read-trapped buffer flush is among it (EDEN_NX2_READ_TRAP_BUDGET_US counts its wait).
+    bool read_trap = false;
 };
 
 /// EDEN_NX2_ASYNC_READBACK: where a read's buffer bytes are: the tick its downloads were

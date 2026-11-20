@@ -66,6 +66,7 @@ inline constexpr int ReflectionsHigh = 4;   ///< every 8 frames, the game's own
 
 struct Switches {
     bool read_traps = true;        ///< on leaves EDEN_NX2_READ_TRAPS unset; off sets it to 0
+    bool read_trap_budget = true;  ///< off sets EDEN_NX2_READ_TRAP_BUDGET_US=0
     bool split_gpu_thread = true;  ///< EDEN_NX2_BACK_STAGES=1 + EDEN_NX2_BACK_CUTS=a
     bool acquire_peek = true;      ///< EDEN_NX2_ACQUIRE_PEEK=1
     bool jit_same = true;          ///< EDEN_NX2_JIT_SAME=1
@@ -117,6 +118,7 @@ constexpr Switches FirstStart() {
 constexpr Switches AllOff() {
     return Switches{
         .read_traps = false,
+        .read_trap_budget = false,
         .split_gpu_thread = false,
         .acquire_peek = false,
         .jit_same = false,
@@ -135,8 +137,9 @@ struct Key {
     std::string_view name;
     bool Switches::*field;
 };
-inline constexpr std::array<Key, 7> Keys{{
+inline constexpr std::array<Key, 8> Keys{{
     {"read_traps", &Switches::read_traps},
+    {"read_trap_budget", &Switches::read_trap_budget},
     {"split_gpu_thread", &Switches::split_gpu_thread},
     {"acquire_peek", &Switches::acquire_peek},
     {"jit_same", &Switches::jit_same},
@@ -404,14 +407,15 @@ template <typename Read, typename ReadPreset>
 Switches Load(Read&& read, ReadPreset&& read_preset) {
     const Preset preset =
         PresetFromInt(read_preset("preset", static_cast<int>(Preset::Performance)));
-    // read_traps was added after the other boxes: a file without the key keeps the preset's own
-    // value (Performance and Quality on, Experimental and Safe off, Custom on) instead of being
-    // read as Custom. Performance had them off before: a stored Performance takes the preset's.
+    // read_traps and read_trap_budget were added after the other boxes: a file without the key
+    // keeps the preset's own value (read traps: Performance and Quality on, Experimental and Safe
+    // off, Custom on) instead of being read as Custom. Performance had read traps off before: a
+    // stored Performance takes the preset's.
     const Switches preset_switches = FromPreset(preset, Performance());
     Switches switches{};
     for (const Key& key : Keys) {
-        const bool fallback = key.name == "read_traps" ? preset_switches.read_traps
-                                                       : Performance().*key.field;
+        const bool by_preset = key.name == "read_traps" || key.name == "read_trap_budget";
+        const bool fallback = by_preset ? preset_switches.*key.field : Performance().*key.field;
         switches.*key.field = read(key.name, fallback);
     }
     if (preset == Preset::Performance) {
@@ -527,7 +531,7 @@ inline constexpr std::array<std::string_view, 72> SafeOff{
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
-inline constexpr std::array<std::string_view, 17> Names{
+inline constexpr std::array<std::string_view, 18> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
@@ -536,7 +540,7 @@ inline constexpr std::array<std::string_view, 17> Names{
     "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
     "EDEN_NX2_DK_FOLIAGE_OFF", "EDEN_NX2_DK_SHADOW_CASCADES",
-    "EDEN_NX2_DK_CUBEMAP_INTERVAL",
+    "EDEN_NX2_DK_CUBEMAP_INTERVAL", "EDEN_NX2_READ_TRAP_BUDGET_US",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -603,6 +607,9 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
     // On by default (unset). Off is the only value the program sets.
     if (!switches.read_traps) {
         vars.push_back({"EDEN_NX2_READ_TRAPS", "0"});
+    }
+    if (!switches.read_trap_budget) {
+        vars.push_back({"EDEN_NX2_READ_TRAP_BUDGET_US", "0"});
     }
     if (switches.preset == Preset::Reactive) {
         vars.push_back({"EDEN_NX2_RX_RT_FIT", "3"});
