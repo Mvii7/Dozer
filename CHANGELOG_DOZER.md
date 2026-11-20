@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_READ_TRAP_BUDGET_US=<n>` (experimental, off): with read traps, the guest CPU's reads
+  of GPU-written buffer memory wait for its data at most n microseconds in each 1/60 s, then go
+  on with what memory holds, as with read traps off. In Donkey Kong Bananza's destruction those
+  reads waited 0.5-0.8 s per 10 s; big scenes read little and stay exact.
 - MME DMA reads drain the split's back again by default (`EDEN_NX2_DMA_READ_PEEK`, now `=1` to
   go on without one). With `EDEN_NX2_ACQUIRE_SUSPEND` a channel the latch resumes may read
   before the back ran the draws sent ahead of the release, and the peek let such reads go on:

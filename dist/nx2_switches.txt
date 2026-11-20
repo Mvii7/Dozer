@@ -341,6 +341,12 @@
 # Performance and Quality leave this unset; Experimental and Safe set 0
 # (start-reactive-experimental.bat, start-safe.bat). With Bananza's foliage off, on is faster.
 #EDEN_NX2_READ_TRAPS=0
+# READ_TRAP_BUDGET_US=<n> (experimental, unset or 0: off): with read traps, reads of GPU-written
+# buffer memory wait for its data at most n microseconds in each 1/60 s; past that a read goes on
+# with what memory holds, as with read traps off, and a copy back on its way still lands. Scenes
+# that read little stay exact; bursts (Bananza's destruction) stop waiting. With Bananza's foliage
+# on, its data may then lag. A line every 10 s counts the waits and the reads that went on.
+#EDEN_NX2_READ_TRAP_BUDGET_US=1000
 # TRAP_FASTMEM=0: a guest instruction whose read hits a read trap leaves fastmem for good, as
 # after any other fastmem fault (every later read of a GPU-cached page it makes then takes the
 # slow path). Unset (on): it takes the slow path for that one read and keeps fastmem; one that

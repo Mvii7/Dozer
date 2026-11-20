@@ -62,6 +62,7 @@
 #include "video_core/nx2.h"
 #include "video_core/nx2_async_readback.h"
 #include "video_core/nx2_profile.h"
+#include "video_core/nx2_read_budget.h"
 #include "video_core/nx2_uniform_census.h"
 #include "video_core/nx2_stage_api.h"
 #include "video_core/renderer_vulkan/nx2_record_list.h"
@@ -2340,8 +2341,14 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
         } else if (buffer_cache.ReadTrapsActive()) {
             // A trapped read (or a slow-path read) of GPU-written buffer data: flush it now.
             flush_buffer = buffer_cache.IsRegionGpuModified(page_start, page_end - page_start);
-            if (flush_buffer) {
+            if (flush_buffer && VideoCommon::Nx2ReadBudget::TakeLenient()) {
+                // EDEN_NX2_READ_TRAP_BUDGET_US spent: what memory holds, as with read traps off.
+                flush_buffer = false;
+            } else if (flush_buffer) {
+                const s64 wait_ns =
+                    VideoCommon::Nx2ReadBudget::Enabled() ? VideoCommon::Nx2ReadBudget::NowNs() : 0;
                 flush_buffer = !buffer_cache.WaitForCopyBack(lock, page_start, page_end - page_start);
+                VideoCommon::Nx2ReadBudget::AddSince(wait_ns);
             }
             buffer_cache.ForgetReadTraps(page_start, page_end - page_start);
         } else if (AsyncReadback::RxReadback() &&
