@@ -280,8 +280,8 @@ TEST_CASE("Nx2PerfSettings: presets set the launchers' variables", "[core]") {
             REQUIRE(safe[own.size() + 2 + i] == Var{SafeOff[i], "0"});
         }
     }
-    // Custom with everything off sets read traps off only; Custom with the boxes on: only the
-    // boxes' (read traps on sets nothing for that switch).
+    // Custom with everything off sets read traps and their budget off only; Custom with the boxes
+    // on: only the boxes' (read traps on sets nothing for that switch).
     auto only_traps = BananzaVars;
     only_traps.push_back({"EDEN_NX2_READ_TRAPS", "0"});
     only_traps.push_back({"EDEN_NX2_READ_TRAP_BUDGET_US", "0"});
