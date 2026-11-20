@@ -341,13 +341,13 @@
 # Performance and Quality leave this unset; Experimental and Safe set 0
 # (start-reactive-experimental.bat, start-safe.bat). With Bananza's foliage off, on is faster.
 #EDEN_NX2_READ_TRAPS=0
-# READ_TRAP_BUDGET_US=<n> (experimental, unset or 0: off): with read traps, reads of GPU-written
-# buffer memory wait for its data at most n microseconds in each 1/60 s; past that a read goes on
-# with what memory holds, as with read traps off, and a copy back on its way still lands (one is
-# waited for at most what is left of the budget). Scenes
-# that read little stay exact; bursts (Bananza's destruction) stop waiting. With Bananza's foliage
-# on, its data may then lag. A line every 10 s counts the waits and the reads that went on.
-#EDEN_NX2_READ_TRAP_BUDGET_US=1000
+# READ_TRAP_BUDGET_US=<n> (unset: 1000, 0: off; the Tuning tab's "Read trap budget" box, off
+# in Safe): with read traps, reads of GPU-written buffer memory wait for its data at most n
+# microseconds in each 1/60 s; past that a read goes on with what memory holds, as with read
+# traps off, and a copy back on its way still lands (one is waited for at most what is left of
+# the budget). Scenes that read little stay exact; bursts (Bananza's destruction, Mario Kart
+# World's races) stop waiting. A line every 10 s counts the waits and the reads that went on.
+#EDEN_NX2_READ_TRAP_BUDGET_US=0
 # READ_TRAP_BUDGET_PREDICT=0: with the budget, a download (no copy back on its way) starts
 # even when what is left is less than downloads have been taking, and overshoots the budget.
 # Unset (on): such a read goes on without it; the budget line counts "downloads skipped".

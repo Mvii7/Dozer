@@ -26,6 +26,7 @@ ConfigureNx2Perf::ConfigureNx2Perf(QWidget* parent)
     using S = Perf::Switches;
     rows = {
         {ui->read_traps, &S::read_traps, {"EDEN_NX2_READ_TRAPS"}},
+        {ui->read_trap_budget, &S::read_trap_budget, {"EDEN_NX2_READ_TRAP_BUDGET_US"}},
         {ui->split_gpu_thread, &S::split_gpu_thread, {"EDEN_NX2_BACK_STAGES", "EDEN_NX2_BACK_CUTS"}},
         {ui->acquire_peek, &S::acquire_peek, {"EDEN_NX2_ACQUIRE_PEEK"}},
         {ui->jit_same, &S::jit_same, {"EDEN_NX2_JIT_SAME"}},

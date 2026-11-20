@@ -10,7 +10,7 @@
 #include "common/common_types.h"
 #include "common/logging.h"
 
-// EDEN_NX2_READ_TRAP_BUDGET_US=<n> (unset or 0: off). With read traps, the guest CPU's reads of
+// EDEN_NX2_READ_TRAP_BUDGET_US=<n> (unset: 1000, 0: off). With read traps, the guest CPU's reads of
 // GPU-written buffer memory wait for its data (a copy back or a download) at most n microseconds
 // in each 1/60 s; past that, a read goes on with what memory holds, as with read traps off, and a
 // copy back already on its way still lands. Big scenes read little and stay exact; Donkey Kong
@@ -22,7 +22,7 @@ namespace VideoCommon::Nx2ReadBudget {
 [[nodiscard]] inline u64 BudgetUs() noexcept {
     static const u64 budget = [] {
         const char* value = std::getenv("EDEN_NX2_READ_TRAP_BUDGET_US");
-        return value != nullptr ? std::strtoull(value, nullptr, 10) : u64{0};
+        return value != nullptr ? std::strtoull(value, nullptr, 10) : u64{1000};
     }();
     return budget;
 }
