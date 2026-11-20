@@ -8,6 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- MME DMA reads drain the split's back again by default (`EDEN_NX2_DMA_READ_PEEK`, now `=1` to
+  go on without one). With `EDEN_NX2_ACQUIRE_SUSPEND` a channel the latch resumes may read
+  before the back ran the draws sent ahead of the release, and the peek let such reads go on:
+  rocks in Donkey Kong Bananza flickered. The front also no longer notes every write it sends
+  for the peek, which cost it more than the drains it saved. With `=1`, every acquire a latch
+  resumes drains first.
 - Shader cache (Vulkan and OpenGL): a cache whose last record was cut off (the emulator crashed
   or was closed while appending a pipeline) keeps the records before it; before, the whole cache
   file was deleted and every pipeline was built again. A zero-filled tail no longer crashes the

@@ -115,10 +115,11 @@
 #EDEN_NX2_ACQUIRE_PEEK=1
 # DMA_READ_PEEK (with ACQUIRE_PEEK=1): an MME DMA read goes on without draining the back when no
 # write the front sent and the back has not run reaches its words, no work but draws is queued
-# and the buffer cache holds no newer data of them. 0 off, 1 on (default), 2 drains and logs
+# and the buffer cache holds no newer data of them. 0 off (default), 1 on, 2 drains and logs
 # reads the drain changed. The front then notes the methods that write memory or start work
-# other than draws.
-#EDEN_NX2_DMA_READ_PEEK=0
+# other than draws, which in Donkey Kong Bananza costs it more than the drains it saves; with
+# it every acquire a latch resumes drains first.
+#EDEN_NX2_DMA_READ_PEEK=1
 # ACQUIRE_NODRAIN_EQUAL=0: an equal semaphore acquire drains the back even when the last release
 # sent to its word carries its value (default: it goes on, as greater-or-equal ones do).
 #EDEN_NX2_ACQUIRE_NODRAIN_EQUAL=0
