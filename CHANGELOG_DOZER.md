@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Shader cache (Vulkan and OpenGL): a cache whose last record was cut off (the emulator crashed
+  or was closed while appending a pipeline) keeps the records before it; before, the whole cache
+  file was deleted and every pipeline was built again. A zero-filled tail no longer crashes the
+  boot load, a record that fails to write is cut back off, and a compute record saved twice is
+  built once.
 - GPU thread: an equal semaphore acquire that memory does not meet yet suspends its channel at
   once instead of first waiting for the split's back to finish its queue
   (`EDEN_NX2_ACQUIRE_SUSPEND`). The back's release resumes it; other writes are checked after a
