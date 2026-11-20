@@ -2378,7 +2378,12 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::TextureLockUs,
                                      Common::Nx2Reactive::MicrosecondsSince(lock_ns));
         }
-        const auto area = texture_cache.GetFlushArea(addr, size);
+        auto area = texture_cache.GetFlushArea(addr, size);
+        if (area && !area->preemtive && VideoCommon::Nx2ReadBudget::Images() &&
+            VideoCommon::Nx2ReadBudget::TakeLenient(true)) {
+            // EDEN_NX2_READ_TRAP_BUDGET_IMAGES: the image's download is not waited for either.
+            area->preemtive = true;
+        }
         return VideoCommon::Nx2Reactive::CombineFlushArea(area, page_start, page_end, flush_buffer);
     }
 }
