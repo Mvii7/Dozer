@@ -338,9 +338,10 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
     Result result{};
     bool any = false;
     // The rows from FoliageCap on are game data (nx2_dk_foliage.h), not instructions: not
-    // marked here, except Debris off, which is
+    // marked here, except Debris off and the foliage draw distance's default, which are
     for (size_t i = 0; i < Count; ++i) {
-        if ((i < FoliageCap || i == DebrisOff) && Sanitize(values[i], Knobs[i]) != 0) {
+        if ((i < FoliageCap || i == DebrisOff || i == FoliageFarClip) &&
+            Sanitize(values[i], Knobs[i]) != 0) {
             result[i] = State::Missed;
             any = true;
         }
@@ -730,6 +731,55 @@ inline Result Apply(std::span<u8> text, u32 text_size, u32 aligned_size, const V
                 0x14000000U | (static_cast<u32>((from + 1) - (routine + 3)) & 0x3FFFFFFU));
             put(from, 0x14000000U | (static_cast<u32>(routine - from) & 0x3FFFFFFU));
             result[DebrisOff] = State::Applied;
+        }
+    }
+
+    // Foliage draw distance: the models without a FarClipDistance of their own (174 of 418,
+    // a third of the placed foliage) take the reader's default, 100 in the read-only data:
+    //   adrp x9, "FarClipDistance"; add x9, x9, ...; 5 words; adrp x8, default; add x8, x8, ...
+    if (set(FoliageFarClip) != 0) {
+        constexpr std::string_view Name{"FarClipDistance", sizeof("FarClipDistance")};
+        constexpr float GameDefault = 100.0f;
+        const auto target = [&](size_t i, u32 reg) -> size_t {
+            const u32 adrp = word(i), add = word(i + 1);
+            if ((adrp & 0x9F00001FU) != (0x90000000U | reg) ||
+                (add & 0xFFC003FFU) != (0x91000000U | reg << 5 | reg)) {
+                return 0;
+            }
+            s64 pages = static_cast<s64>(((adrp >> 5) & 0x7FFFFU) << 2 | ((adrp >> 29) & 3));
+            if (pages & (s64{1} << 20)) {
+                pages -= s64{1} << 21;
+            }
+            return static_cast<size_t>(static_cast<s64>(i * 4 & ~size_t{0xFFF}) + pages * 0x1000) +
+                   ((add >> 10) & 0xFFF);
+        };
+        const std::string_view data{reinterpret_cast<const char*>(code), text.size()};
+        size_t name = data.find(Name, aligned_size);
+        while (name != std::string_view::npos && data[name - 1] != 0) {
+            name = data.find(Name, name + 1);
+        }
+        size_t at = 0, found = 0;
+        for (size_t i = 0; name != std::string_view::npos && i + Reach < count; ++i) {
+            if (target(i, 9) != name) {
+                continue;
+            }
+            for (size_t j = i + 2; j < i + 10; ++j) {
+                const size_t value = target(j, 8);
+                float stored = 0.0f;
+                if (value != 0 && value + sizeof(stored) <= text.size()) {
+                    std::memcpy(&stored, code + value, sizeof(stored));
+                }
+                if (stored == GameDefault) {
+                    at = value;
+                    ++found;
+                    break;
+                }
+            }
+        }
+        if (found == 1) {
+            const float distance = GameDefault * static_cast<float>(set(FoliageFarClip)) / 100.0f;
+            std::memcpy(code + at, &distance, sizeof(distance));
+            result[FoliageFarClip] = State::Applied;
         }
     }
     return result;

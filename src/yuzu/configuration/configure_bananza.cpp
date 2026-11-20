@@ -239,8 +239,9 @@ void ConfigureBananza::RetranslateUI() {
     texts[Quality::FoliageFarClip] = {
         tr("Foliage draw distance"),
         tr("Scales how far each foliage model (grass, flowers, plants, rocks) is drawn, from its "
-           "own distance in the game's data (100 to 300 units). Lower: foliage ends closer to "
-           "you but stays near you; 1% is a distance of 1 to 3 units, so about no foliage. "
+           "own distance in the game's data (80 to 700 units), or the game's default of 100 for "
+           "the models without one (about a third of the foliage). Lower: foliage ends closer to "
+           "you but stays near you; 1% is about no foliage. "
            "Needs a restart.")};
     texts[Quality::EffectEmitCap] = {
         tr("Effects started per frame"),

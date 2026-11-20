@@ -477,3 +477,38 @@ TEST_CASE("Nx2DkQuality: the features switched off in place", "[core]") {
     }
     REQUIRE(text.words == expected);
 }
+
+TEST_CASE("Nx2DkQuality: the foliage draw distance's default", "[core]") {
+    // The read-only data after the text: the field's name, then its default
+    constexpr size_t NameAt = AlignedSize + 0x10, DefaultAt = AlignedSize + 0x40;
+    constexpr size_t Site = 0xa00;
+    Text text;
+    text.words.resize((AlignedSize + 0x1000) / 4, 0);
+    const auto bytes = text.Bytes();
+    std::memcpy(bytes.data() + NameAt, "FarClipDistance", sizeof("FarClipDistance"));
+    const float game = 100.0f;
+    std::memcpy(bytes.data() + DefaultAt, &game, sizeof(game));
+    const auto adrp_add = [&](size_t at, u32 reg, size_t target) {
+        const u32 pages = static_cast<u32>((target >> 12) - ((at * 4) >> 12));
+        text.words[at] = 0x90000000U | (pages & 3) << 29 | (pages >> 2 & 0x7FFFF) << 5 | reg;
+        text.words[at + 1] = 0x91000000U | static_cast<u32>(target & 0xFFF) << 10 | reg << 5 | reg;
+    };
+    adrp_add(Site, 9, NameAt);
+    adrp_add(Site + 7, 8, DefaultAt);
+
+    const Result result = Apply(bytes, TextSize, AlignedSize, Only(FoliageFarClip, 40));
+    REQUIRE(result[FoliageFarClip] == State::Applied);
+    float now;
+    std::memcpy(&now, bytes.data() + DefaultAt, sizeof(now));
+    REQUIRE(now == 40.0f);
+
+    // Not the game's default there: left alone
+    Text other;
+    other.words.resize((AlignedSize + 0x1000) / 4, 0);
+    std::memcpy(other.Bytes().data() + NameAt, "FarClipDistance", sizeof("FarClipDistance"));
+    text.words.swap(other.words);
+    adrp_add(Site, 9, NameAt);
+    adrp_add(Site + 7, 8, DefaultAt);
+    REQUIRE(Apply(text.Bytes(), TextSize, AlignedSize, Only(FoliageFarClip, 40))[FoliageFarClip] ==
+            State::Missed);
+}
