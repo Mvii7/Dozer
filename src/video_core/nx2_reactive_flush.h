@@ -468,7 +468,7 @@ enum class FitFeedback : u32 {
 [[nodiscard]] inline bool TrapPopDisarm() noexcept {
     static const bool enabled = [] {
         const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_TRAP_POP_DISARM");
-        return value != nullptr && value[0] != '0';
+        return value != nullptr && value[0] == '1';
     }();
     return enabled;
 }
