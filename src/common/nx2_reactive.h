@@ -127,6 +127,8 @@ enum class Counter : u32 {
     PopDisarmNs,            ///< Read traps disarmed (EDEN_NX2_TRAP_POP_DISARM)
     PopDisarmRuns,          ///< Runs of pages disarmed (one page protection change each)
     PopCopies,              ///< Copies landed
+    PopCopiesAdjacent,      ///< Of them, starting where the fence's previous copy ended
+    PopCopiesNear,          ///< Of them, starting less than 4 KiB past the previous one's end
     Count,
 };
 
@@ -293,7 +295,7 @@ struct Window {
                        "barriers {} (light {}); fastmem read fallbacks {}, read faults kept {}; traps "
                        "disarmed at copy back {}; copy back waits {} ({} us, {} missed); coalesce limit {} ({} "
                        "reads of held back copies); copy back pops by part: read downloads {} us, "
-                       "{} copies {} us, disarm {} us ({} runs)",
+                       "{} copies {} us ({} adjacent, {} near), disarm {} us ({} runs)",
                        w.Get(C::Fences), w.Get(C::FencesSkipped), w.Get(C::FencesReal),
                        w.Get(C::FencesBufferCommit), w.Get(C::FencesTextureCommit),
                        w.Get(C::FencesBufferDeferred), w.Get(C::FenceExtraFlushes),
@@ -309,7 +311,8 @@ struct Window {
                        w.Get(C::CopyBackWaits), w.Get(C::CopyBackWaitUs),
                        w.Get(C::CopyBackWaitMisses), w.Get(Gauge::CoalesceLimit),
                        w.Get(C::CoalesceDeferredReads), us(C::PopReadDownloadsNs),
-                       w.Get(C::PopCopies), us(C::PopWriteNs), us(C::PopDisarmNs),
+                       w.Get(C::PopCopies), us(C::PopWriteNs), w.Get(C::PopCopiesAdjacent),
+                       w.Get(C::PopCopiesNear), us(C::PopDisarmNs),
                        w.Get(C::PopDisarmRuns));
 }
 
