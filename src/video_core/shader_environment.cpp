@@ -1084,6 +1084,8 @@ void LoadPipelines(
         }
         complete_end = file.tellg();
         while (complete_end != end) {
+            // Stopped when the emulation stops, so no appends follow; a cut-off record further
+            // on is trimmed at the next boot.
             if (stop_loading.stop_requested()) {
                 return;
             }

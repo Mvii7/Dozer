@@ -13,6 +13,7 @@
 
 #include "common/alignment.h"
 #include "common/assert.h"
+#include "common/container/unordered_set.h"
 #include "common/fs/fs.h"
 #include "common/fs/path_util.h"
 #include "common/logging.h"
@@ -314,9 +315,14 @@ void ShaderCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading,
             workers->QueueWork(std::move(work));
         }
     }};
+    // A session whose boot load was stopped appends the pipelines it builds again.
+    ::Common::unordered_set<ComputePipelineKey> loaded_compute_keys;
     const auto load_compute{[&](std::ifstream& file, FileEnvironment env) {
         ComputePipelineKey key;
         file.read(reinterpret_cast<char*>(&key), sizeof(key));
+        if (!loaded_compute_keys.insert(key).second) {
+            return;
+        }
         queue_work([this, key, env_ = std::move(env), &state, &callback](Context* ctx) mutable {
             ctx->pools.ReleaseContents();
             auto pipeline{CreateComputePipeline(ctx->pools, key, env_, true)};
@@ -335,7 +341,8 @@ void ShaderCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading,
         GraphicsPipelineKey key;
         file.read(reinterpret_cast<char*>(&key), sizeof(key));
         queue_work([this, key, envs_ = std::move(envs), &state, &callback](Context* ctx) mutable {
-            boost::container::static_vector<Shader::Environment*, 5> env_ptrs;
+            boost::container::static_vector<Shader::Environment*, Maxwell::MaxShaderProgram>
+                env_ptrs;
             for (auto& env : envs_) {
                 env_ptrs.push_back(&env);
             }
