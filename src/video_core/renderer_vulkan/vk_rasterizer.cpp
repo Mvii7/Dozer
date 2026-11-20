@@ -2345,10 +2345,23 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
                 // EDEN_NX2_READ_TRAP_BUDGET_US spent: what memory holds, as with read traps off.
                 flush_buffer = false;
             } else if (flush_buffer) {
-                const s64 wait_ns =
-                    VideoCommon::Nx2ReadBudget::Enabled() ? VideoCommon::Nx2ReadBudget::NowNs() : 0;
-                flush_buffer = !buffer_cache.WaitForCopyBack(lock, page_start, page_end - page_start);
-                VideoCommon::Nx2ReadBudget::AddSince(wait_ns);
+                namespace Budget = VideoCommon::Nx2ReadBudget;
+                // With the budget, a copy back on its way is waited for at most what is left of
+                // it; then the read goes on and the copy lands after it.
+                const bool budget = Budget::Enabled();
+                const s64 wait_ns = budget ? Budget::NowNs() : 0;
+                const auto timeout = budget ? std::chrono::microseconds{(std::min<u64>)(
+                                                  Budget::RemainingUs(), 8000)}
+                                            : std::chrono::microseconds{8000};
+                bool timed_out = false;
+                flush_buffer = !buffer_cache.WaitForCopyBack(lock, page_start,
+                                                             page_end - page_start, timeout,
+                                                             &timed_out);
+                Budget::AddSince(wait_ns);
+                if (budget && timed_out) {
+                    Budget::NoteLenient();
+                    flush_buffer = false;
+                }
             }
             buffer_cache.ForgetReadTraps(page_start, page_end - page_start);
         } else if (AsyncReadback::RxReadback() &&
@@ -2378,12 +2391,7 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::TextureLockUs,
                                      Common::Nx2Reactive::MicrosecondsSince(lock_ns));
         }
-        auto area = texture_cache.GetFlushArea(addr, size);
-        if (area && !area->preemtive && VideoCommon::Nx2ReadBudget::Images() &&
-            VideoCommon::Nx2ReadBudget::TakeLenient(true)) {
-            // EDEN_NX2_READ_TRAP_BUDGET_IMAGES: the image's download is not waited for either.
-            area->preemtive = true;
-        }
+        const auto area = texture_cache.GetFlushArea(addr, size);
         return VideoCommon::Nx2Reactive::CombineFlushArea(area, page_start, page_end, flush_buffer);
     }
 }

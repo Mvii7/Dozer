@@ -11,6 +11,7 @@
 #include <array>
 #include <atomic>
 #include <bit>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -601,9 +602,12 @@ public:
 
     /// A read trap found GPU writes here not in guest memory yet. When all of them are in copies
     /// back already committed at a fence, waits for the fence thread to land them instead of a
-    /// sync flush (EDEN_NX2_COPYBACK_WAIT=0: never). Returns whether none is left.
+    /// sync flush (EDEN_NX2_COPYBACK_WAIT=0: never). Returns whether none is left; `timed_out`:
+    /// whether it gave up after `timeout` with copies still on their way.
     bool WaitForCopyBack(std::unique_lock<Common::SpinRecursiveMutex>& lock, DAddr addr,
-                         u64 size);
+                         u64 size,
+                         std::chrono::microseconds timeout = std::chrono::milliseconds{8},
+                         bool* timed_out = nullptr);
 
     /// 4 KiB pages in the CPU-read ranges (EDEN_NX2_REACTIVE_STATS; walks them).
     [[nodiscard]] u64 CpuReadPages() const;

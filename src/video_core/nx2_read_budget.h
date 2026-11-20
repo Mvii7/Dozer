@@ -29,16 +29,6 @@ namespace VideoCommon::Nx2ReadBudget {
     return BudgetUs() != 0;
 }
 
-/// EDEN_NX2_READ_TRAP_BUDGET_IMAGES=1: reads of images the GPU rendered (render targets the guest
-/// CPU reads, downloaded through the GPU thread) go on without waiting past the budget too.
-[[nodiscard]] inline bool Images() noexcept {
-    static const bool enabled = [] {
-        const char* value = std::getenv("EDEN_NX2_READ_TRAP_BUDGET_IMAGES");
-        return Enabled() && value != nullptr && value[0] == '1';
-    }();
-    return enabled;
-}
-
 [[nodiscard]] inline s64 NowNs() noexcept {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
                std::chrono::steady_clock::now().time_since_epoch())
@@ -52,7 +42,6 @@ struct State {
     std::atomic<u64> waited{};
     std::atomic<u64> waited_us{};
     std::atomic<u64> lenient{};
-    std::atomic<u64> lenient_images{};
     std::atomic<s64> next_log_ns{};
 };
 inline State g_state;
@@ -73,17 +62,16 @@ inline void MaybeLog(s64 now) {
     const u64 waited = g_state.waited.exchange(0, std::memory_order_relaxed);
     const u64 waited_us = g_state.waited_us.exchange(0, std::memory_order_relaxed);
     const u64 lenient = g_state.lenient.exchange(0, std::memory_order_relaxed);
-    const u64 lenient_images = g_state.lenient_images.exchange(0, std::memory_order_relaxed);
     LOG_INFO(HW_GPU,
              "Read trap budget {} us per 1/60 s (EDEN_NX2_READ_TRAP_BUDGET_US), last 10 s: {} "
-             "waits for {} ms, {} reads went on without waiting ({} of them of images)",
-             BudgetUs(), waited, waited_us / 1000, lenient + lenient_images, lenient_images);
+             "waits for {} ms, {} reads went on without waiting",
+             BudgetUs(), waited, waited_us / 1000, lenient);
 }
 
-/// Whether this slice's budget is spent: the read then goes on without waiting (counted).
-[[nodiscard]] inline bool TakeLenient(bool image = false) {
+/// What is left of this slice's budget (none with the budget off).
+[[nodiscard]] inline u64 RemainingUs() {
     if (!Enabled()) {
-        return false;
+        return 0;
     }
     const s64 now = NowNs();
     const s64 slice = now / SliceNs;
@@ -93,10 +81,21 @@ inline void MaybeLog(s64 now) {
         g_state.used_us.store(0, std::memory_order_relaxed);
     }
     MaybeLog(now);
-    if (g_state.used_us.load(std::memory_order_relaxed) < BudgetUs()) {
+    const u64 used = g_state.used_us.load(std::memory_order_relaxed);
+    return used < BudgetUs() ? BudgetUs() - used : 0;
+}
+
+/// A read went on without its data (counted).
+inline void NoteLenient() {
+    g_state.lenient.fetch_add(1, std::memory_order_relaxed);
+}
+
+/// Whether this slice's budget is spent: the read then goes on without waiting (counted).
+[[nodiscard]] inline bool TakeLenient() {
+    if (!Enabled() || RemainingUs() != 0) {
         return false;
     }
-    (image ? g_state.lenient_images : g_state.lenient).fetch_add(1, std::memory_order_relaxed);
+    NoteLenient();
     return true;
 }
 

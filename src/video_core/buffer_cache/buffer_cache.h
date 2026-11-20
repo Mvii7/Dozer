@@ -1631,12 +1631,13 @@ bool BufferCache<P>::CopyBackCovers(DAddr addr, u64 size) const {
 
 template <class P>
 bool BufferCache<P>::WaitForCopyBack(std::unique_lock<Common::SpinRecursiveMutex>& lock,
-                                     DAddr addr, u64 size) {
+                                     DAddr addr, u64 size, std::chrono::microseconds timeout,
+                                     bool* timed_out) {
     if (!Nx2Reactive::CopyBackWait() || !CopyBackCovers(addr, size)) {
         return !IsRegionGpuModified(addr, size);
     }
-    // The fence thread lands copies as the host GPU finishes them; past this, a sync flush.
-    constexpr auto timeout = std::chrono::milliseconds{8};
+    // The fence thread lands copies as the host GPU finishes them; past the timeout, a sync
+    // flush (or, out of the read trap budget, nothing).
     const bool stats = Common::Nx2Reactive::StatsEnabled();
     const s64 start_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
     const bool landed =
@@ -1650,6 +1651,9 @@ bool BufferCache<P>::WaitForCopyBack(std::unique_lock<Common::SpinRecursiveMutex
         if (!landed || !fresh) {
             Common::Nx2Reactive::Add(Counter::CopyBackWaitMisses, 1);
         }
+    }
+    if (timed_out != nullptr) {
+        *timed_out = !landed;
     }
     return fresh;
 }
