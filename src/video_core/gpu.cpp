@@ -438,7 +438,7 @@ struct GPU::Impl {
             }
             AsyncReadback::NoteRead();
         }
-        VideoCommon::Nx2ReadBudget::AddSince(budget_ns);
+        VideoCommon::Nx2ReadBudget::AddSince(budget_ns, true);
         if (stats) [[unlikely]] {
             const u64 wait_us = Common::Nx2Reactive::MicrosecondsSince(flush_ns);
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::SyncFlushes, 1);

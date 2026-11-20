@@ -348,6 +348,10 @@
 # that read little stay exact; bursts (Bananza's destruction) stop waiting. With Bananza's foliage
 # on, its data may then lag. A line every 10 s counts the waits and the reads that went on.
 #EDEN_NX2_READ_TRAP_BUDGET_US=1000
+# READ_TRAP_BUDGET_PREDICT=0: with the budget, a download (no copy back on its way) starts
+# even when what is left is less than downloads have been taking, and overshoots the budget.
+# Unset (on): such a read goes on without it; the budget line counts "downloads skipped".
+#EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0
 # TRAP_FASTMEM=0: a guest instruction whose read hits a read trap leaves fastmem for good, as
 # after any other fastmem fault (every later read of a GPU-cached page it makes then takes the
 # slow path). Unset (on): it takes the slow path for that one read and keeps fastmem; one that

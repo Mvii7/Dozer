@@ -2361,6 +2361,8 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
                 if (budget && timed_out) {
                     Budget::NoteLenient();
                     flush_buffer = false;
+                } else if (flush_buffer && Budget::SkipDownload()) {
+                    flush_buffer = false;
                 }
             }
             buffer_cache.ForgetReadTraps(page_start, page_end - page_start);
