@@ -135,8 +135,6 @@ enum class Counter : u32 {
     CommitRangeSets,        ///< The range sets those commits took together
     CommitGatherNs,         ///< BufferCache: finding the buffers and ranges to copy
     CommitRecordNs,         ///< BufferCache: staging, bookkeeping and recording the copies
-    BufferDownloadRegions,  ///< Copy regions the copies back were recorded as
-    BufferDownloadCommands, ///< Copy commands they were recorded in
     Count,
 };
 
@@ -305,8 +303,7 @@ struct Window {
                        "reads of held back copies); copy back pops by part: read downloads {} us, "
                        "{} copies {} us, disarm {} us ({} runs); fence commit by part: "
                        "texture {} us, buffer lock wait {} us, coalesce {} us, overwritten "
-                       "ranges {} us ({} range sets), gather {} us, record {} us; copy back regions "
-                       "{} in {} copy commands",
+                       "ranges {} us ({} range sets), gather {} us, record {} us",
                        w.Get(C::Fences), w.Get(C::FencesSkipped), w.Get(C::FencesReal),
                        w.Get(C::FencesBufferCommit), w.Get(C::FencesTextureCommit),
                        w.Get(C::FencesBufferDeferred), w.Get(C::FenceExtraFlushes),
@@ -326,8 +323,7 @@ struct Window {
                        w.Get(C::PopDisarmRuns), us(C::CommitTextureNs),
                        us(C::CommitBufferLockNs), us(C::CommitDeferNs),
                        us(C::CommitOverwrittenNs), w.Get(C::CommitRangeSets),
-                       us(C::CommitGatherNs), us(C::CommitRecordNs),
-                       w.Get(C::BufferDownloadRegions), w.Get(C::BufferDownloadCommands));
+                       us(C::CommitGatherNs), us(C::CommitRecordNs));
 }
 
 [[nodiscard]] inline std::string FormatWindow(const Window& w) {

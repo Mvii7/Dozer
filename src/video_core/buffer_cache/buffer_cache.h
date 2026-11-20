@@ -1518,17 +1518,6 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
         Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::BufferDownloadBytes,
                                  total_size_bytes);
     }
-    if (Nx2Reactive::CopyBackBatch()) {
-        CommitBatchedCopyBacks(std::span(downloads.data(), downloads.size()));
-        part(Common::Nx2Reactive::Counter::CommitRecordNs);
-        return;
-    }
-    if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
-        Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::BufferDownloadRegions,
-                                 downloads.size());
-        Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::BufferDownloadCommands,
-                                 downloads.size());
-    }
     auto download_staging = runtime.DownloadStagingBuffer(total_size_bytes, true);
     boost::container::small_vector<BufferCopy, 4> normalized_copies;
     runtime.PreCopyBarrier();
@@ -1562,86 +1551,6 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
     pending_download_read_seqs.push_back(read_download_seq);
     async_buffers.emplace_back(download_staging);
     part(Common::Nx2Reactive::Counter::CommitRecordNs);
-}
-
-template <class P>
-void BufferCache<P>::CommitBatchedCopyBacks(
-    std::span<const std::pair<BufferCopy, BufferId>> downloads) {
-    // Regions: ranges in one buffer close enough are copied together. The ranges stay apart for
-    // the landing: the bytes between them are not GPU data guest memory lacks.
-    struct Region {
-        BufferId buffer_id;
-        u64 src_offset;
-        u64 size;
-        u64 dst_offset;
-    };
-    boost::container::small_vector<Region, 16> regions;
-    boost::container::small_vector<u32, 16> region_of;
-    region_of.reserve(downloads.size());
-    for (const auto& [copy, buffer_id] : downloads) {
-        if (!regions.empty()) {
-            Region& last = regions.back();
-            const u64 last_end = last.src_offset + last.size;
-            if (last.buffer_id == buffer_id && copy.src_offset >= last_end &&
-                copy.src_offset - last_end <= Nx2Reactive::CopyBackMergeGap) {
-                last.size = copy.src_offset + copy.size - last.src_offset;
-                region_of.push_back(static_cast<u32>(regions.size() - 1));
-                continue;
-            }
-        }
-        regions.push_back(Region{buffer_id, copy.src_offset, copy.size, 0});
-        region_of.push_back(static_cast<u32>(regions.size() - 1));
-    }
-    u64 total_size_bytes = 0;
-    for (Region& region : regions) {
-        region.dst_offset = total_size_bytes;
-        total_size_bytes += Common::AlignUp(region.size, 64);
-    }
-    auto download_staging = runtime.DownloadStagingBuffer(total_size_bytes, true);
-    boost::container::small_vector<BufferCopy, 4> normalized_copies;
-    normalized_copies.reserve(downloads.size());
-    for (size_t i = 0; i < downloads.size(); ++i) {
-        const auto& [copy, buffer_id] = downloads[i];
-        const Region& region = regions[region_of[i]];
-        Buffer& buffer = slot_buffers[buffer_id];
-        const DAddr device_addr = buffer.CpuAddr() + copy.src_offset;
-        async_downloads.Add(device_addr, copy.size);
-        buffer.MarkUsage(copy.src_offset, copy.size);
-        normalized_copies.push_back(BufferCopy{
-            .src_offset = static_cast<size_t>(device_addr),
-            .dst_offset = download_staging.offset + region.dst_offset +
-                          (copy.src_offset - region.src_offset),
-            .size = copy.size,
-        });
-    }
-    u64 commands = 0;
-    runtime.PreCopyBarrier();
-    boost::container::small_vector<BufferCopy, 16> copies;
-    for (size_t begin = 0; begin < regions.size();) {
-        const BufferId buffer_id = regions[begin].buffer_id;
-        copies.clear();
-        size_t end = begin;
-        for (; end < regions.size() && regions[end].buffer_id == buffer_id; ++end) {
-            copies.push_back(BufferCopy{
-                .src_offset = regions[end].src_offset,
-                .dst_offset = download_staging.offset + regions[end].dst_offset,
-                .size = regions[end].size,
-            });
-        }
-        runtime.CopyBuffer(download_staging.buffer, slot_buffers[buffer_id],
-                           std::span<const BufferCopy>(copies.data(), copies.size()), false);
-        ++commands;
-        begin = end;
-    }
-    runtime.PostCopyBarrier();
-    if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
-        Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::BufferDownloadRegions,
-                                 regions.size());
-        Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::BufferDownloadCommands, commands);
-    }
-    pending_downloads.emplace_back(std::move(normalized_copies));
-    pending_download_read_seqs.push_back(read_download_seq);
-    async_buffers.emplace_back(download_staging);
 }
 
 template <class P>

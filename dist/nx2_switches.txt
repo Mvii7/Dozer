@@ -375,11 +375,6 @@
 # (8 ms at most, then the sync flush). The reactive stats line shows "traps disarmed at copy
 # back" and "copy back waits".
 #EDEN_NX2_COPYBACK_WAIT=0
-# COPYBACK_BATCH=0: each range a fence copies back from GPU-written buffers is its own copy
-# command, as before. Unset: a fence's ranges in one buffer are recorded as one copy command, and
-# ranges up to 256 bytes apart are copied as one region (only the ranges land in guest memory).
-# The reactive stats line shows "copy back regions N in M copy commands". Off in Safe.
-#EDEN_NX2_COPYBACK_BATCH=0
 # ASYNC_READBACK (on unless =0; after Lichii's read-back, Vulkan; cut c keeps the waiting flush):
 # a guest CPU read of GPU-written buffer memory no longer has the GPU thread wait for the host GPU. It submits
 # the download and goes on; the reading thread waits for it and writes the bytes itself. With it,
