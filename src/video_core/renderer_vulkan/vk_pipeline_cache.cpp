@@ -890,6 +890,8 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     // Records written under an older driver differ only in these two words. Clearing them makes
     // the key match a pipeline built now; a second record of the same key is not built again.
     ::Common::unordered_set<GraphicsPipelineCacheKey> loaded_graphics_keys;
+    // A session whose boot load was stopped appends the pipelines it builds again.
+    ::Common::unordered_set<ComputePipelineCacheKey> loaded_compute_keys;
 
     if (device.IsKhrPipelineExecutablePropertiesEnabled()) {
         state.statistics = std::make_unique<PipelineStatistics>(device);
@@ -897,6 +899,9 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     const auto load_compute{[&](std::ifstream& file, FileEnvironment env) {
         ComputePipelineCacheKey key;
         file.read(reinterpret_cast<char*>(&key), sizeof(key));
+        if (!loaded_compute_keys.insert(key).second) {
+            return;
+        }
 
         workers.QueueWork([this, key, env_ = std::move(env), &state, &callback]() mutable {
             const PipelineStats::ScopedRole stats_role{PipelineStats::Role::Boot};

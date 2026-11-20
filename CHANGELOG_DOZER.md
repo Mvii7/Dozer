@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Shader cache: a cache whose last record was cut off (the emulator crashed or was closed while
+  appending a pipeline) keeps the records before it; before, the whole `vulkan.bin` was deleted
+  and every pipeline was built again. A zero-filled tail no longer crashes the boot load, a record
+  that fails to write is cut back off, and a compute record saved twice is built once.
 - Safe now turns off async read-back too (`EDEN_NX2_ASYNC_READBACK=0`), in the launcher and the
   in-app preset.
 - `EDEN_NX2_WRITTEN_AGE`: two sets of recently written pages instead of three (2 MiB less). With
