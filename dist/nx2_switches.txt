@@ -133,7 +133,8 @@
 #EDEN_NX2_SEMEXEC_DEFER=1
 # ACQUIRE_SUSPEND=1: an equal semaphore acquire memory does not meet suspends its channel at once,
 # without waiting for the split's back (experimental, off). A release the back runs resumes it;
-# anything else is checked after a drain at most once per 1 ms. With GPU_PROFILE=1 the "Acquires
+# anything else is checked after a drain: once per 1 ms while the back is idle, once per 8 ms
+# while it runs other work, at once when memory meets the word. With GPU_PROFILE=1 the "Acquires
 # without a drain" line counts them ("suspended without a drain").
 #EDEN_NX2_ACQUIRE_SUSPEND=1
 # HLE_INDIRECT=0: run NVN's indexed indirect draw macro as it is, reading its records on the

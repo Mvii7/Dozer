@@ -781,15 +781,21 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
     }
     if (pending_acquire->undrained && !valve_passed) {
         // A release the back runs latches the waiter, registered before the channel suspended.
-        // Anything else (a guest CPU store, a write in the caches) is seen after a drain, at
-        // most once per 1 ms.
+        // Anything else (a guest CPU store, a write in the caches) is seen after a drain: at once
+        // when memory meets the word, else at most once per 1 ms while the back has nothing left
+        // to run (the drain waits for nothing then), and once per 8 ms otherwise. A drain while
+        // the back runs other channels' work waited for that work, which the latch already
+        // covers (Bananza: ~15% of the GPU thread with a drain every 1 ms).
         if (Nx2SemaphoreWaiters::Get().Latched(this)) {
             return resumed(ResumeHow::Latched);
         }
-        // A guest CPU store to the word drains at once (it changes no latch).
         const auto now = std::chrono::steady_clock::now();
-        if (now - pending_acquire->last_drain < std::chrono::milliseconds{1} &&
-            !pending_acquire->Matches(dma_pusher.memory_manager.Read<u32>(pending_acquire->address))) {
+        const auto since_drain = now - pending_acquire->last_drain;
+        const bool word_met =
+            pending_acquire->Matches(dma_pusher.memory_manager.Read<u32>(pending_acquire->address));
+        const bool back_idle = since_drain >= std::chrono::milliseconds{1} &&
+                               VideoCommon::GpuSplit::Get().BackCaughtUp();
+        if (!word_met && !back_idle && since_drain < std::chrono::milliseconds{8}) {
             return false;
         }
         pending_acquire->last_drain = now;
