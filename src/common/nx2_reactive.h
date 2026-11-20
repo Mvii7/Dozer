@@ -127,6 +127,14 @@ enum class Counter : u32 {
     PopDisarmNs,            ///< Read traps disarmed (EDEN_NX2_TRAP_POP_DISARM)
     PopDisarmRuns,          ///< Runs of pages disarmed (one page protection change each)
     PopCopies,              ///< Copies landed
+    // Of FenceCommitNs, by part (FenceManager::CommitCacheFlushes):
+    CommitTextureNs,        ///< The texture cache's lock and its downloads
+    CommitBufferLockNs,     ///< The wait for BufferCache::mutex
+    CommitDeferNs,          ///< EDEN_NX2_RX_COALESCE: deciding, and leaving copies for later
+    CommitOverwrittenNs,    ///< BufferCache: dropping ranges a later fence's set writes again
+    CommitRangeSets,        ///< The range sets those commits took together
+    CommitGatherNs,         ///< BufferCache: finding the buffers and ranges to copy
+    CommitRecordNs,         ///< BufferCache: staging, bookkeeping and recording the copies
     Count,
 };
 
@@ -293,7 +301,9 @@ struct Window {
                        "barriers {} (light {}); fastmem read fallbacks {}, read faults kept {}; traps "
                        "disarmed at copy back {}; copy back waits {} ({} us, {} missed); coalesce limit {} ({} "
                        "reads of held back copies); copy back pops by part: read downloads {} us, "
-                       "{} copies {} us, disarm {} us ({} runs)",
+                       "{} copies {} us, disarm {} us ({} runs); fence commit by part: "
+                       "texture {} us, buffer lock wait {} us, coalesce {} us, overwritten "
+                       "ranges {} us ({} range sets), gather {} us, record {} us",
                        w.Get(C::Fences), w.Get(C::FencesSkipped), w.Get(C::FencesReal),
                        w.Get(C::FencesBufferCommit), w.Get(C::FencesTextureCommit),
                        w.Get(C::FencesBufferDeferred), w.Get(C::FenceExtraFlushes),
@@ -310,7 +320,10 @@ struct Window {
                        w.Get(C::CopyBackWaitMisses), w.Get(Gauge::CoalesceLimit),
                        w.Get(C::CoalesceDeferredReads), us(C::PopReadDownloadsNs),
                        w.Get(C::PopCopies), us(C::PopWriteNs), us(C::PopDisarmNs),
-                       w.Get(C::PopDisarmRuns));
+                       w.Get(C::PopDisarmRuns), us(C::CommitTextureNs),
+                       us(C::CommitBufferLockNs), us(C::CommitDeferNs),
+                       us(C::CommitOverwrittenNs), w.Get(C::CommitRangeSets),
+                       us(C::CommitGatherNs), us(C::CommitRecordNs));
 }
 
 [[nodiscard]] inline std::string FormatWindow(const Window& w) {

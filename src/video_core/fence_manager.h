@@ -386,6 +386,16 @@ private:
     /// waited for it).
     CacheFlushes CommitCacheFlushes(bool delay_fence) {
         CacheFlushes flushes{};
+        // EDEN_NX2_REACTIVE_STATS: the parts' times
+        const bool stats = Common::Nx2Reactive::StatsEnabled();
+        s64 part_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
+        const auto part = [&](Common::Nx2Reactive::Counter counter) {
+            if (stats) [[unlikely]] {
+                const s64 now = Common::Nx2Reactive::NowNs();
+                Common::Nx2Reactive::Add(counter, static_cast<u64>(now - part_ns));
+                part_ns = now;
+            }
+        };
         {
             std::scoped_lock lock{texture_cache.mutex};
             flushes.should_flush = texture_cache.HasUncommittedFlushes();
@@ -394,16 +404,20 @@ private:
                 flushes.committed |= TextureFlushes;
             }
         }
+        part(Common::Nx2Reactive::Counter::CommitTextureNs);
         {
             // Back stages, cut c: B's mutex (K3); C may commit only inside a ParkB.
             Nx2Stages::CheckBufferLock("FenceManager::CommitCacheFlushes");
             std::scoped_lock lock{buffer_cache.mutex};
+            part(Common::Nx2Reactive::Counter::CommitBufferLockNs);
             if (VideoCommon::Nx2AsyncReadback::EarlyDownloads()) {
                 // EDEN_NX2_EARLY_DOWNLOADS: the writes since the last dispatch, before this fence.
                 buffer_cache.NoteReadBackPoint();
             }
             if (buffer_cache.HasUncommittedFlushes()) {
-                if (coalesce_on && !CommitBufferNow(delay_fence, flushes)) {
+                const bool commit_now = !coalesce_on || CommitBufferNow(delay_fence, flushes);
+                part(Common::Nx2Reactive::Counter::CommitDeferNs);
+                if (!commit_now) {
                     return flushes;
                 }
                 buffer_cache.CommitAsyncFlushes();

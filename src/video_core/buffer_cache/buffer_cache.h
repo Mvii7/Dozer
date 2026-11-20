@@ -1437,6 +1437,20 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
         return;
     }
 
+    // EDEN_NX2_REACTIVE_STATS: the parts' times
+    const bool stats = Common::Nx2Reactive::StatsEnabled();
+    s64 part_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
+    const auto part = [&](Common::Nx2Reactive::Counter counter) {
+        if (stats) [[unlikely]] {
+            const s64 now = Common::Nx2Reactive::NowNs();
+            Common::Nx2Reactive::Add(counter, static_cast<u64>(now - part_ns));
+            part_ns = now;
+        }
+    };
+    if (stats) [[unlikely]] {
+        Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::CommitRangeSets,
+                                 committed_gpu_modified_ranges.size());
+    }
     auto it = committed_gpu_modified_ranges.begin();
     while (it != committed_gpu_modified_ranges.end()) {
         auto& current_intervals = *it;
@@ -1449,6 +1463,7 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
         }
         it++;
     }
+    part(Common::Nx2Reactive::Counter::CommitOverwrittenNs);
 
     boost::container::small_vector<std::pair<BufferCopy, BufferId>, 16> downloads;
     u64 total_size_bytes = 0;
@@ -1491,6 +1506,7 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
         });
     }
     committed_gpu_modified_ranges.clear();
+    part(Common::Nx2Reactive::Counter::CommitGatherNs);
     if (downloads.empty()) {
         async_buffers.emplace_back(std::optional<Async_Buffer>{});
         return;
@@ -1534,6 +1550,7 @@ void BufferCache<P>::CommitAsyncFlushesHigh() {
     pending_downloads.emplace_back(std::move(normalized_copies));
     pending_download_read_seqs.push_back(read_download_seq);
     async_buffers.emplace_back(download_staging);
+    part(Common::Nx2Reactive::Counter::CommitRecordNs);
 }
 
 template <class P>
