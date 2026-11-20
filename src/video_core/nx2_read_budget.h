@@ -123,6 +123,9 @@ inline void NoteLenient() {
     }
     NoteLenient();
     g_state.skipped.fetch_add(1, std::memory_order_relaxed);
+    // Each skip lowers the average a little, so one slow download does not stop all later ones.
+    const u64 avg = g_state.download_avg_us.load(std::memory_order_relaxed);
+    g_state.download_avg_us.store(avg - avg / 32, std::memory_order_relaxed);
     return true;
 }
 
