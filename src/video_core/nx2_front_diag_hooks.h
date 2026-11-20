@@ -71,14 +71,16 @@ inline bool On() {
 inline int ReadPeekMode() {
     static const int mode = [] {
         const char* const acquire = std::getenv("EDEN_NX2_ACQUIRE_PEEK");
-        if (acquire == nullptr || acquire[0] != '1') {
-            return 0;
-        }
         const char* const value = std::getenv("EDEN_NX2_DMA_READ_PEEK");
-        if (value == nullptr) {
-            return 0;
+        int result = 0;
+        if (acquire != nullptr && acquire[0] == '1' && value != nullptr) {
+            result = value[0] == '2' ? 2 : value[0] == '1' ? 1 : 0;
         }
-        return value[0] == '2' ? 2 : value[0] == '1' ? 1 : 0;
+        LOG_INFO(HW_GPU, "MME DMA read peek {} (EDEN_NX2_DMA_READ_PEEK {}, EDEN_NX2_ACQUIRE_PEEK {})",
+                 result == 0 ? "off" : result == 1 ? "on" : "verify",
+                 value != nullptr ? fmt::format("'{}'", value) : std::string{"unset"},
+                 acquire != nullptr ? fmt::format("'{}'", acquire) : std::string{"unset"});
+        return result;
     }();
     return mode;
 }
