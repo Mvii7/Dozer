@@ -81,6 +81,9 @@ public:
         /// When a poll that kept waiting last drained the split (CanResumeAcquire)
         std::chrono::steady_clock::time_point last_drain;
         bool reported;
+        /// Suspended without the drain (EDEN_NX2_ACQUIRE_SUSPEND): resumed by a latch, or by
+        /// the word after a drain at most once per 1 ms.
+        bool undrained = false;
 
         [[nodiscard]] bool Matches(u32 current) const;
     };

@@ -440,6 +440,18 @@ bool NoDrainEqual() {
     return enabled;
 }
 
+// EDEN_NX2_ACQUIRE_SUSPEND (on unless =0): an equal acquire that needs a drain to decide and that
+// memory does not meet suspends its channel without the drain, its waiter registered first. In
+// Donkey Kong Bananza the release such an acquire waits for came from work sent after it (another
+// channel's) for ~85% of them, so the drain waited for the back for nothing.
+bool SuspendFirst() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_ACQUIRE_SUSPEND");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
 // Whether the back writes a payload release to memory when it runs it: below High GPU accuracy,
 // with fences that run their operations at once (FenceManager::SignalFence).
 bool ReleasesLandAtOnce() {
@@ -472,6 +484,7 @@ struct NoDrainStats {
     u64 drain_queued{};
     u64 drain_not_met{};
     u64 drain_compute{}; ///< Equal, a compute launch sent after the queued release
+    u64 suspended{};     ///< Equal, suspended without a drain (EDEN_NX2_ACQUIRE_SUSPEND)
     u64 polls{};     ///< Polls that kept waiting without a drain
     u64 valve{};     ///< Polls that kept waiting and drained (once per 1 ms)
     u64 mismatches{}; ///< Verify: passed, yet the word after a drain doesn't meet it
@@ -497,12 +510,13 @@ void CountNoDrain(u64 NoDrainStats::*counter) {
              "Acquires without a drain in 10 s: {} passed ({} by a queued release), {} drained "
              "({} equal or mask, {} settings, {} back engine release queued, {} unmapped or "
              "GPU-written word, {} queued release unknown or short, {} not met, {} equal with a "
-             "compute launch after the release), {} polls kept "
+             "compute launch after the release), {} suspended without a drain, {} polls kept "
              "waiting, {} polls drained by the 1 ms valve; verify: {} passed but not met after a "
              "drain, {} kept waiting but met after it",
              stats.passed, stats.by_queued, stats.drained, stats.drain_operation,
              stats.drain_settings, stats.drain_unknown, stats.drain_word, stats.drain_queued,
-             stats.drain_not_met, stats.drain_compute, stats.polls, stats.valve, stats.mismatches,
+             stats.drain_not_met, stats.drain_compute, stats.suspended, stats.polls, stats.valve,
+             stats.mismatches,
              stats.late);
     stats = NoDrainStats{};
     stats.next = now + std::chrono::seconds{10};
@@ -513,45 +527,51 @@ void CountNoDrain(u64 NoDrainStats::*counter) {
 // once the back ran the queued work. Only the last release the front sent to the word decides
 // instead, while the back may not have run it (GpuSplit::NoteSemaphoreWrite: the puller's, the
 // 3D and compute report semaphores, the copy engine's). Port of Lichii's #949.
-AcquireCheck CheckWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcquire& acquire) {
+AcquireCheck CheckWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcquire& acquire,
+                               bool count = true) {
+    const auto note = [count](u64 NoDrainStats::*counter) {
+        if (count) {
+            CountNoDrain(counter);
+        }
+    };
     auto& split = VideoCommon::GpuSplit::Get();
     if (NoDrain() == NoDrainMode::Off) {
         return AcquireCheck::Drain;
     }
     const bool equal = acquire.operation == Peek::OpEqual && NoDrainEqual();
     if (acquire.operation != Peek::OpGequal && !equal) {
-        CountNoDrain(&NoDrainStats::drain_operation);
+        note(&NoDrainStats::drain_operation);
         return AcquireCheck::Drain;
     }
     if (!split.Active() || !split.FrontMacros() || !ReleasesLandAtOnce()) {
-        CountNoDrain(&NoDrainStats::drain_settings);
+        note(&NoDrainStats::drain_settings);
         return AcquireCheck::Drain;
     }
     if (split.UnknownSemaphoreWriteQueued()) {
-        CountNoDrain(&NoDrainStats::drain_unknown);
+        note(&NoDrainStats::drain_unknown);
         return AcquireCheck::Drain;
     }
     // A word the buffer cache may hold newer than memory is read through the back.
     const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address);
     if (!device || Tegra::Nx2IsGpuWritten(*device)) {
-        CountNoDrain(&NoDrainStats::drain_word);
+        note(&NoDrainStats::drain_word);
         return AcquireCheck::Drain;
     }
     if (const auto queued = split.QueuedSemaphoreWriteAt(*device)) {
         // A QMD the front can't read may release the word after it (NVN2's maxima).
         if (equal && queued->launch_after) {
-            CountNoDrain(&NoDrainStats::drain_compute);
+            note(&NoDrainStats::drain_compute);
             return AcquireCheck::Drain;
         }
         if (queued->known && acquire.Matches(queued->payload)) {
             return AcquireCheck::MetByQueued;
         }
-        CountNoDrain(&NoDrainStats::drain_queued);
+        note(&NoDrainStats::drain_queued);
         return AcquireCheck::Drain;
     }
     // Without a queued release the word in memory decides only for the words that only advance.
     if (equal) {
-        CountNoDrain(&NoDrainStats::drain_operation);
+        note(&NoDrainStats::drain_operation);
         return AcquireCheck::Drain;
     }
     return acquire.Matches(dma_pusher.memory_manager.Read<u32>(acquire.address))
@@ -601,10 +621,132 @@ bool Puller::PendingAcquire::Matches(u32 current) const {
     }
 }
 
+namespace {
+
+// EDEN_NX2_GPU_PROFILE: how acquires that had to wait were met at last, and how long the channel
+// waited, logged every 10 s. A latch is a GPU-side write (Nx2LatchSource names which); a word met
+// in memory without one was stored by the guest CPU or written around the latches.
+enum class ResumeHow : u8 {
+    Queued,       ///< A release sent to the word, not run yet (no drain)
+    Memory,       ///< The word in memory (no drain)
+    Latched,      ///< A latch (no drain)
+    PeekLatched,  ///< A latch, at the peek before the drain
+    PeekSkip,     ///< The peek let it go on
+    DrainLatched, ///< A latch, after a drain
+    DrainMemory,  ///< The word in memory, after a drain
+    HostPending,  ///< A release only the host GPU has still to write
+    Count,
+};
+constexpr std::array<const char*, static_cast<size_t>(ResumeHow::Count)> resume_how_names{
+    "queued release", "memory",          "latch",           "latch at peek",
+    "peek",           "latch after drain", "memory after drain", "host GPU release"};
+constexpr std::array<const char*, static_cast<size_t>(Nx2LatchSource::Count)> latch_source_names{
+    "other", "QMD add", "QMD max", "query fence", "query"};
+
+struct ResumeStats {
+    static constexpr size_t Buckets = 5; ///< Waits under 0.1/0.5/2/8 ms and over
+    std::array<u64, static_cast<size_t>(ResumeHow::Count)> count{};
+    std::array<u64, static_cast<size_t>(ResumeHow::Count)> wait_us{};
+    std::array<std::array<u64, Buckets>, static_cast<size_t>(ResumeHow::Count)> buckets{};
+    std::array<u64, static_cast<size_t>(Nx2LatchSource::Count)> sources{};
+    std::array<u64, 3> operations{}; ///< Equal, greater or equal, mask
+    std::chrono::steady_clock::time_point next{};
+};
+thread_local ResumeStats t_resume;
+
+void NoteResume(ResumeHow how, const Puller::PendingAcquire& acquire, const void* owner) {
+    if (!VideoCommon::Nx2Profile::Enabled()) {
+        return;
+    }
+    auto& stats = t_resume;
+    const auto now = std::chrono::steady_clock::now();
+    const u64 us = static_cast<u64>(
+        std::chrono::duration_cast<std::chrono::microseconds>(now - acquire.since).count());
+    const size_t index = static_cast<size_t>(how);
+    ++stats.count[index];
+    stats.wait_us[index] += us;
+    ++stats.buckets[index][us < 100 ? 0 : us < 500 ? 1 : us < 2000 ? 2 : us < 8000 ? 3 : 4];
+    if (how == ResumeHow::Latched || how == ResumeHow::PeekLatched ||
+        how == ResumeHow::DrainLatched) {
+        ++stats.sources[static_cast<size_t>(Nx2SemaphoreWaiters::Get().LatchSource(owner))];
+    }
+    const u32 op = acquire.operation;
+    ++stats.operations[op == Nx2SemaphoreWaiters::AcquireEqual    ? 0
+                       : op == Nx2SemaphoreWaiters::AcquireGequal ? 1
+                                                                  : 2];
+    if (stats.next == std::chrono::steady_clock::time_point{}) {
+        stats.next = now + std::chrono::seconds{10};
+    }
+    if (now < stats.next) {
+        return;
+    }
+    std::string line;
+    for (size_t i = 0; i < stats.count.size(); ++i) {
+        if (stats.count[i] == 0) {
+            continue;
+        }
+        const auto& b = stats.buckets[i];
+        line += fmt::format("{}{} {} ({:.1f} ms; {}/{}/{}/{}/{})", line.empty() ? "" : ", ",
+                            resume_how_names[i], stats.count[i],
+                            static_cast<double>(stats.wait_us[i]) / 1000.0, b[0], b[1], b[2], b[3],
+                            b[4]);
+    }
+    std::string sources;
+    for (size_t i = 0; i < stats.sources.size(); ++i) {
+        sources +=
+            fmt::format("{}{} {}", i == 0 ? "" : ", ", latch_source_names[i], stats.sources[i]);
+    }
+    LOG_INFO(HW_GPU,
+             "Acquires that waited, in 10 s, by what met them (count, total wait; waits under "
+             "0.1/0.5/2/8 ms and over): {} | latches by source: {} | equal {}, greater or equal "
+             "{}, mask {}",
+             line.empty() ? "none" : line, sources, stats.operations[0], stats.operations[1],
+             stats.operations[2]);
+    const auto next = now + std::chrono::seconds{10};
+    stats = ResumeStats{};
+    stats.next = next;
+}
+
+// EDEN_NX2_ACQUIRE_SUSPEND: registers the waiter, then reads the word. False (waiter removed) when
+// memory meets it: a value from before the work still queued may be met by that work no longer,
+// so the drain decides as before.
+// Only where a release lands at once and latches the waiter when the back runs it: not with the
+// releases in fences, a release the front can't see queued, or a word the caches may hold newer.
+bool SuspendUndrainedFor(const void* owner, DmaPusher& dma_pusher, Puller::PendingAcquire& acquire) {
+    auto& split = VideoCommon::GpuSplit::Get();
+    if (NoDrain() == NoDrainMode::Off || !split.Active() || !split.FrontMacros() ||
+        !ReleasesLandAtOnce() || split.UnknownSemaphoreWriteQueued()) {
+        return false;
+    }
+    const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address);
+    if (!device || Tegra::Nx2IsGpuWritten(*device)) {
+        return false;
+    }
+    u32* word = reinterpret_cast<u32*>(dma_pusher.memory_manager.GetPointer(acquire.address));
+    if (reinterpret_cast<uintptr_t>(word) % alignof(u32) != 0) {
+        word = nullptr;
+    }
+    auto& waiters = Nx2SemaphoreWaiters::Get();
+    waiters.Add(owner, *device, acquire.value, acquire.operation, word);
+    if (acquire.Matches(dma_pusher.memory_manager.Read<u32>(acquire.address))) {
+        waiters.Remove(owner);
+        return false;
+    }
+    acquire.undrained = true;
+    acquire.last_drain = std::chrono::steady_clock::now();
+    return true;
+}
+
+} // Anonymous namespace
+
 bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
     if (!pending_acquire) {
         return true;
     }
+    const auto resumed = [&](ResumeHow how) {
+        NoteResume(how, *pending_acquire, this);
+        return true;
+    };
     const auto rescued = [&](u32 now) {
         if (static std::atomic<u32> count{};
             !pending_acquire->Matches(now) && count.fetch_add(1) < 64) {
@@ -613,14 +755,18 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
                      pending_acquire->value, now);
         }
     };
-    switch (const AcquireCheck check = CheckWithoutDrain(dma_pusher, *pending_acquire); check) {
+    bool valve_passed = false;
+    // A suspended acquire's polls count once, as kept waiting or drained, below.
+    const bool undrained = pending_acquire->undrained;
+    switch (const AcquireCheck check = CheckWithoutDrain(dma_pusher, *pending_acquire, !undrained);
+            check) {
     case AcquireCheck::MetByQueued:
         CountNoDrain(&NoDrainStats::by_queued);
         [[fallthrough]];
     case AcquireCheck::Met:
         CountNoDrain(&NoDrainStats::passed);
         VerifyWithoutDrain(dma_pusher, *pending_acquire, check);
-        return true;
+        return resumed(check == AcquireCheck::MetByQueued ? ResumeHow::Queued : ResumeHow::Memory);
     case AcquireCheck::NotMet: {
         // A release the back runs latches the waiter or reaches memory on its own: until it runs
         // one, nothing sent to the word meets it. Work only a drain finishes still lands: a
@@ -628,7 +774,7 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         // the drain reports waits over 2 s.
         if (Nx2SemaphoreWaiters::Get().Latched(this)) {
             CountNoDrain(&NoDrainStats::passed);
-            return true;
+            return resumed(ResumeHow::Latched);
         }
         const auto now = std::chrono::steady_clock::now();
         if (now - pending_acquire->last_drain < std::chrono::milliseconds{1}) {
@@ -638,11 +784,37 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         }
         pending_acquire->last_drain = now;
         CountNoDrain(&NoDrainStats::valve);
+        valve_passed = true;
         break;
     }
     case AcquireCheck::Drain:
-        CountNoDrain(&NoDrainStats::drained);
+        if (!undrained) {
+            CountNoDrain(&NoDrainStats::drained);
+        }
         break;
+    }
+    if (undrained && !valve_passed) {
+        // A release the back runs latches the waiter, registered before the channel suspended.
+        // Anything else (a guest CPU store, a write in the caches) is seen after a drain: at once
+        // when memory meets the word, else at most once per 1 ms while the back has nothing left
+        // to run (the drain waits for nothing then), and once per 8 ms otherwise. A drain while
+        // the back runs other channels' work waited for that work, which the latch already
+        // covers (Bananza: ~15% of the GPU thread with a drain every 1 ms).
+        if (Nx2SemaphoreWaiters::Get().Latched(this)) {
+            return resumed(ResumeHow::Latched);
+        }
+        const auto now = std::chrono::steady_clock::now();
+        const auto since_drain = now - pending_acquire->last_drain;
+        const bool word_met =
+            pending_acquire->Matches(dma_pusher.memory_manager.Read<u32>(pending_acquire->address));
+        const bool back_idle = since_drain >= std::chrono::milliseconds{1} &&
+                               VideoCommon::GpuSplit::Get().BackCaughtUp();
+        if (!word_met && !back_idle && since_drain < std::chrono::milliseconds{8}) {
+            CountNoDrain(&NoDrainStats::polls);
+            return false;
+        }
+        CountNoDrain(&NoDrainStats::drained);
+        pending_acquire->last_drain = now;
     }
     const PeekRead peek = PeekBefore(dma_pusher, pending_acquire->address,
                                      pending_acquire->operation, pending_acquire->value,
@@ -653,12 +825,12 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         if (Nx2SemaphoreWaiters::Get().Latched(this)) {
             CountPeek(&PeekStats::resumes_latched);
             rescued(peek.raw);
-            return true;
+            return resumed(ResumeHow::PeekLatched);
         }
         if (peek.verdict == Peek::Verdict::Skip) {
             CountPeek(&PeekStats::resumes_skipped);
             PeekSkipped();
-            return true;
+            return resumed(ResumeHow::PeekSkip);
         }
     }
     // The release may still be queued for the split GPU thread's back half (and the caches
@@ -669,17 +841,17 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
               pending_acquire->value, current);
     if (Nx2SemaphoreWaiters::Get().Latched(this)) {
         rescued(current);
-        return true;
+        return resumed(ResumeHow::DrainLatched);
     }
     if (pending_acquire->Matches(current)) {
-        return true;
+        return resumed(ResumeHow::DrainMemory);
     }
     // A release the GPU already processed may only wait for the host GPU to write it (accurate
     // GPU mode): work after this acquire runs after the work before that release on the host.
     if (const auto device = dma_pusher.memory_manager.GpuToCpuAddress(pending_acquire->address)) {
         if (const auto pending = dma_pusher.rasterizer->PendingSemaphoreRelease(*device);
             pending && pending_acquire->Matches(*pending)) {
-            return true;
+            return resumed(ResumeHow::HostPending);
         }
     }
     if (!pending_acquire->reported &&
@@ -865,6 +1037,13 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
             return;
         } else if (check == AcquireCheck::NotMet) {
             CountNoDrain(&NoDrainStats::drain_not_met);
+        }
+        if (SuspendFirst() && op == GpuSemaphoreOperation::AcquireEqual &&
+            SuspendUndrainedFor(this, dma_pusher, acquire)) {
+            CountNoDrain(&NoDrainStats::suspended);
+            pending_acquire = acquire;
+            VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::AcquireWaits, 1);
+            return;
         }
         CountNoDrain(&NoDrainStats::drained);
         const UnmetClass unmet = ClassifyUnmet(peek, acquire.operation, acquire.value);
