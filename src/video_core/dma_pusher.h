@@ -190,7 +190,7 @@ public:
     void RecordParsedEntry(const CommandListHeader& header, std::span<const CommandHeader> commands);
     /// Brings command list words the GPU wrote (still only in host buffers) to guest memory.
     void FlushGpuWrittenCommands(GPUVAddr address, size_t size);
-    /// Whether a page of the range was ever written by the GPU (Tegra::Nx2IsGpuWritten).
+    /// Whether the GPU wrote a page of the range lately (Tegra::Nx2RecentlyGpuWritten).
     bool IsGpuWrittenRange(GPUVAddr address, size_t size) const;
     /// Notes the semaphore an engine method sent to the split's back may release
     /// (GpuSplit::NoteSemaphoreWrite): a copy's release, or the reports and macros of the 3D and

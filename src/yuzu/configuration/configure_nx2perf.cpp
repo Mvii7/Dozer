@@ -26,6 +26,7 @@ ConfigureNx2Perf::ConfigureNx2Perf(QWidget* parent)
     using S = Perf::Switches;
     rows = {
         {ui->read_traps, &S::read_traps, {"EDEN_NX2_READ_TRAPS"}},
+        {ui->read_trap_budget, &S::read_trap_budget, {"EDEN_NX2_READ_TRAP_BUDGET_US"}},
         {ui->split_gpu_thread, &S::split_gpu_thread, {"EDEN_NX2_BACK_STAGES", "EDEN_NX2_BACK_CUTS"}},
         {ui->acquire_peek, &S::acquire_peek, {"EDEN_NX2_ACQUIRE_PEEK"}},
         {ui->jit_same, &S::jit_same, {"EDEN_NX2_JIT_SAME"}},
@@ -115,19 +116,20 @@ void ConfigureNx2Perf::ShowPreset() {
         ui->preset->setCurrentIndex(Perf::IndexOf(preset));
     }
     switch (preset) {
-    case Perf::Preset::Balanced:
-        ui->preset_text->setText(tr("The balanced settings. Foliage is rendered at a performance "
-                                    "cost. Reactive Flushing off (Graphics, Advanced). Like "
-                                    "start-balanced.bat."));
-        break;
     case Perf::Preset::Performance:
-        ui->preset_text->setText(tr("The fastest settings, with read traps and Reactive Flushing "
-                                    "off. Foliage is not rendered for a performance gain. Like "
-                                    "start-performance.bat."));
+        ui->preset_text->setText(tr("The fastest settings: all on, read traps too, Reactive "
+                                    "Flushing off (Graphics, Advanced). Donkey Kong Bananza: "
+                                    "foliage off, very low reflection updates, medium "
+                                    "shadows. Like start-performance.bat."));
+        break;
+    case Perf::Preset::Quality:
+        ui->preset_text->setText(tr("Performance's settings with Donkey Kong Bananza as the game "
+                                    "makes it: foliage, reflections and very high shadows. Like "
+                                    "start-quality.bat."));
         break;
     case Perf::Preset::Reactive:
         ui->preset_text->setText(
-            tr("The balanced settings with Reactive Flushing instead of read traps (barrier "
+            tr("The performance settings with Reactive Flushing instead of read traps (barrier "
                "feedback loops on, RX_RT_FIT=3). Like start-reactive-experimental.bat."));
         break;
     case Perf::Preset::Safe:
@@ -184,11 +186,11 @@ void ConfigureNx2Perf::ShowFrameGen() {
         text = tr("Off.");
         break;
     case Perf::FrameGen::Fixed2x:
-        text = tr("FSR3, one generated frame per real frame. On a 60 Hz screen it holds the game "
+        text = tr("Optical Flow, one generated frame per real frame. On a 60 Hz screen it holds the game "
                   "at 30 fps.");
         break;
     case Perf::FrameGen::Dynamic:
-        text = tr("FSR3 aiming at 120 fps, at most the screen's refresh rate: 2x to 4x, only while "
+        text = tr("Optical Flow aiming at 120 fps, at most the screen's refresh rate: 2x to 4x, only while "
                   "the screen can show the frames and the game's own frame rate holds.");
         break;
     case Perf::FrameGen::Other:

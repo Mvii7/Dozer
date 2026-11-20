@@ -27,7 +27,9 @@ constexpr size_t FIRST_DELTA_LEVEL = 4;
 LsfgChain::LsfgChain(const Device& device, MemoryAllocator& memory_allocator,
                      const LsfgShaders& shaders, VkExtent2D extent, VkFormat format,
                      f32 flow_scale)
-    : resources{device, memory_allocator, flow_scale},
+    // Linear scRGB frames take the HDR path (as lsfg-vk's HDR mode); HDR10's PQ code values are
+    // perceptual in [0, 1] like SDR's and take the SDR one
+    : resources{device, memory_allocator, flow_scale, format == VK_FORMAT_R16G16B16A16_SFLOAT},
       descriptor_pool{CreateLsfgDescriptorPool(
           device, FIXED_DESCRIPTOR_SETS +
                       DESCRIPTOR_SETS_PER_SLOT * static_cast<u32>(LSFG_GENERATION_SLOTS))} {

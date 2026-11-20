@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "common/common_types.h"
+#include "common/logging.h"
 #include "common/nx2_sync_serial.h"
 #include "common/thread.h"
 
@@ -61,6 +62,44 @@ inline bool Nx2NeedsBufferDownloads() {
 inline constexpr u64 Nx2WrittenPageBits = 12;
 inline std::array<std::atomic<u64>, (u64{1} << (36 - Nx2WrittenPageBits)) / 64> g_nx2_gpu_written_pages{};
 
+// The same pages by when the GPU last wrote them, in two sets: the current one and the one before
+// it. Every EDEN_NX2_WRITTEN_AGE frames (default 600; 0: off, the bits above alone) the previous
+// set is cleared and becomes current. DmaPusher drains the split's back only for blocks on pages
+// of either set: after other worlds, Bananza's command lists and macro parameters landed on pages
+// their buffers wrote minutes before, and each such block drained it.
+inline std::array<std::array<std::atomic<u64>, (u64{1} << (36 - Nx2WrittenPageBits)) / 64>, 2>
+    g_nx2_recent_written_pages{};
+inline std::atomic<u32> g_nx2_recent_set{};
+inline std::atomic<u32> g_nx2_recent_frames{}; ///< Frames since the last change of set
+
+// EDEN_NX2_WRITTEN_AGE with EDEN_NX2_REACTIVE_STATS: pages DmaPusher found written by the GPU
+// once but not lately, so it did not drain. A write still queued on the split's back is what the
+// session's bits guarded against; one such page written again within a few frames points to a
+// block read with older words.
+struct Nx2AgedSkip {
+    u64 page;
+    u32 frame;
+};
+inline constexpr u32 Nx2AgedSkipFrames = 4;
+inline std::mutex g_nx2_aged_skips_mutex;
+inline std::vector<Nx2AgedSkip> g_nx2_aged_skips;
+inline std::atomic<u32> g_nx2_aged_frame{};
+inline std::atomic<u64> g_nx2_aged_skip_pages{};
+inline std::atomic<u64> g_nx2_aged_rewrites{};
+
+/// EDEN_NX2_WRITTEN_AGE, read at the first call (after nx2_switches.txt is loaded).
+inline u32 Nx2WrittenAge() {
+    static std::atomic<s64> age{-1};
+    s64 value = age.load(std::memory_order_relaxed);
+    if (value < 0) [[unlikely]] {
+        const char* env = std::getenv("EDEN_NX2_WRITTEN_AGE");
+        value = env == nullptr || env[0] == '\0' ? 600 : std::strtoll(env, nullptr, 10);
+        value = std::clamp<s64>(value, 0, 1 << 20);
+        age.store(value, std::memory_order_relaxed);
+    }
+    return static_cast<u32>(value);
+}
+
 /// EDEN_NX2_MARK_WORDS=2 (Nx2MarkGpuWritten): `mask` is the bits word `index` gets 64 pages at a
 /// time, `pages` the bits worked out page by page. Logs the first 16 words where they differ and,
 /// at each power of two from 1024 on, how many words were checked and how many differed
@@ -91,6 +130,7 @@ inline void Nx2MarkGpuWritten(u64 device_address, u64 size) {
     const u64 first = device_address >> Nx2WrittenPageBits;
     const u64 last = std::min<u64>((device_address + size - 1) >> Nx2WrittenPageBits,
                                    g_nx2_gpu_written_pages.size() * 64 - 1);
+    auto& recent = g_nx2_recent_written_pages[g_nx2_recent_set.load(std::memory_order_acquire) % 2];
     if (mode != 0) {
         for (u64 index = first / 64; first <= last && index <= last / 64; ++index) {
             const u64 low = index == first / 64 ? first % 64 : 0;
@@ -105,18 +145,20 @@ inline void Nx2MarkGpuWritten(u64 device_address, u64 size) {
                 Nx2CheckMarkWord(index, mask, pages);
                 mask = pages;
             }
-            auto& word = g_nx2_gpu_written_pages[index];
-            if ((word.load(std::memory_order_relaxed) & mask) != mask) {
-                word.fetch_or(mask, std::memory_order_relaxed);
+            for (auto* const word : {&g_nx2_gpu_written_pages[index], &recent[index]}) {
+                if ((word->load(std::memory_order_relaxed) & mask) != mask) {
+                    word->fetch_or(mask, std::memory_order_relaxed);
+                }
             }
         }
         return;
     }
     for (u64 page = first; page <= last; ++page) {
-        auto& word = g_nx2_gpu_written_pages[page / 64];
         const u64 bit = u64{1} << (page % 64);
-        if ((word.load(std::memory_order_relaxed) & bit) == 0) {
-            word.fetch_or(bit, std::memory_order_relaxed);
+        for (auto* const word : {&g_nx2_gpu_written_pages[page / 64], &recent[page / 64]}) {
+            if ((word->load(std::memory_order_relaxed) & bit) == 0) {
+                word->fetch_or(bit, std::memory_order_relaxed);
+            }
         }
     }
 }
@@ -172,6 +214,14 @@ inline void Nx2ClearGpuWrittenPages() {
     for (auto& word : g_nx2_untracked_pages) {
         word.store(0, std::memory_order_relaxed);
     }
+    for (auto& set : g_nx2_recent_written_pages) {
+        for (auto& word : set) {
+            word.store(0, std::memory_order_relaxed);
+        }
+    }
+    g_nx2_recent_frames.store(0, std::memory_order_relaxed);
+    std::scoped_lock lock{g_nx2_aged_skips_mutex};
+    g_nx2_aged_skips.clear();
 }
 
 [[nodiscard]] inline bool Nx2IsGpuWritten(u64 device_address) {
@@ -180,6 +230,79 @@ inline void Nx2ClearGpuWrittenPages() {
         return false;
     }
     return (g_nx2_gpu_written_pages[page / 64].load(std::memory_order_relaxed) >> (page % 64)) & 1;
+}
+
+/// Whether the GPU wrote the page within the last EDEN_NX2_WRITTEN_AGE to twice that many frames
+/// (ever, with the age 0).
+[[nodiscard]] inline bool Nx2RecentlyGpuWritten(u64 device_address) {
+    if (Nx2WrittenAge() == 0) {
+        return Nx2IsGpuWritten(device_address);
+    }
+    const u64 page = device_address >> Nx2WrittenPageBits;
+    if (page >= g_nx2_gpu_written_pages.size() * 64) {
+        return false;
+    }
+    const u64 bits = g_nx2_recent_written_pages[0][page / 64].load(std::memory_order_relaxed) |
+                     g_nx2_recent_written_pages[1][page / 64].load(std::memory_order_relaxed);
+    return (bits >> (page % 64)) & 1;
+}
+
+/// DmaPusher, with the stats on: a block on the page went without a drain.
+inline void Nx2NoteAgedSkip(u64 device_address) {
+    if (Nx2WrittenAge() == 0 || !Nx2IsGpuWritten(device_address)) {
+        return;
+    }
+    const u64 page = device_address >> Nx2WrittenPageBits;
+    std::scoped_lock lock{g_nx2_aged_skips_mutex};
+    for (const Nx2AgedSkip& skip : g_nx2_aged_skips) {
+        if (skip.page == page) {
+            return;
+        }
+    }
+    if (g_nx2_aged_skips.size() < 64) {
+        g_nx2_aged_skips.push_back({page, g_nx2_aged_frame.load(std::memory_order_relaxed)});
+        g_nx2_aged_skip_pages.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+/// Once a frame, from one thread (BufferCache::TickFrame): every EDEN_NX2_WRITTEN_AGE frames the
+/// previous set is cleared and becomes current. A mark that loaded the old index still lands in
+/// the set that is now previous; a check that sees the clearing half done misses only pages that
+/// were about to drop out anyway.
+inline void Nx2AgeGpuWrittenPages(bool stats) {
+    const u32 age = Nx2WrittenAge();
+    if (age == 0) {
+        return;
+    }
+    if (stats) {
+        const u32 frame = g_nx2_aged_frame.fetch_add(1, std::memory_order_relaxed) + 1;
+        {
+            std::scoped_lock lock{g_nx2_aged_skips_mutex};
+            std::erase_if(g_nx2_aged_skips, [frame](const Nx2AgedSkip& skip) {
+                if (Nx2RecentlyGpuWritten(skip.page << Nx2WrittenPageBits)) {
+                    g_nx2_aged_rewrites.fetch_add(1, std::memory_order_relaxed);
+                    return true;
+                }
+                return frame - skip.frame > Nx2AgedSkipFrames;
+            });
+        }
+        if (frame % 600 == 0) {
+            LOG_INFO(HW_GPU,
+                     "GPU-written pages, last 600 frames: {} aged out pages read without a drain, "
+                     "{} of them written again within {} frames",
+                     g_nx2_aged_skip_pages.exchange(0, std::memory_order_relaxed),
+                     g_nx2_aged_rewrites.exchange(0, std::memory_order_relaxed), Nx2AgedSkipFrames);
+        }
+    }
+    if (g_nx2_recent_frames.fetch_add(1, std::memory_order_relaxed) + 1 < age) {
+        return;
+    }
+    g_nx2_recent_frames.store(0, std::memory_order_relaxed);
+    const u32 set = g_nx2_recent_set.load(std::memory_order_relaxed);
+    for (auto& word : g_nx2_recent_written_pages[(set + 1) % 2]) {
+        word.store(0, std::memory_order_relaxed);
+    }
+    g_nx2_recent_set.store(set + 1, std::memory_order_release);
 }
 
 // NVN2 queues release their progress values into the second page of a two-page GPU-accessible
@@ -406,6 +529,10 @@ private:
     Common::Event event;
 };
 
+/// What wrote the value that latched a waiter (Nx2SemaphoreWaiters::OnWrite; EDEN_NX2_GPU_PROFILE's
+/// acquire wait line).
+enum class Nx2LatchSource : u8 { Other, QmdAdd, QmdMax, QueryFence, Query, Count };
+
 /// Channels suspended on a semaphore acquire. A console channel polls and sees every release;
 /// Eden writes releases in bursts when fences signal and resumes waiters only between command
 /// lists, so an acquire-equal could miss its value. Writes latch the waiters they satisfy.
@@ -428,7 +555,8 @@ public:
         EraseOwner(owner);
         const u32 seen =
             word != nullptr ? std::atomic_ref<u32>{*word}.load(std::memory_order_relaxed) : 0;
-        waiters.push_back({owner, device_address, value, operation, false, word, seen});
+        waiters.push_back({owner, device_address, value, operation, false, word, seen,
+                           Nx2LatchSource::Other});
         count.store(waiters.size(), std::memory_order_release);
     }
 
@@ -439,6 +567,17 @@ public:
         std::scoped_lock lk{mutex};
         EraseOwner(owner);
         count.store(waiters.size(), std::memory_order_release);
+    }
+
+    /// The source of owner's latch (Other when it has none).
+    [[nodiscard]] Nx2LatchSource LatchSource(const void* owner) {
+        std::scoped_lock lk{mutex};
+        for (const Waiter& w : waiters) {
+            if (w.owner == owner && w.latched) {
+                return w.source;
+            }
+        }
+        return Nx2LatchSource::Other;
     }
 
     [[nodiscard]] bool Latched(const void* owner) {
@@ -474,7 +613,7 @@ public:
     }
 
     /// A GPU write of `value` to the u32 at `device_address`.
-    void OnWrite(u64 device_address, u32 value) {
+    void OnWrite(u64 device_address, u32 value, Nx2LatchSource source = Nx2LatchSource::Other) {
         if (count.load(std::memory_order_acquire) == 0) {
             return;
         }
@@ -484,6 +623,7 @@ public:
             for (auto& w : waiters) {
                 if (w.address == device_address && !w.latched && Matches(w, value)) {
                     w.latched = true;
+                    w.source = source;
                     latched = true;
                     latched_count.fetch_add(1, std::memory_order_release);
                 }
@@ -518,6 +658,7 @@ private:
         bool latched;
         u32* word;
         u32 seen;
+        Nx2LatchSource source;
     };
 
     static bool Matches(const Waiter& w, u32 current) {

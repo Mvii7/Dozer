@@ -184,10 +184,95 @@ private:
 /// default / immediate): there a fence's operations (syncpoint, semaphore) run when it is signaled,
 /// before the GPU even ran, so the copy back is not ordered with them anyway; with delayed fences
 /// it is (data before the syncpoint), and every fence commits as before.
+/// =auto or unset: the number adapts per game (CoalesceTuner), where a read catches a copy back
+/// not landed yet (read traps or reactive flushing); else off. 0 / 1: off.
 [[nodiscard]] inline u64 CoalesceFences() noexcept {
     static const u64 fences = ReadCount("EDEN_NX2_RX_COALESCE");
     return fences;
 }
+
+[[nodiscard]] inline bool CoalesceAuto() noexcept {
+    static const bool enabled = [] {
+        const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_RX_COALESCE");
+        return value == nullptr || value[0] == '\0' || value[0] == 'a' || value[0] == 'A';
+    }();
+    return enabled;
+}
+
+/// EDEN_NX2_RX_COALESCE=auto: picks the number of fences a copy back may wait, every
+/// WindowFrames frames. Guest reads that had to fetch GPU data a fence held back
+/// (BufferCache::NoteDeferredRead) halve it when they are many (MinReadsPerFrame on average) and
+/// cost more than the fences saved (ReadCost each); a window without that doubles it, up to
+/// MaxLimit, but the number that failed is tried again only after a hold (HoldWindows, doubled
+/// with each failure up to about a minute, halved with each success). A stray read (Donkey Kong
+/// Bananza: about one in a hundred frames) changes nothing; Mario Kart World's, right after its
+/// fences (about a hundred a frame at 32), take it down within a few windows.
+class CoalesceTuner {
+public:
+    static constexpr u64 MaxLimit = 64;
+    static constexpr u64 StartLimit = 8;
+    static constexpr u32 WindowFrames = 30;
+    static constexpr u64 MinReadsPerFrame = 2;
+    static constexpr u64 ReadCost = 8;
+    static constexpr u32 HoldWindows = 4;
+    static constexpr u32 MaxBackoffs = 5;
+
+    [[nodiscard]] u64 Limit() const noexcept {
+        return limit;
+    }
+
+    void NoteDeferred() noexcept {
+        ++deferred;
+    }
+
+    /// A frame ended: `reads` held back reads since the last call.
+    void EndFrame(u64 reads) noexcept {
+        window_reads += reads;
+        if (++frames < WindowFrames) {
+            return;
+        }
+        const bool costly = window_reads >= MinReadsPerFrame * WindowFrames &&
+                            window_reads * ReadCost > deferred;
+        frames = 0;
+        window_reads = 0;
+        deferred = 0;
+        if (costly) {
+            failed = limit;
+            limit = (std::max)(limit / 2, u64{1});
+            backoffs = (std::min)(backoffs + 1, MaxBackoffs);
+            hold = HoldWindows << backoffs;
+            probing = false;
+            return;
+        }
+        if (probing) {
+            // A window at the number that failed last went well.
+            probing = false;
+            failed = 0;
+            backoffs = backoffs != 0 ? backoffs - 1 : 0;
+        }
+        if (limit >= MaxLimit) {
+            return;
+        }
+        if (failed != 0 && limit * 2 >= failed) {
+            if (hold != 0) {
+                --hold;
+                return;
+            }
+            probing = true;
+        }
+        limit *= 2;
+    }
+
+private:
+    u64 limit = StartLimit;
+    u64 deferred{};
+    u64 window_reads{};
+    u32 frames{};
+    u64 failed{}; ///< The number reads last took down (0: none), tried again after `hold`
+    u32 hold{};   ///< Windows to wait before trying `failed` again
+    u32 backoffs{};
+    bool probing{};
+};
 
 /// Whether a fence commits the buffer cache's pending copy backs now (CoalesceFences): `deferred`
 /// fences already left them, `made_anyway` when the fence is made with or without them, `force`
@@ -376,12 +461,14 @@ enum class FitFeedback : u32 {
     return enabled;
 }
 
-/// EDEN_NX2_TRAP_POP_DISARM=0: a copy back to a read-trapped page leaves the trap armed until the
-/// guest's next read. Unset: the copy back disarms it (BufferCache::DisarmCopiedReadTraps).
+/// EDEN_NX2_TRAP_POP_DISARM=1: a copy back disarms the read traps of its pages
+/// (BufferCache::DisarmCopiedReadTraps). Unset: they stay armed until the guest's next read; the
+/// page protection changes cost the fence thread more (Mario Kart World: ~0.2 s per 10 s) than
+/// the faults of the pages read again.
 [[nodiscard]] inline bool TrapPopDisarm() noexcept {
     static const bool enabled = [] {
         const char* value = Common::Nx2Reactive::GetEnv("EDEN_NX2_TRAP_POP_DISARM");
-        return value == nullptr || value[0] != '0';
+        return value != nullptr && value[0] == '1';
     }();
     return enabled;
 }

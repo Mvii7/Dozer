@@ -1,6 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
-rem Dozer - BALANCED: the balanced settings. Foliage is rendered at a performance cost.
+rem Dozer - QUALITY: the performance settings with Bananza as the game makes it (foliage, reflections, shadows).
 rem Dozer launcher for dozer-cli.exe (Dozer's program without menus).
 rem Put this file next to dozer-cli.exe.
 rem Start: put your game (.nsp .xci .nsz .xcz .nup .nx) in the Games folder next to this file and double-click
@@ -67,10 +67,15 @@ set EDEN_NX2_FG_DIAG=
 set EDEN_NX2_RX_RT_FIT=
 set EDEN_NX2_FLUSH_FIRST_READ=
 set EDEN_NX2_READ_LATCH_AGE=
-rem Read traps stay on when this is unset. start-performance.bat sets it to 0.
+rem Read traps stay on when this is unset.
 set EDEN_NX2_READ_TRAPS=
+rem Read trap budget: 1000 microseconds per 1/60 s when unset, 0 turns it off.
+set EDEN_NX2_READ_TRAP_BUDGET_US=
 set EDEN_NX2_RX_ONE_SUBMIT=
 set EDEN_NX2_RX_COALESCE=
+set EDEN_NX2_WRITTEN_AGE=
+set EDEN_NX2_ASYNC_READBACK=
+set EDEN_NX2_ACQUIRE_SUSPEND=
 set EDEN_NX2_RX_PITCH_FORCED=
 set EDEN_NX2_RX_MASKED_TARGETS=
 set EDEN_NX2_REACTIVE_STATS=
@@ -90,11 +95,13 @@ set EDEN_NX2_MODE_PACE=2
 set EDEN_NX2_PACE_SPIN_US=1500
 rem Donkey Kong Bananza dynamic frame rate (DK_DYN above; 0 = the game's own 60/30 rule).
 set EDEN_NX2_DK_DYN=%DK_DYN%
-rem Donkey Kong Bananza foliage drawn (Performance and Experimental turn it off, README).
+rem Donkey Kong Bananza as the game makes it: foliage, very high shadows, reflections (README).
 set EDEN_NX2_DK_FOLIAGE_OFF=
+set EDEN_NX2_DK_SHADOW_CASCADES=
+set EDEN_NX2_DK_CUBEMAP_INTERVAL=
 rem Mario Kart World dynamic frame rate (MKW_DYN above).
 set EDEN_NX2_MKW_DYN=%MKW_DYN%
-rem FSR3 frame generation: generated frames blended for the time they are shown (only
+rem Optical Flow frame generation: generated frames blended for the time they are shown (only
 rem does something when frame generation is on in the config, README).
 set EDEN_NX2_FG_TIMED=1
 rem Game FPS, display FPS and speed in RivaTuner Statistics Server's overlay (OSD above).

@@ -8,6 +8,108 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Read traps: a copy back at a fence no longer disarms the traps of its pages
+  (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
+  fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World
+  and Donkey Kong Bananza, and reads waited for copies back behind it. With it gone Bananza's
+  destruction waits 0.07-0.17 s per 10 s instead of 0.3-0.4 s, and far fewer reads run out of
+  the read trap budget. The reactive stats line splits the copy back pops by part.
+- Read trap budget (Tuning tab, on; `EDEN_NX2_READ_TRAP_BUDGET_US`, 1000 unless set, `=0` off,
+  off in Safe): with read traps, the guest CPU's reads of GPU-written buffer memory wait for its
+  data at most 1 ms in each 1/60 s, then go on with what memory holds, as with read traps off. A
+  download that would not fit in what is left is skipped (`EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0`
+  starts it anyway). Donkey Kong Bananza's destruction waited 0.5-0.8 s per 10 s for those reads,
+  Mario Kart World's races 1.1-2.3 s; with the budget 0.15-0.4 s and 0.6-1 s.
+- MME DMA reads drain the split's back again by default (`EDEN_NX2_DMA_READ_PEEK`, now `=1` to
+  go on without one). With `EDEN_NX2_ACQUIRE_SUSPEND` a channel the latch resumes may read
+  before the back ran the draws sent ahead of the release, and the peek let such reads go on:
+  rocks in Donkey Kong Bananza flickered. The front also no longer notes every write it sends
+  for the peek, which cost it more than the drains it saved. With `=1`, every acquire a latch
+  resumes drains first.
+- Shader cache (Vulkan and OpenGL): a cache whose last record was cut off (the emulator crashed
+  or was closed while appending a pipeline) keeps the records before it; before, the whole cache
+  file was deleted and every pipeline was built again. A zero-filled tail no longer crashes the
+  boot load, a record that fails to write is cut back off, and a compute record saved twice is
+  built once.
+- GPU thread: an equal semaphore acquire that memory does not meet yet suspends its channel at
+  once instead of first waiting for the split's back to finish its queue
+  (`EDEN_NX2_ACQUIRE_SUSPEND`). The back's release resumes it; other writes are checked after a
+  drain, once per 1 ms while the back is idle and at most every 8 ms otherwise. In Donkey Kong
+  Bananza this removed 80 to 90% of these waits and the deep dips when smashing gold; Mario Kart
+  World is unchanged or slightly smoother. `=0` brings back the drain (Safe).
+- Safe now turns off async read-back too (`EDEN_NX2_ASYNC_READBACK=0`), in the launcher and the
+  in-app preset.
+- `EDEN_NX2_WRITTEN_AGE`: two sets of recently written pages instead of three (2 MiB less). With
+  `EDEN_NX2_REACTIVE_STATS=1`, a line every 600 frames counts aged out pages read without a wait
+  and how many of them the GPU wrote again right after, the case the old check guarded against.
+- GPU thread: a command list or macro parameter block on a page the GPU wrote waits for the
+  split's back only if the GPU wrote that page in the last 600 to 1,200 frames
+  (`EDEN_NX2_WRITTEN_AGE`); before, any page it ever wrote counted. In Donkey Kong Bananza, coming
+  back to a world after others spent half of the GPU thread in these waits. `=0` brings back the
+  old check (Safe).
+- Fences: copies back of GPU-written buffer memory that alone would make a fence real wait for a
+  later fence by default, as many fences as the game tolerates (`EDEN_NX2_RX_COALESCE`, now
+  adaptive, every 30 frames): many reads that had to fetch data a fence held back halve the
+  number, else it doubles (1 to 64), with read traps or reactive flushing only. Donkey Kong Bananza gained with
+  a fixed 32 (2-3x fewer submissions) where Mario Kart World lost (its reads come right after its
+  fences); the adaptive number serves both. `=<n>` keeps a fixed number, `=0` turns it off (Safe).
+- Presets: **Performance** (the default again, for a first start too) keeps read traps on: with
+  Bananza's foliage off they run it faster than off. **Balanced** is now **Quality**: Performance's
+  settings with Bananza as the game makes it (foliage, reflections, very high shadows); a stored
+  Balanced reads as Quality, a stored Performance gets read traps on. `start-balanced.bat` is now
+  `start-quality.bat`, and `start-performance.bat` no longer sets `EDEN_NX2_READ_TRAPS=0`.
+- Donkey Kong Bananza: a **Shadow quality** box in its Properties > Tuning, under Foliage off: Low,
+  Medium, High and Very high cap the sun shadow's cascades at 1, 2, 3 and the game's own 4
+  (`EDEN_NX2_DK_SHADOW_CASCADES=<1-3>`, `core/loader/nx2_dk_shadow.h`). Each cascade draws the
+  shadow casters again.
+- Donkey Kong Bananza: a **Dynamic reflections off** box (now Static reflections, below) in its
+  Properties > Tuning turns the reflection cube map off (`EDEN_NX2_DK_REFLECTIONS_OFF=1`,
+  `core/loader/nx2_dk_reflections.h`); each capture
+  draws the scene again. `EDEN_NX2_DK_CUBEMAP_INTERVAL=<1-240>` sets the frames between captures
+  by hand (the game's 8).
+- Donkey Kong Bananza: Dynamic reflections off is now **Static reflections**: it keeps the
+  reflection cube map and only stops its captures (one every 65535 frames), so shiny surfaces keep
+  the capture they have. Turning the cube map off left it unbuilt while the game's
+  drawing code still read it through a null pointer: about 300,000 `Unmapped Read` lines a session
+  (`Read64 @ 0xd0`, `Read32 @ 0x18` and `0x1c`), from 40 to 100 s in. Both Bananza patches now log
+  their state at load, the game's own included.
+- Donkey Kong Bananza: Static reflections is now **Reflection updates**, a choice of how often the
+  reflection cube map is captured again: Very low (every 240 frames), Low (32), Medium (16) and
+  High (the game's 8), all through `EDEN_NX2_DK_CUBEMAP_INTERVAL`. Very low in Performance and
+  Experimental, High in Quality and Safe. Each capture draws the scene again; the interval changes
+  how fresh reflections are, not their detail. `EDEN_NX2_DK_REFLECTIONS_OFF` is gone: the interval
+  does its job without a second patch path.
+- Donkey Kong Bananza's presets: Performance and Experimental turn foliage off, set Very low
+  reflection updates and Medium shadows; Quality and Safe leave the game's own. The launchers set the same.
+- Frame generation (LSFG and Optical Flow) now runs while HDR output is active instead of turning off.
+  LSFG takes its HDR mode on an scRGB swapchain (as lsfg-vk's); HDR10's PQ frames go through it
+  like SDR ones. Not tried on an HDR display yet.
+- Frame generation: switching between LSFG and Optical Flow during play rebuilds the chain for
+  the new type, a missing Lossless.dll no longer keeps Optical Flow off afterwards, and Optical
+  Flow no longer loads the LSFG shaders. From Lichii #1493.
+- Status bar: an **FG** button next to the others. Click turns frame generation on and off,
+  also during play; right click picks Optical Flow or LSFG. It shows the type and multiplier
+  ("FG OPTICAL FLOW 2X", "AUTO" with a target frame rate), and "(IDLE)" while a game runs and
+  no frames were generated in the last half second. The frames frame generation presents through
+  are made at start for the most it can use and parked until needed, so turning it on during
+  play gets the frames it needs instead of the count the game started with. From Lichii #537.
+- Renamed to what they do (labels only; settings and configs keep their values): frame
+  generation type "FSR 3" is now **Optical Flow Interpolation**, Eglantine's own optical-flow
+  interpolation and not AMD's FSR 3; the window filter "AMD FidelityFX Super Resolution 3" is
+  now **FSR 1, softer sharpening** (it runs FSR 1's EASU and RCAS at 0.8x sharpness), and the
+  plain FSR filter is **FSR 1**. From Lichii.
+- Buffer cache, `EDEN_NX2_ASYNC_READBACK` (on by default, `=0` turns it off; a port of Lichii's
+  read-back): a guest CPU read of GPU-written buffer memory (a read trap, or reactive flushing)
+  no longer has the GPU thread wait for the host GPU. It submits the download and goes on; the
+  reading thread waits for that submission and writes the bytes to guest memory itself, keeping
+  those of guest CPU writes not applied yet. With reactive flushing, pages the guest reads after
+  each GPU write get their download recorded right behind the write (early downloads) and are no
+  longer copied back at every fence; with read traps the fences' copies back serve them better
+  (`EARLY_DOWNLOADS=1` turns them on there). Writes to guest memory from the GPU's side
+  (semaphores, reports, engine copies) land the downloads under them first. `READER_LANDING`,
+  `EARLY_DOWNLOADS`, `RX_READBACK` and `EARLY_SKIP_COPYBACK=0` turn the parts off; `=2` checks
+  every read against the GPU's bytes at its point (slow). Vulkan only; cut c keeps the waiting
+  flush. Donkey Kong Bananza with read traps: 30 to 40 fps in its heavy areas.
 - Split GPU thread: an equal semaphore acquire goes on without draining the back when the last
   release sent to its word carries its value and the back has not run it yet, as greater-or-equal
   ones already do (`EDEN_NX2_ACQUIRE_NODRAIN`). About 80% of Donkey Kong Bananza's acquires are

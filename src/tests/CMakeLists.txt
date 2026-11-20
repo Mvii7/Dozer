@@ -30,6 +30,8 @@ add_executable(tests
     core/nx2_dk_dynamic_fps.cpp
     core/nx2_dk_foliage.cpp
     core/nx2_dk_quality.cpp
+    core/nx2_dk_reflections.cpp
+    core/nx2_dk_shadow.cpp
     core/nx2_mkw_dynamic_fps.cpp
     core/nx2_ipc_trace.cpp
     core/nx2_osd_speed.cpp

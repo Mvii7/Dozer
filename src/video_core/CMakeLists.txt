@@ -112,6 +112,7 @@ add_library(video_core STATIC
     native_qmd.h
     native_query_trace.h
     nx2.h
+    nx2_async_readback.h
     nx2_back_cpu.h
     nx2_busy_clock.h
     nx2_gpu_pages.h
@@ -122,6 +123,7 @@ add_library(video_core STATIC
     nx2_mode_pace21_logic.h
     nx2_indirect_diag.h
     nx2_profile.h
+    nx2_read_budget.h
     nx2_stage_api.cpp
     nx2_stage_api.h
     nx2_stage_bind.h
