@@ -58,6 +58,14 @@ inline constexpr int ShadowLow = 1;
 inline constexpr int ShadowMedium = 2;
 inline constexpr int ShadowVeryHigh = 4;
 
+/// Bananza's foliage steps: Off (EDEN_NX2_DK_FOLIAGE_OFF=1), Low and Medium (the foliage kept,
+/// EDEN_NX2_DK_FOLIAGE_DENSITY, and how far it is drawn, EDEN_NX2_DK_FOLIAGE_DISTANCE), High the
+/// game's own.
+inline constexpr int FoliageOff = 1;
+inline constexpr int FoliageLow = 2;    ///< 10% kept, drawn up to 200 units
+inline constexpr int FoliageMedium = 3; ///< 50% kept, drawn up to 400 units
+inline constexpr int FoliageHigh = 4;
+
 /// Bananza's reflection update steps: how often the reflection cube map is captured again.
 inline constexpr int ReflectionsVeryLow = 1; ///< every 240 frames, the most the patch takes
 inline constexpr int ReflectionsLow = 2;    ///< every 32 frames
@@ -76,9 +84,9 @@ struct Switches {
     // Game-specific: no preset sets or clears these (the Safe preset leaves them as they are).
     bool dk_dyn = true;            ///< EDEN_NX2_DK_DYN=1, Bananza only
     bool mkw_dyn = true;           ///< EDEN_NX2_MKW_DYN=1, Mario Kart World only
-    // Game-specific, but set by the presets (FromPreset): on in Performance and Experimental,
-    // off in Quality and Safe.
-    bool dk_foliage_off = true;    ///< EDEN_NX2_DK_FOLIAGE_OFF=1, Bananza only
+    /// Bananza's foliage, kept per game only: FoliageOff to FoliageHigh. Low in Performance and
+    /// Experimental, High in Quality and Safe.
+    int dk_foliage = FoliageLow;
     /// Bananza's reflection updates, kept per game only: Very low, Low and Medium
     /// (EDEN_NX2_DK_CUBEMAP_INTERVAL=240, 32 or 16), High the game's own. Very low in Performance
     /// and Experimental, High in Quality and Safe.
@@ -92,8 +100,8 @@ struct Switches {
     bool operator==(const Switches&) const = default;
 };
 
-/// What the performance launcher sets: everything on, read traps too (with Bananza's foliage off
-/// they are faster than off), Bananza's foliage off, static reflections and medium shadows.
+/// What the performance launcher sets: everything on, read traps too, Bananza's foliage low, very
+/// low reflection updates and medium shadows.
 constexpr Switches Performance() {
     return Switches{};
 }
@@ -102,7 +110,7 @@ constexpr Switches Performance() {
 /// high shadows and reflections). Stored as 0, the number of the Balanced preset it replaces.
 constexpr Switches Quality() {
     Switches switches{};
-    switches.dk_foliage_off = false;
+    switches.dk_foliage = FoliageHigh;
     switches.dk_reflections = ReflectionsHigh;
     switches.dk_shadow = ShadowVeryHigh;
     switches.preset = Preset::Quality;
@@ -125,7 +133,7 @@ constexpr Switches AllOff() {
         .front_macro_lean = false,
         .fg_timed = false,
         .osd = false,
-        .dk_foliage_off = false,
+        .dk_foliage = FoliageHigh,
         .dk_reflections = ReflectionsHigh,
         .dk_shadow = ShadowVeryHigh,
         .preset = Preset::Safe,
@@ -148,12 +156,10 @@ inline constexpr std::array<Key, 8> Keys{{
     {"osd", &Switches::osd},
 }};
 
-/// The game-specific keys: stored like the others, but outside the presets (but for
-/// bananza_foliage_off, which they set).
-inline constexpr std::array<Key, 3> GameKeys{{
+/// The game-specific keys: stored like the others, but outside the presets.
+inline constexpr std::array<Key, 2> GameKeys{{
     {"bananza_dynamic_fps", &Switches::dk_dyn},
     {"mariokart_dynamic_fps", &Switches::mkw_dyn},
-    {"bananza_foliage_off", &Switches::dk_foliage_off},
 }};
 
 inline constexpr std::size_t KeyCount = Keys.size() + GameKeys.size();
@@ -172,9 +178,10 @@ struct Overrides {
     std::array<std::optional<bool>, KeyCount> boxes{};
     std::optional<int> dk_shadow; ///< Bananza's shadow quality, ShadowLow to ShadowVeryHigh
     std::optional<int> dk_reflections; ///< ReflectionsVeryLow to ReflectionsHigh
+    std::optional<int> dk_foliage;     ///< FoliageOff to FoliageHigh
 
     constexpr bool Empty() const {
-        if (preset || global_preset || dk_shadow || dk_reflections) {
+        if (preset || global_preset || dk_shadow || dk_reflections || dk_foliage) {
             return false;
         }
         for (const auto& box : boxes) {
@@ -201,6 +208,9 @@ constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) 
     if (overrides.dk_reflections) {
         switches.dk_reflections = *overrides.dk_reflections;
     }
+    if (overrides.dk_foliage) {
+        switches.dk_foliage = *overrides.dk_foliage;
+    }
     return switches;
 }
 
@@ -211,7 +221,8 @@ inline constexpr int FollowGlobalPreset = -2;
 /// a preset number, FollowGlobalPreset, or -1 (Custom, or anything else, is none);
 /// "bananza_shadow_quality" a shadow quality step or -1, "bananza_reflection_updates" a
 /// reflection update step or -1 (else the box it replaces, "bananza_reflections_off": on is
-/// Very low, off High).
+/// Very low, off High), "bananza_foliage" a foliage step or -1 (else the box it replaces,
+/// "bananza_foliage_off": on is Off, off High).
 template <typename Read>
 Overrides LoadOverrides(Read&& read) {
     Overrides overrides;
@@ -237,6 +248,12 @@ Overrides LoadOverrides(Read&& read) {
     } else if (const int off = read("bananza_reflections_off"); off == 0 || off == 1) {
         overrides.dk_reflections = off == 1 ? ReflectionsVeryLow : ReflectionsHigh;
     }
+    if (const int foliage = read("bananza_foliage");
+        foliage >= FoliageOff && foliage <= FoliageHigh) {
+        overrides.dk_foliage = foliage;
+    } else if (const int off = read("bananza_foliage_off"); off == 0 || off == 1) {
+        overrides.dk_foliage = off == 1 ? FoliageOff : FoliageHigh;
+    }
     return overrides;
 }
 
@@ -255,6 +272,8 @@ void SaveOverrides(const Overrides& overrides, Write&& write) {
     write("bananza_shadow_quality", overrides.dk_shadow.value_or(-1));
     write("bananza_reflection_updates", overrides.dk_reflections.value_or(-1));
     write("bananza_reflections_off", -1);
+    write("bananza_foliage", overrides.dk_foliage.value_or(-1));
+    write("bananza_foliage_off", -1);
 }
 
 /// A stored preset number. Anything else is Custom (a file edited by hand).
@@ -422,13 +441,11 @@ Switches Load(Read&& read, ReadPreset&& read_preset) {
         switches.read_traps = preset_switches.read_traps;
     }
     for (const Key& key : GameKeys) {
-        // Bananza's foliage was added after the presets: a file without it gets the preset's
-        const bool by_preset = key.field == &Switches::dk_foliage_off;
-        const bool fallback = by_preset ? preset_switches.*key.field : Performance().*key.field;
-        switches.*key.field = read(key.name, fallback);
+        switches.*key.field = read(key.name, Performance().*key.field);
     }
-    // Bananza's shadow quality and reflection updates are not stored here: the preset's (games
-    // keep their own choice)
+    // Bananza's foliage, shadow quality and reflection updates are not stored here: the preset's
+    // (games keep their own choice)
+    switches.dk_foliage = preset_switches.dk_foliage;
     switches.dk_shadow = preset_switches.dk_shadow;
     switches.dk_reflections = preset_switches.dk_reflections;
     switches.preset = preset;
@@ -532,7 +549,7 @@ inline constexpr std::array<std::string_view, 73> SafeOff{
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
-inline constexpr std::array<std::string_view, 18> Names{
+inline constexpr std::array<std::string_view, 20> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
@@ -542,6 +559,7 @@ inline constexpr std::array<std::string_view, 18> Names{
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
     "EDEN_NX2_DK_FOLIAGE_OFF", "EDEN_NX2_DK_SHADOW_CASCADES",
     "EDEN_NX2_DK_CUBEMAP_INTERVAL", "EDEN_NX2_READ_TRAP_BUDGET_US",
+    "EDEN_NX2_DK_FOLIAGE_DENSITY", "EDEN_NX2_DK_FOLIAGE_DISTANCE",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -583,8 +601,14 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
         if (switches.dk_dyn) {
             vars.push_back({"EDEN_NX2_DK_DYN", "1"});
         }
-        if (switches.dk_foliage_off) {
+        if (switches.dk_foliage == FoliageOff) {
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_OFF", "1"});
+        } else if (switches.dk_foliage == FoliageLow) {
+            vars.push_back({"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"});
+            vars.push_back({"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"});
+        } else if (switches.dk_foliage == FoliageMedium) {
+            vars.push_back({"EDEN_NX2_DK_FOLIAGE_DENSITY", "50"});
+            vars.push_back({"EDEN_NX2_DK_FOLIAGE_DISTANCE", "400"});
         }
         if (switches.dk_shadow >= ShadowLow && switches.dk_shadow < ShadowVeryHigh) {
             static constexpr std::array<std::string_view, 3> Cascades{"1", "2", "3"};
