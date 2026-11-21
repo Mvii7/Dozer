@@ -1,10 +1,14 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <atomic>
 #include <memory>
+#include <string>
+#include <thread>
 #include <utility>
 
 #include "game_settings.h"
@@ -206,13 +210,28 @@ void DumpThreads(Kernel::KernelCore& kernel) {
             }
             frame = next;
         }
+        // A synchronization wait (svcWaitSynchronization: x1 handles, x2 count, x3 timeout):
+        // the objects it waits on.
+        std::string objects;
+        if (thread.GetWaitReasonForDebugging() ==
+                Kernel::ThreadWaitReasonForDebugging::Synchronization &&
+            context.r[2] <= 64 && memory.IsValidVirtualAddressRange(context.r[1], context.r[2] * 4)) {
+            for (u64 i = 0; i < context.r[2] && i < 8; ++i) {
+                const Kernel::Handle handle = memory.Read32(context.r[1] + i * 4);
+                auto object = process->GetHandleTable().GetObject(kernel, handle);
+                objects += fmt::format(" {:#x}:{}", handle,
+                                       object.IsNull() ? "none" : object->GetTypeName());
+            }
+        }
         LOG_INFO(Core,
                  "nx2 thread dump: thread {} state {:#x} wait {} priority {} core {} pc {} lr {} "
-                 "sp {:#x} x0 {:#x} x1 {:#x} x2 {:#x} | frames{}",
+                 "sp {:#x} x0 {:#x} x1 {:#x} x2 {:#x} x3 {:#x} address key {:#x} | waits on{} | "
+                 "frames{}",
                  thread.GetThreadId(), static_cast<u32>(thread.GetRawState()),
                  static_cast<u32>(thread.GetWaitReasonForDebugging()), thread.GetPriority(),
                  thread.GetActiveCore(), describe(context.pc), describe(context.lr), context.sp,
-                 context.r[0], context.r[1], context.r[2], frames);
+                 context.r[0], context.r[1], context.r[2], context.r[3],
+                 GetInteger(thread.GetAddressKey()), objects, frames);
     }
     for (size_t core = 0; core < Core::Hardware::NUM_CPU_CORES; ++core) {
         const Kernel::KThread* const current = kernel.Scheduler(core).GetSchedulerCurrentThread();
@@ -223,6 +242,48 @@ void DumpThreads(Kernel::KernelCore& kernel) {
         LOG_INFO(Core, "nx2 thread dump: core {} runs thread {} pc {} lr {}", core,
                  current != nullptr ? current->GetThreadId() : ~u64{0}, describe(context.pc),
                  describe(context.lr));
+        if (context.pc == 0 || context.pc < base) {
+            continue;
+        }
+        // A core running game code: where it is over 50 ms, its registers, the code around
+        // those addresses and the memory its first registers point at.
+        u64 low = context.pc;
+        u64 high = context.pc;
+        std::string samples;
+        for (int sample = 0; sample < 50; ++sample) {
+            Kernel::Svc::ThreadContext now{};
+            process->GetArmInterface(core)->GetContext(now);
+            low = (std::min)(low, now.pc);
+            high = (std::max)(high, now.pc);
+            if (sample % 5 == 0) {
+                samples += ' ' + describe(now.pc);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+        std::string registers;
+        for (size_t i = 0; i < 29; ++i) {
+            registers += fmt::format(" x{} {:#x}", i, context.r[i]);
+        }
+        LOG_INFO(Core, "nx2 thread dump: core {} pcs{} | fp {:#x} sp {:#x}{}", core, samples,
+                 context.fp, context.sp, registers);
+        const u64 start = (low - 0x80) & ~u64{3};
+        const u64 end = (std::min)(high + 0x80, start + 0x400);
+        std::string code;
+        for (u64 address = start; address < end; address += 4) {
+            if (!memory.IsValidVirtualAddressRange(address, 4)) {
+                break;
+            }
+            code += fmt::format(" {:08x}", memory.Read32(address));
+        }
+        LOG_INFO(Core, "nx2 thread dump: core {} code at {}:{}", core, describe(start), code);
+        for (size_t i = 0; i < 9; ++i) {
+            const u64 address = context.r[i] & ~u64{7};
+            if (address != 0 && memory.IsValidVirtualAddressRange(address, 32)) {
+                LOG_INFO(Core, "nx2 thread dump: core {} [x{}] {:#x}: {:#x} {:#x} {:#x} {:#x}", core,
+                         i, address, memory.Read64(address), memory.Read64(address + 8),
+                         memory.Read64(address + 16), memory.Read64(address + 24));
+            }
+        }
     }
 }
 
