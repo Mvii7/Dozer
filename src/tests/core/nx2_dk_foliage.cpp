@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <cstring>
+#include <limits>
 #include <span>
 #include <string>
 #include <utility>
@@ -263,6 +264,7 @@ TEST_CASE("Nx2DkFoliage: the foliage placed in a stage thinned in patches", "[co
         plants.push_back({static_cast<float>(i % 10) * 2.5f, 5.0f,
                           static_cast<float>(i / 10) * 2.5f, i < 90 ? 0U : 1U});
     }
+    plants.push_back({std::numeric_limits<float>::quiet_NaN(), 5.0f, 0.0f, 0U}); // left alone
     const auto game = Placement(plants);
     auto file = game;
     Levels levels;
@@ -334,6 +336,10 @@ TEST_CASE("Nx2DkFoliage: the levels in the settings files", "[core]") {
     REQUIRE(Read32(material, entries + 4) == Bits(5.0f));
     REQUIRE(Read32(material, entries + 8 + 4) == 3);
     REQUIRE(Read32(material, entries + 16 + 4) == 1);
+    // A 0 stays 0
+    auto none = Sarc(Byml({{"PlacedModelsMinNum", 0xD1, 0}}));
+    REQUIRE(PatchMaterialSettings(none, levels));
+    REQUIRE(Read32(none, 0x60 + Read32(none, 12 + 0x60) + 4 + 4) == 0);
 }
 
 TEST_CASE("Nx2DkFoliage: the code's default draw distance", "[core]") {
@@ -361,8 +367,15 @@ TEST_CASE("Nx2DkFoliage: the code's default draw distance", "[core]") {
     };
 
     REQUIRE_FALSE(PatchDefaultDistance(bytes(), TextSize, AlignedSize, Levels{10, 0}));
-    REQUIRE(PatchDefaultDistance(bytes(), TextSize, AlignedSize, Levels{10, 200}));
+    REQUIRE_FALSE(PatchDefaultDistance(bytes(), TextSize, AlignedSize, Levels{10, 200}));
     REQUIRE(now() == 100.0f); // already closer
+    // Another load of the same word (a 100.0f the linker shares): left alone
+    const auto saved = words;
+    words[0x200] = 0x90000000U | 0x20000000U | 0x3; // adrp x3, the next page
+    words[0x201] = 0xBD400060U | (0x40 / 4) << 10;  // ldr s0, [x3, #0x40]
+    REQUIRE_FALSE(PatchDefaultDistance(bytes(), TextSize, AlignedSize, Levels{10, 40}));
+    REQUIRE(now() == 100.0f);
+    words = saved;
     REQUIRE(PatchDefaultDistance(bytes(), TextSize, AlignedSize, Levels{10, 40}));
     REQUIRE(now() == 40.0f);
     // Not the game's default there any more: left alone

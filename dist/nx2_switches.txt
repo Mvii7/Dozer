@@ -308,7 +308,8 @@
 # (ClusteredRendering/StageData/*.ProceduralPlacement.byml) is thinned in patches as it is read,
 # and the foliage placed while playing is scaled too.
 # DK_FOLIAGE_DISTANCE=<20-700>: the farthest any foliage is drawn, in units: each model's own far
-# clip (80-700) above it, and the code's default of 100 for the models without one, come down to it.
+# clip (80-700) above it comes down to it; under 100, so does the code's default of 100 for the
+# models without one.
 # The Performance and Experimental presets and launchers set 10 and 200 (the Tuning tab's Low;
 # Medium is 50 and 400); Quality and Safe leave the foliage as the game makes it.
 #EDEN_NX2_DK_FOLIAGE_DENSITY=10

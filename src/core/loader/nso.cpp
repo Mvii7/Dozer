@@ -260,22 +260,26 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
     }
 
     // EDEN_NX2_DK_FOLIAGE_DISTANCE=<20-700> (unset by default): the foliage models without a draw
-    // distance of their own take the code's default, brought down to it here (nx2_dk_foliage.h;
-    // the others are in the game's data).
-    static const auto dk_foliage = Nx2DkFoliage::LevelsFromEnvironment();
-    if (dk_foliage.distance != 0 && Nx2DkReflections::IsTarget(process.GetProgramId(), name)) {
+    // distance of their own take the code's default of 100, brought down to a distance under it
+    // here (nx2_dk_foliage.h; the others are in the game's data). Read on each boot, as the
+    // RomFS layer is.
+    const auto dk_foliage = Nx2DkFoliage::LevelsFromEnvironment();
+    if (dk_foliage.distance != 0 && dk_foliage.distance < 100 &&
+        Nx2DkReflections::IsTarget(process.GetProgramId(), name)) {
         const auto& text = nso_header.segments[0];
         const size_t text_start = module_start + text.location;
         const std::span<u8> image{codeset.memory};
         if (text_start <= image.size() &&
             Nx2DkFoliage::PatchDefaultDistance(image.subspan(text_start), text.size,
                                                PageAlignSize(text.size), dk_foliage)) {
-            LOG_INFO(Loader, "Donkey Kong Bananza: foliage drawn up to {} units ({})",
+            LOG_INFO(Loader,
+                     "Donkey Kong Bananza: the default foliage draw distance brought down to {} "
+                     "({})",
                      dk_foliage.distance, Nx2DkFoliage::DistanceSwitch);
         } else {
             LOG_WARNING(Loader,
                         "Donkey Kong Bananza: {} not applied to the default distance: not where "
-                        "expected",
+                        "expected, or shared with other code",
                         Nx2DkFoliage::DistanceSwitch);
         }
     }

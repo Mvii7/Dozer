@@ -157,6 +157,11 @@ inline void Put(Reader& in, size_t offset, u32 value) {
     }
 }
 
+/// `value` scaled by `percent`, at least 1 unless it was 0
+constexpr u32 Scaled(u32 value, int percent) {
+    return value == 0 ? 0 : std::max<u32>(value * static_cast<u32>(percent) / 100, 1);
+}
+
 } // namespace Detail
 
 /// Sets the most foliage models drawn and kept alive at once of a decompressed
@@ -267,8 +272,7 @@ inline bool PatchSystemSettings(std::span<u8> archive, const Levels& levels) {
         Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
             if (key == "DynamicPlacementsPerFrameMax" &&
                 (type == Detail::TypeInt || type == Detail::TypeUInt)) {
-                Detail::Put(in, at,
-                            std::max<u32>(in.U32(at) * static_cast<u32>(levels.density) / 100, 1));
+                Detail::Put(in, at, Detail::Scaled(in.U32(at), levels.density));
                 changed = true;
             }
         });
@@ -293,8 +297,7 @@ inline bool PatchMaterialSettings(std::span<u8> archive, const Levels& levels) {
                 changed = true;
             } else if ((key == "PlacedModelsMinNum" || key == "PlacedModelsMaxNum") &&
                        (type == Detail::TypeInt || type == Detail::TypeUInt)) {
-                Detail::Put(in, at,
-                            std::max<u32>(in.U32(at) * static_cast<u32>(levels.density) / 100, 1));
+                Detail::Put(in, at, Detail::Scaled(in.U32(at), levels.density));
                 changed = true;
             }
         });
@@ -324,16 +327,18 @@ inline bool PatchModelSettings(std::span<u8> archive, const Levels& levels) {
 }
 
 /// The models without a FarClipDistance of their own (174 of 418, a third of the placed foliage)
-/// take its reader's default, 100 in the read-only data. Brings it down to the distance in
+/// take its reader's default, 100 in the read-only data. Brings it down to a distance under 100 in
 /// `image` (a module from its text segment on, read-only data after the `aligned_size` bytes of
 /// text), found from its reader:
 ///   adrp x9, "FarClipDistance"; add x9, x9, ...; 5 words; adrp x8, default; add x8, x8, ...
-/// Returns whether it was found (once).
+/// Only when nothing else in the text addresses that word (a 100.0f the linker may share).
+/// Returns whether it was found (once); a distance of 100 or more leaves it.
 inline bool PatchDefaultDistance(std::span<u8> image, u32 text_size, u32 aligned_size,
                                  const Levels& levels) {
     constexpr std::string_view Name{"FarClipDistance", sizeof("FarClipDistance")};
     constexpr float GameDefault = 100.0f;
-    if (levels.distance == 0 || image.size() < aligned_size || aligned_size < text_size) {
+    if (levels.distance == 0 || static_cast<float>(levels.distance) >= GameDefault ||
+        image.size() < aligned_size || aligned_size < text_size) {
         return false;
     }
     u8* const code = image.data();
@@ -343,18 +348,23 @@ inline bool PatchDefaultDistance(std::span<u8> image, u32 text_size, u32 aligned
         std::memcpy(&value, code + index * sizeof(u32), sizeof(value));
         return value;
     };
+    // The page an adrp at word `i` addresses
+    const auto page = [&](size_t i) -> size_t {
+        const u32 adrp = word(i);
+        s64 pages = static_cast<s64>(((adrp >> 5) & 0x7FFFFU) << 2 | ((adrp >> 29) & 3));
+        if (pages & (s64{1} << 20)) {
+            pages -= s64{1} << 21;
+        }
+        return static_cast<size_t>(static_cast<s64>(i * 4 & ~size_t{0xFFF}) + pages * 0x1000);
+    };
+    // What `adrp reg; add reg, reg, ...` at word `i` addresses, else 0
     const auto target = [&](size_t i, u32 reg) -> size_t {
         const u32 adrp = word(i), add = word(i + 1);
         if ((adrp & 0x9F00001FU) != (0x90000000U | reg) ||
             (add & 0xFFC003FFU) != (0x91000000U | reg << 5 | reg)) {
             return 0;
         }
-        s64 pages = static_cast<s64>(((adrp >> 5) & 0x7FFFFU) << 2 | ((adrp >> 29) & 3));
-        if (pages & (s64{1} << 20)) {
-            pages -= s64{1} << 21;
-        }
-        return static_cast<size_t>(static_cast<s64>(i * 4 & ~size_t{0xFFF}) + pages * 0x1000) +
-               ((add >> 10) & 0xFFF);
+        return page(i) + ((add >> 10) & 0xFFF);
     };
     const std::string_view data{reinterpret_cast<const char*>(code), image.size()};
     size_t name = data.find(Name, aligned_size);
@@ -382,7 +392,36 @@ inline bool PatchDefaultDistance(std::span<u8> image, u32 text_size, u32 aligned
     if (found != 1) {
         return false;
     }
-    const float distance = std::min(GameDefault, static_cast<float>(levels.distance));
+    // Every adrp of its page followed by an add or load of its offset: the reader's own only
+    size_t references = 0;
+    for (size_t i = 0; i + 4 < count; ++i) {
+        const u32 adrp = word(i);
+        if ((adrp & 0x9F000000U) != 0x90000000U || page(i) != (at & ~size_t{0xFFF})) {
+            continue;
+        }
+        const u32 reg = adrp & 31;
+        for (size_t k = 1; k <= 4; ++k) {
+            const u32 next = word(i + k);
+            if (((next >> 5) & 31) != reg) {
+                continue;
+            }
+            const u32 imm = (next >> 10) & 0xFFF;
+            const bool add = (next & 0xFFC00000U) == 0x91000000U && imm == (at & 0xFFF);
+            // ldr/str (unsigned offset) of 4, 8 or 16 bytes, scaled by their size
+            const bool load32 = (next & 0xBFC00000U) == 0xB9400000U && imm * 4 == (at & 0xFFF);
+            const bool load_s = (next & 0xFFC00000U) == 0xBD400000U && imm * 4 == (at & 0xFFF);
+            const bool load_d = (next & 0xFFC00000U) == 0xFD400000U && imm * 8 == (at & 0xFFF);
+            const bool load_q = (next & 0xFFC00000U) == 0x3DC00000U && imm * 16 == (at & 0xFFF);
+            if (add || load32 || load_s || load_d || load_q) {
+                ++references;
+                break;
+            }
+        }
+    }
+    if (references != 1) {
+        return false;
+    }
+    const float distance = static_cast<float>(levels.distance);
     std::memcpy(code + at, &distance, sizeof(distance));
     return true;
 }
@@ -537,9 +576,15 @@ inline size_t PatchPlacement(std::span<u8> file, const Levels& levels) {
     walk(walk, root, {}, 0);
 
     // Each plant's place in the patches, with a little of its own so patch edges are not sharp
+    // (and none placed where no stage is: a position past this is the file's own business)
+    constexpr float MostPosition = 1.0e6f;
     std::vector<Plant*> thinned;
     for (auto& plant : plants) {
         if (plant.material < materials.size() && materials[plant.material].starts_with("Money")) {
+            continue;
+        }
+        if (!std::isfinite(plant.x) || !std::isfinite(plant.z) ||
+            std::abs(plant.x) > MostPosition || std::abs(plant.z) > MostPosition) {
             continue;
         }
         plant.score = 0.8f * Detail::PatchNoise(plant.x, plant.z) +

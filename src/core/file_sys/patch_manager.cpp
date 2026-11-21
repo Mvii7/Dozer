@@ -78,7 +78,7 @@ VirtualDir MakeFoliageOffLayer(const VirtualDir& extracted) {
 }
 
 // A stage's ProceduralPlacement file thinned by the foliage density, patched when the game reads
-// it (there are some 170, 315 MB in all) and let go once read to the end.
+// it (there are some 170, 315 MB in all) and let go once read to the end. Logged the first time.
 class FoliagePlacementFile : public VfsFile {
 public:
     FoliagePlacementFile(VirtualFile base_, Loader::Nx2DkFoliage::Levels levels_)
@@ -107,8 +107,11 @@ public:
         if (data.empty()) {
             data = base->ReadAllBytes();
             const size_t removed = Loader::Nx2DkFoliage::PatchPlacement(data, levels);
-            LOG_INFO(Loader, "Donkey Kong Bananza: {} of the foliage placed in {} thinned out",
-                     removed, base->GetName());
+            if (!logged) {
+                LOG_INFO(Loader, "Donkey Kong Bananza: {} of the foliage placed in {} thinned out",
+                         removed, base->GetName());
+                logged = true;
+            }
         }
         if (offset >= data.size()) {
             return 0;
@@ -132,6 +135,7 @@ private:
     Loader::Nx2DkFoliage::Levels levels;
     mutable std::mutex mutex;
     mutable std::vector<u8> data;
+    mutable bool logged = false;
 };
 
 // A layer with Donkey Kong Bananza's foliage thinned and its draw distance brought down to the

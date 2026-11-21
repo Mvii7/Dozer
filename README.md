@@ -370,9 +370,10 @@ the same way (foliage off wins over both):
   scaled to 0, so the file keeps its counts. Gold is kept. The foliage placed while playing is
   scaled too (its chance, its number per patch and per frame).
 - `EDEN_NX2_DK_FOLIAGE_DISTANCE=<20-700>`: the farthest any foliage is drawn, in units. Each
-  model's own far clip in `ModelSettings` (80 to 700) above it is brought down to it, and so is
-  the code's default of 100 that the 174 of 418 models without one take (a third of the placed
-  foliage), so all foliage ends at the same line.
+  model's own far clip in `ModelSettings` (80 to 700) above it is brought down to it, so all
+  foliage ends at the same line. The 174 of 418 models without one (a third of the placed foliage)
+  take the code's default of 100, which a distance under 100 brings down too (in the code, only
+  when nothing else there reads that value).
 
 `start-performance.bat` and `start-reactive-experimental.bat` set the Low level (10% kept, drawn up
 to 200 units); `start-quality.bat` and `start-safe.bat` leave the foliage as the game makes it. In
