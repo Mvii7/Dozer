@@ -78,13 +78,22 @@ bool Enabled() {
 }
 
 /// Tests: EDEN_NX2_JIT_BLOCK_LIST_THREADS=0 has each core compile its list on its own thread when
-/// it first runs; EDEN_NX2_JIT_BLOCK_LIST_MAX=<n> compiles only the first n saved blocks.
+/// it first runs; EDEN_NX2_JIT_BLOCK_LIST_MAX=<n> compiles only the first n saved blocks, after
+/// the first EDEN_NX2_JIT_BLOCK_LIST_SKIP=<n>.
 bool Threads() {
     static const bool threads = [] {
         const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST_THREADS");
         return value == nullptr || value[0] != '0';
     }();
     return threads;
+}
+
+size_t SkipFirst() {
+    static const size_t skip = [] {
+        const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST_SKIP");
+        return value == nullptr ? size_t{0} : static_cast<size_t>(std::strtoull(value, nullptr, 10));
+    }();
+    return skip;
 }
 
 size_t MaxCompiled() {
@@ -170,7 +179,9 @@ void Save() {
     std::filesystem::path path;
     {
         std::scoped_lock lock{state.mutex};
-        if (state.process == nullptr || state.known.size() == state.saved_count) {
+        // Test runs (EDEN_NX2_JIT_BLOCK_LIST_SKIP, _MAX) keep the saved list as it was.
+        if (state.process == nullptr || state.known.size() == state.saved_count ||
+            SkipFirst() != 0 || MaxCompiled() != MaxBlocks) {
             return;
         }
         list.assign(state.known.begin(), state.known.end());
@@ -266,11 +277,8 @@ const std::vector<u64>& Ready(Kernel::KProcess& process) {
     state.ready_done = true;
     std::vector<u64> list;
     list.reserve(state.saved_list.size());
-    for (const u64 relative : state.saved_list) {
-        if (list.size() == MaxCompiled()) {
-            break;
-        }
-        list.push_back(ToAbsolute(relative, state.base));
+    for (size_t i = SkipFirst(); i < state.saved_list.size() && list.size() < MaxCompiled(); ++i) {
+        list.push_back(ToAbsolute(state.saved_list[i], state.base));
     }
     std::sort(list.begin(), list.end(),
               [](u64 a, u64 b) { return (a & PcMask) < (b & PcMask); });
