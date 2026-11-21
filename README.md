@@ -86,9 +86,10 @@ files in `Games`, and the `user` folder (your keys, firmware and saves).
 - **Use `.nx` instead of `.nup`.** It usually stutters less. Right-click a game in the list and
   choose **Convert to NX...** (see "Game files"). Dozer also offers to convert a `.nup` the first
   time you start it.
-- **Performance is the default preset.** Read traps are on, and Donkey Kong Bananza runs
-  without foliage, with medium shadows and very low reflection updates. To see Bananza as the game
-  makes it, pick **Quality** in its **Properties > Tuning**.
+- **Performance is the default preset.** Read traps are on, and Donkey Kong Bananza runs with low
+  foliage (thinned, drawn closer), medium shadows and very low reflection updates. To see Bananza
+  as the game makes it, pick **Quality** in its **Properties > Tuning**, or set **Foliage** to
+  Off there for the most speed.
 - **If your system is struggling, try handheld mode.** It trades resolution for performance. It
   made little difference on the maintainer's machine, so it mainly helps weaker systems.
 - **Keep asynchronous presentation and asynchronous shader compilation on** (Graphics > Extras).
@@ -248,7 +249,7 @@ The game starts in full screen; dozer-cli has no menu. **Quit with Alt+F4.**
 
 | Launcher | When to use it |
 |---|---|
-| `start-performance.bat` | **Performance (the default).** The fastest settings, read traps on, reactive flushing off. Bananza without foliage, with medium shadows and very low reflection updates. |
+| `start-performance.bat` | **Performance (the default).** The fastest settings, read traps on, reactive flushing off. Bananza with low foliage, medium shadows and very low reflection updates. |
 | `start-quality.bat` | **Quality.** The performance settings with Bananza as the game makes it: foliage, reflections, very high shadows. |
 | `start-reactive-experimental.bat` | **Experimental.** The performance settings with Reactive Flushing instead of read traps. |
 | `start-safe.bat` | The GPU shortcuts Dozer keeps on by default off, read traps off, the opt-in switches that change play cleared; Dozer's fixes and its changes without a switch stay in: for troubleshooting and for games other than Bananza. |
