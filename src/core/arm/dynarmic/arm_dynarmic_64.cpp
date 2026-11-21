@@ -27,14 +27,12 @@
 namespace Core {
 
 namespace {
-// EDEN_NX2_SLOW_FRAME_MS: the JIT's compiles for the slow frame line.
+// EDEN_NX2_SLOW_FRAME_MS: the JIT's compiles for the slow frame line. The switch is read at the
+// first present, not here: the menu program sets it when the game starts.
 const bool slow_frame_jit_hook = [] {
-    if (!Common::Nx2SlowFrame::Enabled()) {
-        return false;
-    }
-    Dynarmic::A64::compile_stats.track.store(true, std::memory_order_relaxed);
     Common::Nx2SlowFrame::g_take_jit = [] {
         auto& stats = Dynarmic::A64::compile_stats;
+        stats.track.store(true, std::memory_order_relaxed);
         return Common::Nx2SlowFrame::JitCounts{
             stats.blocks.exchange(0, std::memory_order_relaxed),
             stats.ns.exchange(0, std::memory_order_relaxed),
