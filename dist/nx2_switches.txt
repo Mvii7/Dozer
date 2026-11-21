@@ -34,6 +34,12 @@
 # AMD drivers (they sample black or fault on unbound memory, which left Mario Kart World's terrain
 # dark): those images are backed normally. =1 allows unbound images on every GPU, =0 on none.
 #EDEN_NX2_SPARSE_UNBACKED=0
+# JIT_BLOCK_LIST (on; =0 off): the CPU JIT's compiled blocks are saved per game
+# (<cache>/nx2_jit/<title id>.bin, every 30 s and when emulation stops, as offsets from where the
+# game's code loaded), and after the game loads, before it runs, every core compiles the saved
+# ones in parallel. Code reached in an earlier session is then not compiled in the frame that
+# first runs it, once by each core (x64 only). Boot takes a few seconds longer.
+#EDEN_NX2_JIT_BLOCK_LIST=0
 
 # --- GPU thread shortcuts (on by default; =0 as before; added by Dozer) ---
 # =2 keeps them on and logs what they would get wrong: VERTEX_CLEAN, LIGHT_SYNC_SKIP,
@@ -55,15 +61,6 @@
 #EDEN_NX2_TC_CRITICAL_MIB=22346
 
 # --- experiments (off by default; NX2_NOTES.md; added by Dozer) ---
-# JIT_BLOCK_LIST=1: the CPU JIT's compiled blocks are saved per game (<cache>/nx2_jit/<title
-# id>.bin, every 30 s and when emulation stops, as offsets from where the game's code loaded),
-# and after the game loads, before it runs, every core compiles the saved ones in parallel. Code
-# reached in an earlier session is then not compiled in the frame
-# that first runs it, once by each core (x64 only).
-#EDEN_NX2_JIT_BLOCK_LIST=1
-# THREAD_DUMP=1: when emulation stops, a log line per game thread (state, wait, registers,
-# return addresses) and per core, to see where a hung game stopped.
-#EDEN_NX2_THREAD_DUMP=1
 #EDEN_NX2_PACE_GUEST_SLEEP=1
 #EDEN_NX2_PACE_GUEST_TAIL_US=1000
 # vi2 104 = GetHdrStatus, SDR reply (one line "104: 1 0 0" in a file works too)

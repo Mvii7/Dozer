@@ -11,9 +11,6 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
-#include <functional>
-#include <map>
-#include <tuple>
 #include <fstream>
 #include <mutex>
 #include <string>
@@ -38,7 +35,7 @@
 namespace Core {
 
 namespace {
-// EDEN_NX2_JIT_BLOCK_LIST=1: the blocks the JIT compiles are saved per title
+// EDEN_NX2_JIT_BLOCK_LIST (on; =0 off): the blocks the JIT compiles are saved per title
 // (<cache>/nx2_jit/<title id>.bin, every 30 s and when emulation stops), as offsets from the
 // process's code address (the loader moves it every boot). After the game is loaded and before it
 // runs, every core's JIT compiles the saved blocks in executable memory, in parallel, so code
@@ -53,37 +50,9 @@ constexpr u64 Invalid = ~u64{0};
 bool Enabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST");
-        return value != nullptr && value[0] == '1';
-    }();
-    return enabled;
-}
-
-/// Tests: EDEN_NX2_JIT_BLOCK_LIST_THREADS=0 has the cores compile their lists one after another;
-/// EDEN_NX2_JIT_BLOCK_LIST_MAX=<n> compiles only the first n saved blocks, after the first
-/// EDEN_NX2_JIT_BLOCK_LIST_SKIP=<n>.
-bool Threads() {
-    static const bool threads = [] {
-        const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST_THREADS");
         return value == nullptr || value[0] != '0';
     }();
-    return threads;
-}
-
-size_t SkipFirst() {
-    static const size_t skip = [] {
-        const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST_SKIP");
-        return value == nullptr ? size_t{0} : static_cast<size_t>(std::strtoull(value, nullptr, 10));
-    }();
-    return skip;
-}
-
-size_t MaxCompiled() {
-    static const size_t max = [] {
-        const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST_MAX");
-        return value == nullptr || value[0] == '\0' ? MaxBlocks
-                                                    : static_cast<size_t>(std::strtoull(value, nullptr, 10));
-    }();
-    return max;
+    return enabled;
 }
 
 struct State {
@@ -94,20 +63,6 @@ struct State {
     std::unordered_set<u64> known; ///< Saved and compiled blocks, relative
     std::vector<u64> saved_list;   ///< Relative
     size_t saved_count = 0;
-    bool ready_done = false;
-    std::vector<u64> ready; ///< The saved blocks in executable memory, absolute
-    // Diagnostic: the first 64 bytes of each ready block's code when it was compiled, checked
-    // against memory once, 30 s after the list was loaded.
-    Core::Memory::Memory* memory = nullptr;
-    std::vector<std::pair<u64, u32>> ready_code; ///< (hash, first instruction)
-    bool code_checked = false;
-    // Diagnostics: the saved blocks compiled at boot and those skipped (not executable then),
-    // relative, and the game's compiles of each kind and of new blocks.
-    std::unordered_set<u64> ready_set;
-    std::unordered_set<u64> skipped;
-    u64 compiled_ready = 0;
-    u64 compiled_skipped = 0;
-    u64 compiled_new = 0;
     std::jthread saver; // last: stopped (and the list saved) before the rest goes
 };
 
@@ -115,8 +70,6 @@ State& Get() {
     static State state;
     return state;
 }
-
-thread_local bool precompiling = false;
 
 u64 ToRelative(u64 descriptor, u64 base) {
     const u64 pc = descriptor & PcMask;
@@ -131,66 +84,9 @@ void Record(u64 descriptor) {
     auto& state = Get();
     std::scoped_lock lock{state.mutex};
     const u64 relative = ToRelative(descriptor, state.base);
-    if (relative == Invalid) {
-        return;
-    }
-    if (!precompiling) {
-        if (state.ready_set.contains(relative)) {
-            ++state.compiled_ready;
-        } else if (state.skipped.contains(relative)) {
-            ++state.compiled_skipped;
-        } else if (!state.known.contains(relative)) {
-            ++state.compiled_new;
-        }
-    }
-    if (state.known.size() < MaxBlocks) {
+    if (relative != Invalid && state.known.size() < MaxBlocks) {
         state.known.insert(relative);
     }
-}
-
-std::pair<u64, u32> CodeAt(Core::Memory::Memory& memory, u64 pc) {
-    std::array<u32, 16> words{};
-    memory.ReadBlockUnsafe(pc, words.data(), sizeof(words));
-    u64 hash = 0xcbf29ce484222325ULL;
-    for (const u32 word : words) {
-        hash = (hash ^ word) * 0x100000001b3ULL;
-    }
-    return {hash, words[0]};
-}
-
-/// Logs the ready blocks whose code changed in memory since they were compiled.
-void CheckCode() {
-    auto& state = Get();
-    std::scoped_lock lock{state.mutex};
-    if (state.code_checked || state.memory == nullptr || state.ready_code.size() != state.ready.size()) {
-        return;
-    }
-    state.code_checked = true;
-    size_t changed = 0;
-    for (size_t i = 0; i < state.ready.size(); ++i) {
-        const u64 pc = state.ready[i] & PcMask;
-        const auto now = CodeAt(*state.memory, pc);
-        if (now.first == state.ready_code[i].first) {
-            continue;
-        }
-        if (++changed <= 40) {
-            LOG_INFO(Core_ARM,
-                     "nx2 jit block list: code changed since boot at {:#x} (code+{:#x}): first "
-                     "instruction {:08x} -> {:08x}",
-                     pc, pc - state.base, state.ready_code[i].second, now.second);
-        }
-    }
-    LOG_INFO(Core_ARM, "nx2 jit block list: {} of {} blocks compiled at boot have changed code",
-             changed, state.ready.size());
-}
-
-void LogGameCompiles() {
-    auto& state = Get();
-    std::scoped_lock lock{state.mutex};
-    LOG_INFO(Core_ARM,
-             "nx2 jit block list: compiled in game since boot: {} new, {} saved but skipped at "
-             "boot, {} compiled at boot already (by any core)",
-             state.compiled_new, state.compiled_skipped, state.compiled_ready);
 }
 
 void Save() {
@@ -199,9 +95,7 @@ void Save() {
     std::filesystem::path path;
     {
         std::scoped_lock lock{state.mutex};
-        // Test runs (EDEN_NX2_JIT_BLOCK_LIST_SKIP, _MAX) keep the saved list as it was.
-        if (state.process == nullptr || state.known.size() == state.saved_count ||
-            SkipFirst() != 0 || MaxCompiled() != MaxBlocks) {
+        if (state.process == nullptr || state.known.size() == state.saved_count) {
             return;
         }
         list.assign(state.known.begin(), state.known.end());
@@ -225,19 +119,9 @@ void Save() {
     std::filesystem::rename(temporary, path, error);
 }
 
-/// Loads the list of the process's title once per process and starts recording; true when
-/// enabled.
-bool Load(const Kernel::KProcess& process) {
-    if (!Enabled()) {
-        return false;
-    }
+/// Loads the list of the process's title and starts recording; once per process.
+void Load(const Kernel::KProcess& process) {
     auto& state = Get();
-    {
-        std::scoped_lock lock{state.mutex};
-        if (state.process == &process) {
-            return true;
-        }
-    }
     Save(); // a previous game's
     std::scoped_lock lock{state.mutex};
     state.process = &process;
@@ -246,11 +130,6 @@ bool Load(const Kernel::KProcess& process) {
                  fmt::format("{:016X}.bin", process.GetProgramId());
     state.known.clear();
     state.saved_list.clear();
-    state.ready.clear();
-    state.ready_set.clear();
-    state.skipped.clear();
-    state.ready_done = false;
-    state.compiled_ready = state.compiled_skipped = state.compiled_new = 0;
     std::ifstream file{state.path, std::ios::binary};
     u64 header[2]{};
     if (file.read(reinterpret_cast<char*>(header), sizeof(header)) && header[0] == Magic &&
@@ -263,9 +142,6 @@ bool Load(const Kernel::KProcess& process) {
     }
     state.known.insert(state.saved_list.begin(), state.saved_list.end());
     state.saved_count = state.known.size();
-    LOG_INFO(Core_ARM, "nx2 jit block list: {} blocks saved for {:016X}, code at {:#x} ({})",
-             state.saved_list.size(), process.GetProgramId(), state.base,
-             Common::FS::PathToUTF8String(state.path));
     Dynarmic::A64::on_block_compiled = Record;
     if (!state.saver.joinable()) {
         state.saver = std::jthread([](std::stop_token stop) {
@@ -274,84 +150,47 @@ bool Load(const Kernel::KProcess& process) {
             while (!stop.stop_requested()) {
                 std::unique_lock wait_lock{wait_mutex};
                 wake.wait_for(wait_lock, stop, std::chrono::seconds{30}, [] { return false; });
-                if (!stop.stop_requested()) {
-                    LogGameCompiles();
-                    CheckCode();
-                }
                 Save();
             }
         });
     }
-    return true;
 }
 
 /// The saved blocks whose code is in executable memory of the process, absolute.
-const std::vector<u64>& Ready(Kernel::KProcess& process) {
+std::vector<u64> Ready(Kernel::KProcess& process) {
     auto& state = Get();
     std::scoped_lock lock{state.mutex};
-    if (state.ready_done) {
-        return state.ready;
-    }
-    state.ready_done = true;
-    state.memory = &process.GetMemory();
-    state.ready_code.clear();
-    state.code_checked = false;
     std::vector<u64> list;
     list.reserve(state.saved_list.size());
-    for (size_t i = SkipFirst(); i < state.saved_list.size() && list.size() < MaxCompiled(); ++i) {
-        list.push_back(ToAbsolute(state.saved_list[i], state.base));
+    for (const u64 relative : state.saved_list) {
+        list.push_back(ToAbsolute(relative, state.base));
     }
     std::sort(list.begin(), list.end(),
               [](u64 a, u64 b) { return (a & PcMask) < (b & PcMask); });
+    std::vector<u64> ready;
+    ready.reserve(list.size());
     u64 region_start = 0;
     u64 region_end = 0;
     bool executable = false;
-    // Skipped blocks by memory region: (start, end, state, permission) -> blocks.
-    std::map<std::tuple<u64, u64, u32, u32>, size_t> skipped_regions;
-    std::tuple<u64, u64, u32, u32> region_key{};
     for (const u64 descriptor : list) {
         const u64 pc = descriptor & PcMask;
         if (pc < region_start || pc >= region_end) {
             Kernel::KMemoryInfo info{};
             Kernel::Svc::PageInfo page_info{};
             if (process.GetPageTable().QueryInfo(&info, &page_info, pc) != ResultSuccess) {
-                region_start = 0;
-                region_end = 0;
+                region_start = region_end = 0;
                 executable = false;
-                region_key = {pc, pc, ~0U, ~0U};
             } else {
                 region_start = info.GetAddress();
                 region_end = info.GetEndAddress();
                 executable = True(info.GetPermission() & Kernel::KMemoryPermission::UserExecute);
-                region_key = {region_start, region_end, static_cast<u32>(info.GetState()),
-                              static_cast<u32>(info.GetPermission())};
             }
         }
         if (executable && pc + sizeof(u32) <= region_end) {
-            state.ready.push_back(descriptor);
-            state.ready_code.push_back(CodeAt(process.GetMemory(), pc));
-            state.ready_set.insert(ToRelative(descriptor, state.base));
-        } else {
-            state.skipped.insert(ToRelative(descriptor, state.base));
-            ++skipped_regions[region_key];
+            ready.push_back(descriptor);
         }
     }
-    std::vector<std::pair<size_t, std::tuple<u64, u64, u32, u32>>> by_count;
-    for (const auto& [key, count] : skipped_regions) {
-        by_count.emplace_back(count, key);
-    }
-    std::sort(by_count.begin(), by_count.end(), std::greater{});
-    LOG_INFO(Core_ARM,
-             "nx2 jit block list: {} saved blocks skipped (not executable now) in {} regions",
-             state.skipped.size(), by_count.size());
-    for (size_t i = 0; i < by_count.size() && i < 12; ++i) {
-        const auto& [count, key] = by_count[i];
-        const auto& [start, end, memory_state, permission] = key;
-        LOG_INFO(Core_ARM,
-                 "nx2 jit block list: skipped {} in [{:#x}, {:#x}) state {:#x} permission {:#x}",
-                 count, start, end, memory_state, permission);
-    }
-    return state.ready;
+    return ready;
 }
 
 } // namespace JitBlockList
@@ -797,10 +636,6 @@ void ArmDynarmic64::MakeJit(Common::PageTable* page_table, std::size_t address_s
 }
 
 HaltReason ArmDynarmic64::RunThread(Kernel::KThread* thread) {
-    if (!m_block_list_done) [[unlikely]] {
-        m_block_list_done = true;
-        StartBlockList();
-    }
     m_jit->ClearExclusiveState();
     return TranslateHaltReason(m_jit->Run());
 }
@@ -845,15 +680,7 @@ ArmDynarmic64::ArmDynarmic64(System& system, bool uses_wall_clock, Kernel::KProc
 }
 
 ArmDynarmic64::~ArmDynarmic64() {
-    for (u32 state = m_block_list_state.load(); state == 1; state = m_block_list_state.load()) {
-        m_block_list_state.wait(state);
-    }
-    if (m_block_list_done && JitBlockList::Enabled()) {
-        {
-            auto& state = JitBlockList::Get();
-            std::scoped_lock lock{state.mutex};
-            state.memory = nullptr;
-        }
+    if (JitBlockList::Enabled()) {
         JitBlockList::Save();
     }
 }
@@ -864,64 +691,31 @@ void ArmDynarmic64::PrecompileBlockList(Kernel::KProcess& process) {
         return;
     }
 #endif
-    if (!process.IsApplication() || !process.Is64Bit() || !JitBlockList::Load(process)) {
+    if (!JitBlockList::Enabled() || !process.IsApplication() || !process.Is64Bit()) {
         return;
     }
-    // Before the process runs, so the game never sees its cores stop. (No RTTI: a 64-bit
-    // process's interfaces are this class unless NCE runs it.)
-    const auto& ready = JitBlockList::Ready(process);
-    std::vector<std::jthread> workers;
-    for (size_t core = 0; core < Hardware::NUM_CPU_CORES; ++core) {
-        ArmInterface* const core_interface = process.GetArmInterface(core);
-        if (core_interface == nullptr ||
-            core_interface->GetArchitecture() != Architecture::AArch64) {
-            continue;
-        }
-        auto* const arm = static_cast<ArmDynarmic64*>(core_interface);
-        if (!arm->ClaimBlockList()) {
-            continue;
-        }
-        if (!JitBlockList::Threads()) {
-            JitBlockList::precompiling = true;
-            arm->CompileBlockList(ready);
-            JitBlockList::precompiling = false;
-            continue;
-        }
-        workers.emplace_back([arm, &ready] {
-            JitBlockList::precompiling = true;
-            arm->CompileBlockList(ready);
-        });
-    }
-}
-
-void ArmDynarmic64::StartBlockList() {
-    Kernel::KProcess* const process = m_cb->m_process;
-    if (process == nullptr || !process->IsApplication() || !JitBlockList::Load(*process)) {
-        return;
-    }
-    // Compiled at load; a process started another way compiles its list on each core here.
-    if (ClaimBlockList()) {
-        JitBlockList::precompiling = true;
-        CompileBlockList(JitBlockList::Ready(*process));
-        JitBlockList::precompiling = false;
-    }
-}
-
-bool ArmDynarmic64::ClaimBlockList() {
-    u32 expected = 0;
-    return m_block_list_state.compare_exchange_strong(expected, 1);
-}
-
-void ArmDynarmic64::CompileBlockList(const std::vector<u64>& ready) {
+    JitBlockList::Load(process);
     const auto start = std::chrono::steady_clock::now();
-    const size_t compiled = m_jit->Precompile(ready.data(), ready.size());
-    LOG_INFO(Core_ARM, "nx2 jit block list: core {} compiled {} of {} saved blocks in {} ms",
-             m_core_index, compiled, ready.size(),
+    const std::vector<u64> ready = JitBlockList::Ready(process);
+    {
+        // Before the process runs. (No RTTI: a 64-bit process's interfaces are this class unless
+        // NCE runs it.)
+        std::vector<std::jthread> workers;
+        for (size_t core = 0; core < Hardware::NUM_CPU_CORES; ++core) {
+            ArmInterface* const core_interface = process.GetArmInterface(core);
+            if (core_interface != nullptr &&
+                core_interface->GetArchitecture() == Architecture::AArch64) {
+                auto* const arm = static_cast<ArmDynarmic64*>(core_interface);
+                workers.emplace_back(
+                    [arm, &ready] { arm->m_jit->Precompile(ready.data(), ready.size()); });
+            }
+        }
+    }
+    LOG_INFO(Core_ARM, "nx2 jit block list: {} saved blocks compiled on every core in {} ms",
+             ready.size(),
              std::chrono::duration_cast<std::chrono::milliseconds>(
                  std::chrono::steady_clock::now() - start)
                  .count());
-    m_block_list_state.store(2);
-    m_block_list_state.notify_all();
 }
 
 void ArmDynarmic64::SetTpidrroEl0(u64 value) {

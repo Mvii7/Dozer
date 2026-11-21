@@ -8,10 +8,14 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
-- `EDEN_NX2_JIT_BLOCK_LIST=1` (experiment, x64): the CPU JIT's compiled blocks are saved per
-  game and compiled by every core, in parallel, after the game loads and before it runs. Donkey Kong Bananza's spikes on entering
-  new parts of a stage were the JIT compiling 10,000-55,000 blocks in a frame (up to 0.65 s of
-  compiling), 45-90% of them blocks another core had compiled already.
+- CPU JIT block list (x64; `EDEN_NX2_JIT_BLOCK_LIST=0` turns it off): the blocks the JIT
+  compiles are saved per game and compiled by every core, in parallel, after the game loads and
+  before it runs. Donkey Kong Bananza's spikes on entering new parts of a stage were the JIT
+  compiling 10,000-55,000 blocks in a frame (up to 0.65 s of compiling), 45-90% of them blocks
+  another core had compiled already; with the list only code never reached before is compiled in
+  game. Boot takes about 4 s longer (Donkey Kong Bananza, ~400,000 blocks) and loading screens
+  are shorter. Needs the GPU thread split start fix (it starts before the first channel), or
+  the faster boot can hang.
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
   (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and
   High (the game's own). `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of
