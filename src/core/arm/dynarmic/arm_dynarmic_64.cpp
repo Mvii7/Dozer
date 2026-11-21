@@ -11,6 +11,9 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
+#include <map>
+#include <tuple>
 #include <fstream>
 #include <mutex>
 #include <string>
@@ -80,6 +83,13 @@ struct State {
     // The saved blocks in executable memory, the first time a core asks.
     std::once_flag ready_once;
     std::vector<u64> ready;
+    // Diagnostics: the saved blocks compiled at boot and those skipped (not executable then),
+    // and the game's compiles of each kind and of new blocks.
+    std::unordered_set<u64> ready_set;
+    std::unordered_set<u64> skipped;
+    u64 compiled_ready = 0;
+    u64 compiled_skipped = 0;
+    u64 compiled_new = 0;
     std::jthread saver; // last: stopped (and the list saved) before the rest goes
 };
 
@@ -88,12 +98,32 @@ State& Get() {
     return state;
 }
 
+thread_local bool precompiling = false;
+
 void Record(u64 descriptor) {
     auto& state = Get();
     std::scoped_lock lock{state.mutex};
+    if (!precompiling) {
+        if (state.ready_set.contains(descriptor)) {
+            ++state.compiled_ready;
+        } else if (state.skipped.contains(descriptor)) {
+            ++state.compiled_skipped;
+        } else if (!state.known.contains(descriptor)) {
+            ++state.compiled_new;
+        }
+    }
     if (state.known.size() < MaxBlocks) {
         state.known.insert(descriptor);
     }
+}
+
+void LogGameCompiles() {
+    auto& state = Get();
+    std::scoped_lock lock{state.mutex};
+    LOG_INFO(Core_ARM,
+             "nx2 jit block list: compiled in game since boot: {} new, {} saved but skipped at "
+             "boot, {} compiled at boot already (by any core)",
+             state.compiled_new, state.compiled_skipped, state.compiled_ready);
 }
 
 void Save() {
@@ -160,6 +190,9 @@ bool Load(u64 program_id) {
         while (!stop.stop_requested()) {
             std::unique_lock wait_lock{wait_mutex};
             wake.wait_for(wait_lock, stop, std::chrono::seconds{30}, [] { return false; });
+            if (!stop.stop_requested()) {
+                LogGameCompiles();
+            }
             Save();
         }
     });
@@ -176,22 +209,56 @@ const std::vector<u64>& Ready(Kernel::KProcess& process) {
         u64 region_start = 0;
         u64 region_end = 0;
         bool executable = false;
+        // Skipped blocks by memory region: (start, end, state, permission) -> blocks.
+        std::map<std::tuple<u64, u64, u32, u32>, size_t> skipped_regions;
+        std::tuple<u64, u64, u32, u32> region_key{};
         for (const u64 descriptor : list) {
             const u64 pc = descriptor & PcMask;
             if (pc < region_start || pc >= region_end) {
                 Kernel::KMemoryInfo info{};
                 Kernel::Svc::PageInfo page_info{};
                 if (process.GetPageTable().QueryInfo(&info, &page_info, pc) != ResultSuccess) {
-                    region_start = region_end = 0;
-                    continue;
+                    region_start = 0;
+                    region_end = 0;
+                    executable = false;
+                    region_key = {pc, pc, ~0U, ~0U};
+                } else {
+                    region_start = info.GetAddress();
+                    region_end = info.GetEndAddress();
+                    executable =
+                        True(info.GetPermission() & Kernel::KMemoryPermission::UserExecute);
+                    region_key = {region_start, region_end, static_cast<u32>(info.GetState()),
+                                  static_cast<u32>(info.GetPermission())};
                 }
-                region_start = info.GetAddress();
-                region_end = info.GetEndAddress();
-                executable = True(info.GetPermission() & Kernel::KMemoryPermission::UserExecute);
             }
             if (executable && pc + sizeof(u32) <= region_end) {
                 state.ready.push_back(descriptor);
+            } else {
+                ++skipped_regions[region_key];
             }
+        }
+        {
+            std::scoped_lock lock{state.mutex};
+            state.ready_set.insert(state.ready.begin(), state.ready.end());
+            for (const u64 descriptor : list) {
+                if (!state.ready_set.contains(descriptor)) {
+                    state.skipped.insert(descriptor);
+                }
+            }
+        }
+        std::vector<std::pair<size_t, std::tuple<u64, u64, u32, u32>>> by_count;
+        for (const auto& [key, count] : skipped_regions) {
+            by_count.emplace_back(count, key);
+        }
+        std::sort(by_count.begin(), by_count.end(), std::greater{});
+        LOG_INFO(Core_ARM, "nx2 jit block list: {} saved blocks skipped (not executable now) in {} "
+                 "regions", list.size() - state.ready.size(), by_count.size());
+        for (size_t i = 0; i < by_count.size() && i < 12; ++i) {
+            const auto& [count, key] = by_count[i];
+            const auto& [start, end, memory_state, permission] = key;
+            LOG_INFO(Core_ARM,
+                     "nx2 jit block list: skipped {} in [{:#x}, {:#x}) state {:#x} permission {:#x}",
+                     count, start, end, memory_state, permission);
         }
     });
     return state.ready;
@@ -647,7 +714,9 @@ HaltReason ArmDynarmic64::RunThread(Kernel::KThread* thread) {
             JitBlockList::Load(process->GetProgramId())) {
             const auto start = std::chrono::steady_clock::now();
             const auto& ready = JitBlockList::Ready(*process);
+            JitBlockList::precompiling = true;
             const size_t compiled = m_jit->Precompile(ready.data(), ready.size());
+            JitBlockList::precompiling = false;
             LOG_INFO(Core_ARM, "nx2 jit block list: core {} compiled {} of {} saved blocks in {} ms",
                      m_core_index, compiled, ready.size(),
                      std::chrono::duration_cast<std::chrono::milliseconds>(
