@@ -246,7 +246,8 @@ void ThreadManager::Run(std::function<void()>&& func, bool is_async) {
 }
 
 void ThreadManager::StartSplit() {
-    if (VideoCommon::GpuSplit::Get().Active()) {
+    const auto& split = VideoCommon::GpuSplit::Get();
+    if (split.Active() || !split.CanStart()) {
         return;
     }
     // On the GPU thread, in the order of its queue; run by the back thread instead when the split
