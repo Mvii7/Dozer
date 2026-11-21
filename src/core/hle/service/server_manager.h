@@ -6,7 +6,9 @@
 
 #pragma once
 
+#include <atomic>
 #include <list>
+#include <string>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -95,6 +97,11 @@ private:
     Common::Event m_stopped{};
     std::vector<std::jthread> m_threads{};
     std::stop_source m_stop_source{};
+
+    // Named in the shutdown log when this manager's thread does not stop.
+    std::vector<std::string> m_names{};
+    std::atomic<bool> m_busy{};
+    std::atomic<u32> m_busy_command{};
 };
 
 } // namespace Service
