@@ -78,6 +78,12 @@ public:
      */
     void HaltExecution(HaltReason hr = HaltReason::UserDefined1);
 
+    /// Compiles the blocks at these location descriptors now (those not compiled yet), in order,
+    /// as a run reaching them would, until a quarter of the code cache is left. Call it while the
+    /// JIT is not running. Returns how many descriptors it went through (count unless it stopped
+    /// for space); backends other than x64 compile none and return 0.
+    std::size_t Precompile(const std::uint64_t* descriptors, std::size_t count);
+
     /**
      * Clears a halt reason from flags.
      * Warning: Only use this if you're sure this won't introduce races.

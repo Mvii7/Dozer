@@ -14,6 +14,25 @@ and `=0` brings back the 2.0.0 code path.
   compiles in it.
 - `EDEN_NX2_FS_READ_MBPS=<MB/s>`: the rate game data reads are held to (40 unless set, `=0` no
   limit).
+- GPU thread split: it now starts before the game creates its first Switch 2 GPU channel. When the
+  channel came first, the split took it over unreliably: the boot hung (the game's first command
+  list never ran) or the front ran macros it never saw uploaded and crashed. Donkey Kong Bananza
+  hit it about half the time with the JIT block list, which makes its boot faster.
+- CPU JIT block list (x64; `EDEN_NX2_JIT_BLOCK_LIST=0` turns it off): the blocks the JIT
+  compiles are saved per game and compiled by every core, in parallel, after the game loads and
+  before it runs. Donkey Kong Bananza's spikes on entering new parts of a stage were the JIT
+  compiling 10,000-55,000 blocks in a frame (up to 0.65 s of compiling), 45-90% of them blocks
+  another core had compiled already; with the list only code never reached before is compiled in
+  game. Boot takes about 4 s longer (Donkey Kong Bananza, ~400,000 blocks) and loading screens
+  are shorter. A list is for one build of the game (a game update starts a new one), and it
+  keeps the newest blocks that fit in three quarters of a core's code cache.
+- Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
+  (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and
+  High (the game's own). `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of
+  time (its ProceduralPlacement files, as they are read) and the foliage placed while playing;
+  `EDEN_NX2_DK_FOLIAGE_DISTANCE` brings every model's draw distance down to one line (under 100,
+  the code's default for the models without one too). Performance and Experimental choose Low instead of
+  Off, Quality and Safe High; the launchers set the same. A game's Foliage off box is read as Off.
 - Read traps: a copy back at a fence no longer disarms the traps of its pages
   (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
   fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World

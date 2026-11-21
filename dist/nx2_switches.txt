@@ -34,6 +34,13 @@
 # AMD drivers (they sample black or fault on unbound memory, which left Mario Kart World's terrain
 # dark): those images are backed normally. =1 allows unbound images on every GPU, =0 on none.
 #EDEN_NX2_SPARSE_UNBACKED=0
+# JIT_BLOCK_LIST (on; =0 off): the CPU JIT's compiled blocks are saved per game
+# (<cache>/nx2_jit/<title id>.bin, every 30 s and when emulation stops, as offsets from where the
+# game's code loaded), and after the game loads, before it runs, every core compiles the saved
+# ones in parallel. Code reached in an earlier session is then not compiled in the frame that
+# first runs it, once by each core (x64 only). Boot takes a few seconds longer. A game update
+# starts a new list; the newest blocks that fit in 3/4 of a core's code cache are kept.
+#EDEN_NX2_JIT_BLOCK_LIST=0
 
 # --- GPU thread shortcuts (on by default; =0 as before; added by Dozer) ---
 # =2 keeps them on and logs what they would get wrong: VERTEX_CLEAN, LIGHT_SYNC_SKIP,
@@ -310,12 +317,21 @@
 # worse on our machine).
 #EDEN_NX2_DK_DYN_MIN_FPS=40
 
-# --- Donkey Kong Bananza foliage off (game-specific; core/loader/nx2_dk_foliage.h) ---
+# --- Donkey Kong Bananza foliage (game-specific; core/loader/nx2_dk_foliage.h) ---
 # DK_FOLIAGE_OFF=1: as Bananza's RomFS is read, its foliage settings files (ClusteredRendering) get
 # no dynamic placement, a draw distance of nothing per model and draw caps of 1 (a mod layer made
-# in memory; nothing is written to disk): no grass, flowers or plants. Set by the Performance and
-# Experimental presets and launchers; Quality and Safe leave the foliage on.
+# in memory; nothing is written to disk): no grass, flowers or plants. It wins over the two below.
 #EDEN_NX2_DK_FOLIAGE_OFF=1
+# DK_FOLIAGE_DENSITY=<1-99>: the % of the foliage kept. Each stage's foliage placed ahead of time
+# (ClusteredRendering/StageData/*.ProceduralPlacement.byml) is thinned in patches as it is read,
+# and the foliage placed while playing is scaled too.
+# DK_FOLIAGE_DISTANCE=<20-700>: the farthest any foliage is drawn, in units: each model's own far
+# clip (80-700) above it comes down to it; under 100, so does the code's default of 100 for the
+# models without one.
+# The Performance and Experimental presets and launchers set 10 and 200 (the Tuning tab's Low;
+# Medium is 50 and 400); Quality and Safe leave the foliage as the game makes it.
+#EDEN_NX2_DK_FOLIAGE_DENSITY=10
+#EDEN_NX2_DK_FOLIAGE_DISTANCE=200
 
 # --- Donkey Kong Bananza shadow quality (game-specific; core/loader/nx2_dk_shadow.h) ---
 # DK_SHADOW_CASCADES=<1-3>: the most cascades the sun's shadow is drawn in (the game's own: up to

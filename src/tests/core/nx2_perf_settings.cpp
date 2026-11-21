@@ -31,7 +31,8 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_FG_TIMED", "1"},
     {"EDEN_NX2_OSD", "1"},
     {"EDEN_NX2_DK_DYN", "1"},
-    {"EDEN_NX2_DK_FOLIAGE_OFF", "1"},
+    {"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"},
+    {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"},
     {"EDEN_NX2_DK_SHADOW_CASCADES", "2"},
     {"EDEN_NX2_DK_CUBEMAP_INTERVAL", "240"},
     {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
@@ -39,7 +40,7 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_PACE_SPIN_US", "1500"},
 };
 // Of those, the ones Bananza gets that another game does not.
-constexpr std::size_t BalancedBananzaOwn = 7;
+constexpr std::size_t BalancedBananzaOwn = 8;
 
 // The game-specific variables Bananza gets whatever the preset (Safe's: foliage, very high
 // shadows and reflections as the game's).
@@ -73,6 +74,8 @@ const std::set<std::string_view> BananzaOnly{
     "EDEN_NX2_MODE_PACE",
     "EDEN_NX2_PACE_SPIN_US",
     "EDEN_NX2_DK_FOLIAGE_OFF",
+    "EDEN_NX2_DK_FOLIAGE_DENSITY",
+    "EDEN_NX2_DK_FOLIAGE_DISTANCE",
     "EDEN_NX2_DK_SHADOW_CASCADES",
     "EDEN_NX2_DK_CUBEMAP_INTERVAL",
 };
@@ -132,12 +135,8 @@ TEST_CASE("Nx2PerfSettings: every setting reads back what was written", "[core]"
         REQUIRE(ini.Read() == switches);
         REQUIRE(ini.values.at(std::string{key.name}) == false);
     }
-    // The game-specific settings are stored like the others, but are no part of any preset
-    // (but for Bananza's foliage off, below).
+    // The game-specific settings are stored like the others, but are no part of any preset.
     for (const Key& key : GameKeys) {
-        if (key.field == &Switches::dk_foliage_off) {
-            continue;
-        }
         for (const Preset preset :
              {Preset::Quality, Preset::Performance, Preset::Reactive, Preset::Safe}) {
             Switches switches = FromPreset(preset, Performance());
@@ -392,10 +391,11 @@ TEST_CASE("Nx2PerfSettings: every name is one a preset or a game's setting can s
             }
         }
     }
-    // Bananza's Low shadows and Medium reflection updates are no preset's
+    // Bananza's Low shadows, Medium reflection updates and foliage off are no preset's
     Switches low_shadow = Performance();
     low_shadow.dk_shadow = ShadowLow;
     low_shadow.dk_reflections = ReflectionsMedium;
+    low_shadow.dk_foliage = FoliageOff;
     for (const Var& var : Wanted(low_shadow, Game::Bananza)) {
         wanted.insert(var.name);
     }
@@ -531,9 +531,9 @@ TEST_CASE("Nx2PerfSettings: a game's overrides read back what was written", "[co
 
     std::map<std::string, int> ini;
     SaveOverrides(overrides, [&](std::string_view key, int value) { ini[std::string{key}] = value; });
-    // The boxes, the preset, the shadow quality, the reflection updates and the box they replace
-    // (cleared).
-    REQUIRE(ini.size() == KeyCount + 4);
+    // The boxes, the preset, the shadow quality, the reflection updates and the foliage, and the
+    // boxes these two replace (cleared).
+    REQUIRE(ini.size() == KeyCount + 6);
     REQUIRE(ini.at("bananza_shadow_quality") == -1);
     REQUIRE(ini.at("bananza_reflection_updates") == -1);
     REQUIRE(ini.at("bananza_reflections_off") == -1);
@@ -569,13 +569,13 @@ TEST_CASE("Nx2PerfSettings: Bananza starts from Performance, the others from the
     REQUIRE(FirstStart() == Performance());
     REQUIRE(FirstStart().preset == Preset::Performance);
     REQUIRE(FirstStart().read_traps);
-    // Whatever the global preset is, Bananza is Performance: read traps on, foliage off.
+    // Whatever the global preset is, Bananza is Performance: read traps on, foliage low.
     for (const Preset preset : {Preset::Performance, Preset::Quality, Preset::Reactive,
                                 Preset::Safe, Preset::Custom}) {
         const Switches global = FromPreset(preset, Performance());
         REQUIRE(ForGame(global, Game::Bananza, {}) == FromPreset(Preset::Performance, global));
         REQUIRE(ForGame(global, Game::Bananza, {}).read_traps);
-        REQUIRE(ForGame(global, Game::Bananza, {}).dk_foliage_off);
+        REQUIRE(ForGame(global, Game::Bananza, {}).dk_foliage == FoliageLow);
         // Any other game, Mario Kart World too: the global settings as they are.
         REQUIRE(ForGame(global, Game::MarioKartWorld, {}) == global);
         REQUIRE(ForGame(global, Game::Other, {}) == global);
@@ -656,23 +656,23 @@ TEST_CASE("Nx2PerfSettings: a game with its own preset can follow the global one
 }
 
 TEST_CASE("Nx2PerfSettings: Bananza's foliage, shadows and reflections follow the preset", "[core]") {
-    // Foliage off, static reflections and medium shadows in Performance and Experimental; the
+    // Low foliage, static reflections and medium shadows in Performance and Experimental; the
     // game's own in Quality and Safe; Custom keeps them.
     for (const Preset preset : {Preset::Performance, Preset::Reactive}) {
         const Switches switches = FromPreset(preset, Quality());
-        REQUIRE(switches.dk_foliage_off);
+        REQUIRE(switches.dk_foliage == FoliageLow);
         REQUIRE(switches.dk_reflections == ReflectionsVeryLow);
         REQUIRE(switches.dk_shadow == ShadowMedium);
     }
     for (const Preset preset : {Preset::Safe, Preset::Quality}) {
         const Switches switches = FromPreset(preset, Performance());
-        REQUIRE_FALSE(switches.dk_foliage_off);
+        REQUIRE(switches.dk_foliage == FoliageHigh);
         REQUIRE(switches.dk_reflections == ReflectionsHigh);
         REQUIRE(switches.dk_shadow == ShadowVeryHigh);
     }
     REQUIRE(FromPreset(Preset::Quality, Performance()).read_traps);
     REQUIRE(FromPreset(Preset::Custom, Quality()) .dk_shadow == ShadowVeryHigh);
-    REQUIRE(FromPreset(Preset::Custom, Performance()).dk_foliage_off);
+    REQUIRE(FromPreset(Preset::Custom, Performance()).dk_foliage == FoliageLow);
     // Quality is Performance's boxes otherwise, and sets none of Bananza's variables.
     for (const Key& key : Keys) {
         REQUIRE(Quality().*key.field == Performance().*key.field);
@@ -681,14 +681,15 @@ TEST_CASE("Nx2PerfSettings: Bananza's foliage, shadows and reflections follow th
     auto quality = BalancedBananza;
     quality.erase(std::remove_if(quality.begin(), quality.end(),
                                  [](const Var& var) {
-                                     return var.name == "EDEN_NX2_DK_FOLIAGE_OFF" ||
+                                     return var.name == "EDEN_NX2_DK_FOLIAGE_DENSITY" ||
+                                            var.name == "EDEN_NX2_DK_FOLIAGE_DISTANCE" ||
                                             var.name == "EDEN_NX2_DK_SHADOW_CASCADES" ||
                                             var.name == "EDEN_NX2_DK_CUBEMAP_INTERVAL";
                                  }),
                   quality.end());
     REQUIRE(Wanted(Quality(), Game::Bananza) == quality);
     // Only Bananza gets the variables.
-    const Var off{"EDEN_NX2_DK_FOLIAGE_OFF", "1"};
+    const Var off{"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"};
     const auto has = [&](const std::vector<Var>& vars) {
         return std::find(vars.begin(), vars.end(), off) != vars.end();
     };
@@ -696,13 +697,12 @@ TEST_CASE("Nx2PerfSettings: Bananza's foliage, shadows and reflections follow th
     REQUIRE_FALSE(has(Wanted(Performance(), Game::MarioKartWorld)));
     REQUIRE_FALSE(has(Wanted(Performance(), Game::Other)));
     REQUIRE_FALSE(has(Wanted(AllOff(), Game::Bananza)));
-    // A game's own box or shadow quality goes over its preset's.
+    // A game's own foliage or shadow quality goes over its preset's.
     Overrides own;
-    own.boxes[Keys.size() + 2] = false;
+    own.dk_foliage = FoliageHigh;
     own.dk_shadow = ShadowLow;
-    REQUIRE_FALSE(ForGame(Performance(), Game::Bananza, own).dk_foliage_off);
+    REQUIRE(ForGame(Performance(), Game::Bananza, own).dk_foliage == FoliageHigh);
     REQUIRE(ForGame(Performance(), Game::Bananza, own).dk_shadow == ShadowLow);
-    REQUIRE(KeyAt(Keys.size() + 2).field == &Switches::dk_foliage_off);
     // Bananza's own Quality preset, stored and read back; a stored 5 (the Quality preset of a
     // build that had a third one) is none.
     Overrides quality_preset;
@@ -716,14 +716,60 @@ TEST_CASE("Nx2PerfSettings: Bananza's foliage, shadows and reflections follow th
             FromPreset(Preset::Quality, Performance()));
     REQUIRE_FALSE(LoadOverrides([](std::string_view key) { return key == "preset" ? 5 : -1; })
                       .preset);
-    // A file from before the settings: the preset's.
+    // A file from before the dropdown, with Bananza's foliage off box: the preset's.
     for (const Preset preset :
          {Preset::Quality, Preset::Performance, Preset::Reactive, Preset::Safe}) {
         Ini old;
         old.Write(FromPreset(preset, Performance()));
-        old.values.erase("bananza_foliage_off");
+        old.values["bananza_foliage_off"] = true;
         REQUIRE(old.Read() == FromPreset(preset, Performance()));
     }
+}
+
+TEST_CASE("Nx2PerfSettings: Bananza's foliage", "[core]") {
+    const auto foliage = [](const Switches& switches) {
+        std::vector<Var> out;
+        for (const Var& var : Wanted(switches, Game::Bananza)) {
+            if (var.name.starts_with("EDEN_NX2_DK_FOLIAGE")) {
+                out.push_back(var);
+            }
+        }
+        return out;
+    };
+    Switches switches = Performance();
+    switches.dk_foliage = FoliageOff;
+    REQUIRE(foliage(switches) == std::vector<Var>{{"EDEN_NX2_DK_FOLIAGE_OFF", "1"}});
+    switches.dk_foliage = FoliageLow;
+    REQUIRE(foliage(switches) == std::vector<Var>{{"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"},
+                                                  {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"}});
+    switches.dk_foliage = FoliageMedium;
+    REQUIRE(foliage(switches) == std::vector<Var>{{"EDEN_NX2_DK_FOLIAGE_DENSITY", "50"},
+                                                  {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "400"}});
+    switches.dk_foliage = FoliageHigh;
+    REQUIRE(foliage(switches).empty());
+    for (const Var& var : Wanted(Performance(), Game::Bananza)) {
+        REQUIRE(std::find(Names.begin(), Names.end(), var.name) != Names.end());
+    }
+
+    // A game's own choice, stored and read back
+    Overrides own;
+    own.dk_foliage = FoliageMedium;
+    std::map<std::string, int> stored;
+    SaveOverrides(own, [&](std::string_view key, int value) { stored[std::string{key}] = value; });
+    REQUIRE(stored.at("bananza_foliage") == FoliageMedium);
+    REQUIRE(stored.at("bananza_foliage_off") == -1);
+    REQUIRE(LoadOverrides([&](std::string_view key) { return stored.at(std::string{key}); }) ==
+            own);
+    // The box it replaces: on is Off, off High
+    const auto old_box = [](int value) {
+        return LoadOverrides([value](std::string_view key) {
+                   return key == "bananza_foliage_off" ? value : -1;
+               })
+            .dk_foliage;
+    };
+    REQUIRE(old_box(1) == FoliageOff);
+    REQUIRE(old_box(0) == FoliageHigh);
+    REQUIRE_FALSE(old_box(-1));
 }
 
 TEST_CASE("Nx2PerfSettings: Bananza's shadow quality", "[core]") {
