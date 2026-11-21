@@ -133,7 +133,7 @@ under it.
 
 | Preset | What it sets | Same as |
 |---|---|---|
-| **Performance** (the first start's choice) | the fastest settings: all nine settings below on, read traps too, *Enable Reactive Flushing* off (Graphics > Advanced). Donkey Kong Bananza: foliage off, very low reflection updates, medium shadows. Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Performance or Quality later turns it off too | `start-performance.bat` |
+| **Performance** (the first start's choice) | the fastest settings: all nine settings below on, read traps too, *Enable Reactive Flushing* off (Graphics > Advanced). Donkey Kong Bananza: low foliage, very low reflection updates, medium shadows. Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Performance or Quality later turns it off too | `start-performance.bat` |
 | **Quality** | Performance's settings with Donkey Kong Bananza as the game makes it: foliage, reflections and very high shadows (it was called Balanced) | `start-quality.bat` |
 | **Experimental** | the performance settings with Reactive Flushing instead of read traps: barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and `EDEN_NX2_RX_RT_FIT=3` | `start-reactive-experimental.bat` |
 | **Safe** | all nine off, Frame generation off, and the GPU shortcuts Dozer keeps on by default off too (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
@@ -185,13 +185,15 @@ changes them (not even Safe), and they have no global setting. For Bananza the
 program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`,
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
 it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
-**Foliage off** box under its Dynamic frame rate box (`DK_FOLIAGE_OFF=1`), **Reflection updates**
+**Foliage** (Off, Low, Medium, High: none (`DK_FOLIAGE_OFF=1`), 10% of the foliage drawn up to
+200 units (`DK_FOLIAGE_DENSITY=10`, `DK_FOLIAGE_DISTANCE=200`), 50% up to 400, High the game's own),
+**Reflection updates**
 (Very low, Low, Medium, High: the reflection cube map captured every 240, 32, 16 or 8 frames,
 High the game's own; `DK_CUBEMAP_INTERVAL=240` / `32` / `16`) and
 **Shadow quality** (Low, Medium, High, Very high: the sun shadow's 1 to 4 cascades, Very high the
 game's own; `DK_SHADOW_CASCADES=<1-3>`). The presets set all three: Performance and Experimental
-foliage off, Very low reflection updates and Medium shadows; Quality and Safe the game's own (foliage,
-High reflection updates, Very high shadows). Each is changeable per game; see "Donkey Kong Bananza foliage off", "... shadow
+Low foliage, Very low reflection updates and Medium shadows; Quality and Safe the game's own (foliage,
+High reflection updates, Very high shadows). Each is changeable per game; see "Donkey Kong Bananza foliage", "... shadow
 quality" and "... reflections" below. The log says which were set ("Dozer settings for <title id>
 ...").
 
@@ -281,9 +283,9 @@ error. Take the launchers from the release zip: they need Windows line endings (
   Bananza-specific lines are marked; for other games use the safe launcher, or remove them. It
   is meant for reactive flushing **off**: it turns it off in an `sdl2-config.ini` it makes,
   and only prints a note when an existing one has it on. Read traps stay
-  on: the launcher clears `EDEN_NX2_READ_TRAPS`, and unset means on. For Bananza, foliage off,
-  very low reflection updates and medium shadows (`DK_FOLIAGE_OFF=1`, `DK_CUBEMAP_INTERVAL=240`,
-  `DK_SHADOW_CASCADES=2`).
+  on: the launcher clears `EDEN_NX2_READ_TRAPS`, and unset means on. For Bananza, low foliage,
+  very low reflection updates and medium shadows (`DK_FOLIAGE_DENSITY=10`,
+  `DK_FOLIAGE_DISTANCE=200`, `DK_CUBEMAP_INTERVAL=240`, `DK_SHADOW_CASCADES=2`).
 - **`start-quality.bat`** - the same as `start-performance.bat`, with Bananza as the game makes
   it: foliage, reflections and very high shadows (those three lines cleared).
 - **`start-safe.bat`** - for troubleshooting and for games other than Bananza: Dozer's shortcut
@@ -350,7 +352,7 @@ preset changes it). With it the game's frame time varies by design (any rate bet
 steps of 2); below 40 fps its target is 30 fps, and its speed stays right down to 24 fps. While it is applied,
 `PRESENT_INTERVAL_WORD` and `MODE_PACE` are set aside and presents are paced to every vblank.
 
-## Donkey Kong Bananza foliage off
+## Donkey Kong Bananza foliage
 
 `EDEN_NX2_DK_FOLIAGE_OFF=1` turns Bananza's grass, flowers and plants off. As the game's RomFS is
 read, its three foliage settings files (`ClusteredRendering/SystemSettings`, `MaterialSettings`
@@ -358,10 +360,27 @@ and `ModelSettings`) are changed in memory, as a mod layer below your own mods: 
 placement, every foliage model's draw distance set to nothing, and the draw caps set to 1. Nothing
 is written to disk. Foliage baked into a stage may still be loaded but is not drawn.
 
-`start-performance.bat` and `start-reactive-experimental.bat` set it; `start-quality.bat` and
-`start-safe.bat` leave the foliage on. In the menu program it is the **Foliage off** box in
-Bananza's Properties > Tuning, which the Performance and Experimental presets tick and Quality
-and Safe untick. It applies when the game starts.
+Between off and the game's own, two variables thin the foliage and shorten how far it is drawn,
+the same way (foliage off wins over both):
+
+- `EDEN_NX2_DK_FOLIAGE_DENSITY=<1-99>`: the % of the foliage kept. Most of a stage's grass is
+  placed ahead of time in `ClusteredRendering/StageData/<stage>/*.ProceduralPlacement.byml` (every
+  plant's position); each is thinned as the game reads it, in patches about 8 units across, so
+  clumps stay with bare ground between them. The plants removed are moved far below the stage and
+  scaled to 0, so the file keeps its counts. Gold is kept. The foliage placed while playing is
+  scaled too (its chance, its number per patch and per frame).
+- `EDEN_NX2_DK_FOLIAGE_DISTANCE=<20-700>`: the farthest any foliage is drawn, in units. Each
+  model's own far clip in `ModelSettings` (80 to 700) above it is brought down to it, so all
+  foliage ends at the same line. The 174 of 418 models without one (a third of the placed foliage)
+  take the code's default of 100, which a distance under 100 brings down too (in the code, only
+  when nothing else there reads that value).
+
+`start-performance.bat` and `start-reactive-experimental.bat` set the Low level (10% kept, drawn up
+to 200 units); `start-quality.bat` and `start-safe.bat` leave the foliage as the game makes it. In
+the menu program it is the **Foliage** dropdown in Bananza's Properties > Tuning: Off, Low,
+Medium (50%, 400 units) and High. The Performance and Experimental presets choose Low, Quality and
+Safe High. A game's Foliage off box from before the dropdown is read as Off when ticked, High
+when unticked. It applies when the game starts.
 
 ## Donkey Kong Bananza shadow quality
 
