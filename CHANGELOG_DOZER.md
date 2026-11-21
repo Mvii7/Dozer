@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- GPU thread split: it now starts before the game creates its first Switch 2 GPU channel. When the
+  channel came first, the split took it over unreliably: the boot hung (the game's first command
+  list never ran) or the front ran macros it never saw uploaded and crashed. Donkey Kong Bananza
+  hit it about half the time with the JIT block list, which makes its boot faster.
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
   (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and
   High (the game's own). `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of
