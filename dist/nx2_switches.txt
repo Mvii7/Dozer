@@ -53,9 +53,6 @@
 #EDEN_NX2_FAST_PRIORITY_SCAN=0
 #EDEN_NX2_DESC_XLAT=0
 #EDEN_NX2_DIRTY_THUNK_SKIP=0
-# ZERO_UPLOAD: an image whose guest memory is all zeros (most new render targets) is uploaded
-# as zeros without unswizzling it on the CPU.
-#EDEN_NX2_ZERO_UPLOAD=0
 
 # --- limits / tuning ---
 #EDEN_NX2_VRAM_LIMIT_MIB=8192
@@ -65,6 +62,10 @@
 #EDEN_NX2_TC_CRITICAL_MIB=22346
 
 # --- experiments (off by default; NX2_NOTES.md; added by Dozer) ---
+# ZERO_UPLOAD=1: an image whose guest memory is all zeros (most new render targets) is uploaded
+# as zeros without unswizzling it on the CPU. Off: in Donkey Kong Bananza terrain detail started
+# flickering after entering new areas with it on, though the images it uploads are the same.
+#EDEN_NX2_ZERO_UPLOAD=1
 #EDEN_NX2_PACE_GUEST_SLEEP=1
 #EDEN_NX2_PACE_GUEST_TAIL_US=1000
 # vi2 104 = GetHdrStatus, SDR reply (one line "104: 1 0 0" in a file works too)

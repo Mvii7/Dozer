@@ -3980,7 +3980,7 @@ template <class P>
 bool TextureCache<P>::ZeroUploadEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("EDEN_NX2_ZERO_UPLOAD");
-        return value == nullptr || value[0] != '0';
+        return value != nullptr && value[0] == '1';
     }();
     return enabled;
 }

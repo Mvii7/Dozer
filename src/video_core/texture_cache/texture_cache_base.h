@@ -485,8 +485,8 @@ private:
     template <typename StagingBuffer>
     void UploadImageContents(Image& image, StagingBuffer& staging_buffer);
 
-    /// EDEN_NX2_ZERO_UPLOAD (on; =0 off): an image whose guest memory is all zeros is uploaded
-    /// as zeros without the CPU unswizzle.
+    /// EDEN_NX2_ZERO_UPLOAD=1 (off by default): an image whose guest memory is all zeros is
+    /// uploaded as zeros without the CPU unswizzle.
     [[nodiscard]] static bool ZeroUploadEnabled();
 
     /// Create a new image view from a guest descriptor
