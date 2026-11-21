@@ -8,6 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_SLOW_FRAME_MS=<ms>` (diagnostic, off unless set): one "nx2 slow frame:" log line
+  for each frame longer than `<ms>`, with the images created and deleted, MB uploaded,
+  pipelines built, waits for the split's back, read trap flushes, game file reads and CPU JIT
+  compiles in it.
+- `EDEN_NX2_FS_READ_MBPS=<MB/s>`: the rate game data reads are held to (40 unless set, `=0` no
+  limit).
 - Read trap budget: what a 1/60 s leaves unused carries over, up to 4 ms (with the default
   1 ms). Reset each 1/60 s, one wait a little longer than 1 ms left every later read of that
   frame without its data; when that happened every frame, Donkey Kong Bananza's terrain detail

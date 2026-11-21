@@ -22,6 +22,7 @@
 #endif
 #include "common/fs/path_util.h"
 #include "common/nx2_reactive.h"
+#include "common/nx2_slow_frame.h"
 #include "common/settings.h"
 #include "core/arm/dynarmic/arm_dynarmic.h"
 #include "core/arm/dynarmic/arm_dynarmic_64.h"
@@ -35,6 +36,23 @@
 namespace Core {
 
 namespace {
+// EDEN_NX2_SLOW_FRAME_MS: the JIT's compiles for the slow frame line. The switch is read at the
+// first present, not here: the menu program sets it when the game starts.
+const bool slow_frame_jit_hook = [] {
+    Common::Nx2SlowFrame::g_take_jit = [] {
+        auto& stats = Dynarmic::A64::compile_stats;
+        stats.track.store(true, std::memory_order_relaxed);
+        return Common::Nx2SlowFrame::JitCounts{
+            stats.blocks.exchange(0, std::memory_order_relaxed),
+            stats.ns.exchange(0, std::memory_order_relaxed),
+            stats.clears.exchange(0, std::memory_order_relaxed),
+            stats.again.exchange(0, std::memory_order_relaxed),
+            stats.other_jit.exchange(0, std::memory_order_relaxed),
+            stats.ranges.exchange(0, std::memory_order_relaxed)};
+    };
+    return true;
+}();
+
 // EDEN_NX2_JIT_BLOCK_LIST (on; =0 off): the blocks the JIT compiles are saved per title
 // (<cache>/nx2_jit/<title id>.bin, every 30 s and when emulation stops), as offsets from the
 // process's code address (the loader moves it every boot). After the game is loaded and before it

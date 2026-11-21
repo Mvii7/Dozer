@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <thread>
 
+#include "common/nx2_slow_frame.h"
 #include "core/file_sys/errors.h"
 #include "core/hle/service/cmif_serialization.h"
 #include "core/hle/service/filesystem/fsp/fs_i_storage.h"
@@ -35,13 +37,28 @@ Result IStorage::Read(
     R_UNLESS(length >= 0, FileSys::ResultInvalidSize);
     R_UNLESS(offset >= 0, FileSys::ResultInvalidOffset);
 
-    const auto now = std::chrono::steady_clock::now();
-    if (now < next_read_tick) {
-        std::this_thread::sleep_for(next_read_tick - now);
+    namespace Slow = Common::Nx2SlowFrame;
+    Slow::Timer slow_timer{Slow::Counter::FsReadNs};
+    Slow::Add(Slow::Counter::FsReads, 1);
+    Slow::Add(Slow::Counter::FsReadBytes, static_cast<u64>(length));
+    // EDEN_NX2_FS_READ_MBPS: the read rate held (40 MB/s unless set, =0 no limit).
+    static const s64 bytes_per_second = [] {
+        const char* value = std::getenv("EDEN_NX2_FS_READ_MBPS");
+        if (value == nullptr || value[0] == '\0') {
+            return ReadBytesPerSecond;
+        }
+        return static_cast<s64>(std::strtoll(value, nullptr, 10)) * 1'000'000;
+    }();
+    if (bytes_per_second > 0) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now < next_read_tick) {
+            Slow::Timer throttle_timer{Slow::Counter::FsThrottleNs};
+            std::this_thread::sleep_for(next_read_tick - now);
+        }
+        next_read_tick = std::chrono::steady_clock::now() +
+                         std::chrono::nanoseconds{std::min(length, MaxChargedReadSize) *
+                                                  1'000'000'000 / bytes_per_second};
     }
-    next_read_tick = std::chrono::steady_clock::now() +
-                     std::chrono::nanoseconds{std::min(length, MaxChargedReadSize) *
-                                              1'000'000'000 / ReadBytesPerSecond};
 
     // Read the data from the Storage backend
     backend->Read(out_bytes.data(), length, offset);

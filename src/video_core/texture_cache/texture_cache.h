@@ -35,6 +35,7 @@
 #include "video_core/nx2.h"
 #include "video_core/nx2_gpu_pages.h"
 #include "video_core/nx2_profile.h"
+#include "common/nx2_slow_frame.h"
 #include "video_core/nx2_stages.h"
 #include "video_core/nx2_mode_diag.h"
 #include "video_core/textures/decoders.h"
@@ -1815,6 +1816,7 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         // Only upload modified images
         return;
     }
+    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::UploadNs};
     image.first_gpu_write_frame = 0;
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::TextureUpload};
 
@@ -1879,9 +1881,14 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     }
     ++images_uploaded;
     uploaded_bytes += image.guest_size_bytes;
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::UploadBytes, image.guest_size_bytes);
     largest_upload = (std::max<u64>)(largest_upload, image.guest_size_bytes);
     if (!UploadInChunks(image)) {
+        const s64 staging_start =
+            Common::Nx2SlowFrame::Enabled() ? Common::Nx2SlowFrame::NowNs() : 0;
         auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
+        Common::Nx2SlowFrame::AddSince(Common::Nx2SlowFrame::Counter::UploadStagingNs,
+                                       staging_start);
         UploadImageContents(image, staging);
         runtime.InsertUploadMemoryBarrier();
     }
@@ -2004,6 +2011,8 @@ void TextureCache<P>::UploadLayers(Image& image, std::span<const u32> layers) {
             image.UploadMemory(staging, copies);
             ++images_uploaded;
             uploaded_bytes += u64{image.info.layer_stride} * layers.size();
+            Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::UploadBytes,
+                                      u64{image.info.layer_stride} * layers.size());
             ++layer_uploads;
             return;
         }
@@ -2025,6 +2034,7 @@ void TextureCache<P>::UploadLayers(Image& image, std::span<const u32> layers) {
         runtime.AccelerateImageUploadLayers(image, staging, uploads, layers);
         ++images_uploaded;
         uploaded_bytes += tail * layers.size();
+        Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::UploadBytes, tail * layers.size());
         ++layer_uploads;
     }
 }
@@ -2061,17 +2071,32 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
         return;
     }
 
+    Common::Nx2SlowFrame::AddCpuUnswizzle(static_cast<u32>(image.info.format),
+                                          image.guest_size_bytes);
+    namespace Slow = Common::Nx2SlowFrame;
+    s64 slow_start = Slow::Enabled() ? Slow::NowNs() : 0;
+    const auto slow_phase = [&slow_start](Slow::Counter counter) {
+        if (slow_start != 0) {
+            const s64 now = Slow::NowNs();
+            Slow::Add(counter, static_cast<u64>(now - slow_start));
+            slow_start = now;
+        }
+    };
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
         *gpu_memory, gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
+    slow_phase(Slow::Counter::UploadReadNs);
     if (True(image.flags & ImageFlagBits::Converted)) {
         unswizzle_data_buffer.resize_destructive(image.unswizzled_size_bytes);
         auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, unswizzle_data_buffer);
         ConvertImage(unswizzle_data_buffer, image.info, mapped_span, copies);
+        slow_phase(Slow::Counter::UploadUnswizzleNs);
         image.UploadMemory(staging, copies);
     } else {
         const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, mapped_span);
+        slow_phase(Slow::Counter::UploadUnswizzleNs);
         image.UploadMemory(staging, copies);
     }
+    slow_phase(Slow::Counter::UploadRecordNs);
 }
 
 template <class P>
@@ -2614,7 +2639,10 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
             }
         }
     }
-    const ImageId new_image_id = slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    const ImageId new_image_id = [&] {
+        Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::ImageCreateNs};
+        return slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    }();
     Image& new_image = slot_images[new_image_id];
 
     new_image.allocation_tick = frame_tick;
@@ -2629,6 +2657,7 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
         ++shape.first;
         shape.second = gpu_addr;
         ++images_created;
+        Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::ImagesCreated, 1);
     }
 
     if (!gpu_memory->IsContinuousRange(new_image.gpu_addr, new_image.guest_size_bytes) &&
@@ -3610,6 +3639,7 @@ template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     ImageBase& image = slot_images[image_id];
     ++images_deleted;
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::ImagesDeleted, 1);
     if (image.nx2_read_latched && track_read_latches) [[unlikely]] {
         read_latches.Remove(image_id);
     }
