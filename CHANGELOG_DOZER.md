@@ -7,10 +7,6 @@ off unless a launcher or the menu program's Tuning tab sets them, the per-draw s
 and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
-- GPU thread split: it now also starts when a command arrives, before that command runs. A game
-  that set up its channel and sent its first command list while the GPU thread waited had that
-  list run on the single-thread path, and the boot could hang (seen with Donkey Kong Bananza
-  booting faster).
 
 - `EDEN_NX2_SLOW_FRAME_MS=<ms>` (diagnostic, off unless set): one "nx2 slow frame:" log line
   for each frame longer than `<ms>`, with the images created and deleted, MB uploaded,
