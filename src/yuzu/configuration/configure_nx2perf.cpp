@@ -119,7 +119,7 @@ void ConfigureNx2Perf::ShowPreset() {
     case Perf::Preset::Performance:
         ui->preset_text->setText(tr("The fastest settings: all on, read traps too, Reactive "
                                     "Flushing off (Graphics, Advanced). Donkey Kong Bananza: "
-                                    "foliage off, very low reflection updates, medium "
+                                    "low foliage, very low reflection updates, medium "
                                     "shadows. Like start-performance.bat."));
         break;
     case Perf::Preset::Quality:

@@ -8,6 +8,13 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
+  (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and
+  High (the game's own). `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of
+  time (its ProceduralPlacement files, as they are read) and the foliage placed while playing;
+  `EDEN_NX2_DK_FOLIAGE_DISTANCE` brings every model's draw distance down to one line (under 100,
+  the code's default for the models without one too). Performance and Experimental choose Low instead of
+  Off, Quality and Safe High; the launchers set the same. A game's Foliage off box is read as Off.
 - Read traps: a copy back at a fence no longer disarms the traps of its pages
   (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
   fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World
