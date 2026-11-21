@@ -82,6 +82,7 @@ FakeCall AxxEmitX64::FastmemCallback(u64 rip_) {
             }
             // EDEN_NX2_REACTIVE_STATS shows how many instructions left fastmem (fault path only).
             ::Common::Nx2Reactive::CountFastmemFallback();
+            ::Common::Nx2SlowFrame::Add(::Common::Nx2SlowFrame::Counter::FastmemRecompiles, 1);
             if (::Common::Nx2Reactive::StatsEnabled() && iter->read) {
                 ::Common::Nx2Reactive::Add(::Common::Nx2Reactive::Counter::FastmemReadFallbacks, 1);
             }
