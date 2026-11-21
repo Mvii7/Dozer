@@ -245,6 +245,21 @@ void ThreadManager::Run(std::function<void()>&& func, bool is_async) {
     PushCommand(RunCommand{std::move(func)}, false, is_async);
 }
 
+void ThreadManager::StartSplit() {
+    if (VideoCommon::GpuSplit::Get().Active()) {
+        return;
+    }
+    // On the GPU thread, in the order of its queue; run by the back thread instead when the split
+    // started meanwhile.
+    PushCommand(RunCommand{[this] {
+                    auto& split = VideoCommon::GpuSplit::Get();
+                    if (!split.Active()) {
+                        split.MaybeStart(system);
+                    }
+                }},
+                true, true);
+}
+
 void ThreadManager::InvalidateRegion(DAddr addr, u64 size) {
     rasterizer->OnCacheInvalidation(addr, size);
 }
