@@ -38,7 +38,8 @@
 # (<cache>/nx2_jit/<title id>.bin, every 30 s and when emulation stops, as offsets from where the
 # game's code loaded), and after the game loads, before it runs, every core compiles the saved
 # ones in parallel. Code reached in an earlier session is then not compiled in the frame that
-# first runs it, once by each core (x64 only). Boot takes a few seconds longer.
+# first runs it, once by each core (x64 only). Boot takes a few seconds longer. A game update
+# starts a new list; the newest blocks that fit in 3/4 of a core's code cache are kept.
 #EDEN_NX2_JIT_BLOCK_LIST=0
 
 # --- GPU thread shortcuts (on by default; =0 as before; added by Dozer) ---

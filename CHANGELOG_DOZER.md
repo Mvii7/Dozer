@@ -14,7 +14,8 @@ and `=0` brings back the 2.0.0 code path.
   compiling 10,000-55,000 blocks in a frame (up to 0.65 s of compiling), 45-90% of them blocks
   another core had compiled already; with the list only code never reached before is compiled in
   game. Boot takes about 4 s longer (Donkey Kong Bananza, ~400,000 blocks) and loading screens
-  are shorter. Needs the GPU thread split start fix (it starts before the first channel), or
+  are shorter. A list is for one build of the game (a game update starts a new one), and it
+  keeps the newest blocks that fit in three quarters of a core's code cache. Needs the GPU thread split start fix (it starts before the first channel), or
   the faster boot can hang.
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
   (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and

@@ -87,6 +87,10 @@ enum class InstructionCacheOperation {
 struct UserCallbacks {
     virtual ~UserCallbacks() = default;
 
+    // Called with the location descriptor of each block this JIT compiles (x64 backend), on the
+    // thread that compiles it.
+    virtual void BlockCompiled(std::uint64_t /*descriptor*/) {}
+
     // All reads through this callback are 4-byte aligned.
     // Memory must be interpreted as little endian.
     virtual std::optional<std::uint32_t> MemoryReadCode(VAddr vaddr) {
