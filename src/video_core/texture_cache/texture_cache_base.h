@@ -15,6 +15,8 @@
 #include <string>
 #include <type_traits>
 // TODO: find out which don't require stable iters
+#include <array>
+#include <string_view>
 #include <unordered_map>
 #include "common/container/unordered_map.h"
 #include "common/container/unordered_set.h"
@@ -440,6 +442,14 @@ private:
     /// Upload data from guest to an image
     template <typename StagingBuffer>
     void UploadImageContents(Image& image, StagingBuffer& staging_buffer);
+
+    /// EDEN_NX2_ZERO_UPLOAD (on; =0 off): an image whose guest memory is all zeros is uploaded
+    /// as zeros without the CPU unswizzle.
+    [[nodiscard]] static bool ZeroUploadEnabled();
+    /// 0 off, 1 on, 2 on and checked: the unswizzle still runs and its result is compared.
+    [[nodiscard]] static int ZeroUploadMode();
+    void CheckZeroUpload(Image& image, std::span<u8> mapped_span,
+                         std::span<const BufferImageCopy> copies);
 
     /// Create a new image view from a guest descriptor
     [[nodiscard]] ImageViewId CreateImageView(const TICEntry& config);

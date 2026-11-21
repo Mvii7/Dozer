@@ -53,6 +53,10 @@
 #EDEN_NX2_FAST_PRIORITY_SCAN=0
 #EDEN_NX2_DESC_XLAT=0
 #EDEN_NX2_DIRTY_THUNK_SKIP=0
+# ZERO_UPLOAD: an image whose guest memory is all zeros (most new render targets) is uploaded
+# as zeros without unswizzling it on the CPU. =2 also runs the unswizzle it skips (same time
+# spent) and logs any image whose result differs ("EDEN_NX2_ZERO_UPLOAD=2" lines).
+#EDEN_NX2_ZERO_UPLOAD=0
 
 # --- limits / tuning ---
 #EDEN_NX2_VRAM_LIMIT_MIB=8192

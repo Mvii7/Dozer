@@ -8,6 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Texture uploads (`EDEN_NX2_ZERO_UPLOAD=0` turns it off): an image whose guest memory is all
+  zeros is uploaded as zeros without the CPU unswizzle. Donkey Kong Bananza's spikes on entering
+  new areas unswizzled 230-317 MB on the CPU, nearly all of it new render targets over all-zero
+  memory; their uploads took 78-97 ms, now 24-55 ms (most of it checking the memory for zeros).
+  It needs the read trap budget's carry-over: with it on and the budget reset every 1/60 s,
+  terrain detail flickered after entering new areas.
 - `EDEN_NX2_SLOW_FRAME_MS=<ms>` (diagnostic, off unless set): one "nx2 slow frame:" log line
   for each frame longer than `<ms>`, with the images created and deleted, MB uploaded,
   pipelines built, waits for the split's back, read trap flushes, game file reads and CPU JIT
