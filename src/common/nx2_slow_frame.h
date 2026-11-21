@@ -54,6 +54,8 @@ struct JitCounts {
 inline JitCounts (*g_take_jit)() = nullptr;
 
 inline std::array<std::atomic<u64>, static_cast<size_t>(Counter::Count)> g_counters{};
+/// CpuUnswizzleBytes by the image's pixel format (VideoCore::Surface::PixelFormat).
+inline std::array<std::atomic<u64>, 256> g_cpu_unswizzle_by_format{};
 
 [[nodiscard]] inline u64 ThresholdUs() {
     static const u64 threshold = [] {
@@ -121,11 +123,27 @@ private:
     s64 start;
 };
 
+inline void AddCpuUnswizzle(u32 format, u64 bytes) {
+    if (Enabled()) [[unlikely]] {
+        g_counters[static_cast<size_t>(Counter::CpuUnswizzleBytes)].fetch_add(
+            bytes, std::memory_order_relaxed);
+        g_cpu_unswizzle_by_format[format & 0xFF].fetch_add(bytes, std::memory_order_relaxed);
+    }
+}
+
 /// The counters since the last present, cleared.
 [[nodiscard]] inline std::array<u64, static_cast<size_t>(Counter::Count)> Take() {
     std::array<u64, static_cast<size_t>(Counter::Count)> values{};
     for (size_t i = 0; i < values.size(); ++i) {
         values[i] = g_counters[i].exchange(0, std::memory_order_relaxed);
+    }
+    return values;
+}
+
+[[nodiscard]] inline std::array<u64, 256> TakeCpuUnswizzleByFormat() {
+    std::array<u64, 256> values{};
+    for (size_t i = 0; i < values.size(); ++i) {
+        values[i] = g_cpu_unswizzle_by_format[i].exchange(0, std::memory_order_relaxed);
     }
     return values;
 }

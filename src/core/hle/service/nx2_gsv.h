@@ -37,6 +37,7 @@
 #include "core/frontend/framebuffer_layout.h"
 #include "core/perf_stats.h"
 #include "video_core/gpu.h"
+#include "video_core/texture_cache/formatter.h"
 #include "video_core/framebuffer_config.h"
 #include "core/core_timing.h"
 #include "core/hle/kernel/k_client_session.h"
@@ -1699,18 +1700,37 @@ private:
     void LogSlowFrame(long long frame_us, long long fence_us, long long composite_us) {
         namespace Slow = Common::Nx2SlowFrame;
         const auto c = Slow::Take();
+        const auto by_format = Slow::TakeCpuUnswizzleByFormat();
         const Slow::JitCounts jit = Slow::g_take_jit ? Slow::g_take_jit() : Slow::JitCounts{};
         if (static_cast<u64>(frame_us) <= Slow::ThresholdUs()) {
             return;
         }
         const auto get = [&](Slow::Counter counter) { return c[static_cast<size_t>(counter)]; };
+        // The formats with the most MB unswizzled on the CPU.
+        std::string formats;
+        {
+            std::array<size_t, 256> order{};
+            for (size_t i = 0; i < order.size(); ++i) {
+                order[i] = i;
+            }
+            std::partial_sort(order.begin(), order.begin() + 4, order.end(),
+                              [&](size_t a, size_t b) { return by_format[a] > by_format[b]; });
+            for (size_t i = 0; i < 4 && by_format[order[i]] != 0; ++i) {
+                formats += fmt::format(
+                    "{}{} {:.1f} MB", formats.empty() ? ": " : ", ",
+                    order[i] < VideoCore::Surface::MaxPixelFormat
+                        ? fmt::format("{}", static_cast<VideoCore::Surface::PixelFormat>(order[i]))
+                        : fmt::format("format {}", order[i]),
+                    static_cast<double>(by_format[order[i]]) / (1 << 20));
+            }
+        }
         const auto ms = [&](Slow::Counter counter) {
             return static_cast<double>(get(counter)) / 1e6;
         };
         LOG_INFO(Service,
                  "nx2 slow frame: {:.1f} ms (present #{}) | present wait {:.1f} ms composite {:.1f} "
                  "ms | images +{} ({:.1f} ms) -{} upload {:.1f} MB ({:.1f} ms, {:.1f} MB unswizzled on "
-                 "the CPU) | pipelines {} lower "
+                 "the CPU{}) | pipelines {} lower "
                  "{:.1f} ms driver {:.1f} ms | back drains {} {:.1f} ms (max {:.1f}) | read "
                  "flushes {} {:.1f} ms (max {:.1f}) | file reads {} {:.1f} MB {:.1f} ms (throttle "
                  "{:.1f} ms) | jit {} blocks {:.1f} ms ({} compiled before on the same core, {} on "
@@ -1721,7 +1741,7 @@ private:
                  get(Slow::Counter::ImagesDeleted),
                  static_cast<double>(get(Slow::Counter::UploadBytes)) / (1 << 20),
                  ms(Slow::Counter::UploadNs),
-                 static_cast<double>(get(Slow::Counter::CpuUnswizzleBytes)) / (1 << 20),
+                 static_cast<double>(get(Slow::Counter::CpuUnswizzleBytes)) / (1 << 20), formats,
                  get(Slow::Counter::Pipelines), ms(Slow::Counter::LowerNs),
                  ms(Slow::Counter::DriverNs), get(Slow::Counter::Drains),
                  ms(Slow::Counter::DrainNs), ms(Slow::Counter::DrainMaxNs),
