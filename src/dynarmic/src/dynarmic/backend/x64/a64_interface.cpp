@@ -128,16 +128,18 @@ public:
     }
 
     std::size_t Precompile(const u64* descriptors, std::size_t count) {
-        std::size_t compiled = 0;
+        // Room for what the run compiles: a full cache is emptied at the next new block.
+        const std::size_t reserve = conf.code_cache_size / 4;
         for (std::size_t i = 0; i < count; ++i) {
-            const IR::LocationDescriptor descriptor{descriptors[i]};
-            if (A64::LocationDescriptor{descriptor}.SingleStepping() || emitter.GetBasicBlock(descriptor)) {
-                continue;
+            if (block_of_code.SpaceRemaining() < reserve) {
+                return i;
             }
-            GetBlock(descriptor);
-            ++compiled;
+            const IR::LocationDescriptor descriptor{descriptors[i]};
+            if (!A64::LocationDescriptor{descriptor}.SingleStepping()) {
+                GetBlock(descriptor);
+            }
         }
-        return compiled;
+        return count;
     }
 
     void ClearCache() {
@@ -314,9 +316,7 @@ private:
                 }
             }
         }
-        if (on_block_compiled) {
-            on_block_compiled(descriptor.Value());
-        }
+        conf.callbacks->BlockCompiled(descriptor.Value());
         return entrypoint;
     }
 

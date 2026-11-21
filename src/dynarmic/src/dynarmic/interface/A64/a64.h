@@ -37,10 +37,6 @@ struct CompileStats {
 };
 inline CompileStats compile_stats;
 
-/// Called with the location descriptor of each block any A64 JIT compiles (x64 backend), from
-/// the thread that compiles it; null for none. Set it before a JIT runs.
-inline void (*on_block_compiled)(std::uint64_t descriptor) = nullptr;
-
 class Jit final {
 public:
     explicit Jit(UserConfig conf);
@@ -82,9 +78,10 @@ public:
      */
     void HaltExecution(HaltReason hr = HaltReason::UserDefined1);
 
-    /// Compiles the blocks at these location descriptors now (those not compiled yet), as a run
-    /// reaching them would. Call it while the JIT is not running. Returns the blocks compiled;
-    /// backends other than x64 compile none.
+    /// Compiles the blocks at these location descriptors now (those not compiled yet), in order,
+    /// as a run reaching them would, until a quarter of the code cache is left. Call it while the
+    /// JIT is not running. Returns how many descriptors it went through (count unless it stopped
+    /// for space); backends other than x64 compile none and return 0.
     std::size_t Precompile(const std::uint64_t* descriptors, std::size_t count);
 
     /**

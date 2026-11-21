@@ -110,7 +110,7 @@ std::unique_ptr<Process> CreateApplicationProcess(std::vector<u8>& out_control, 
 
         system.GetARPManager().Register(launch.title_id, launch, out_control);
         // EDEN_NX2_JIT_BLOCK_LIST: the code an earlier session ran, compiled before the game runs.
-        Core::ArmDynarmic64::PrecompileBlockList(*process->GetHandle());
+        Core::ArmDynarmic64::PrecompileBlockList(system, *process->GetHandle());
         return process;
     }
     return nullptr;
@@ -129,7 +129,11 @@ bool ReinitializeProcess(Core::System& system, Process& process, u64 program_id)
     }
 
     Loader::ResultStatus status{};
-    return process.Initialize(*loader, status);
+    if (!process.Initialize(*loader, status)) {
+        return false;
+    }
+    Core::ArmDynarmic64::PrecompileBlockList(system, *process.GetHandle());
+    return true;
 }
 
 } // namespace Service::AM
