@@ -10,6 +10,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -57,6 +58,18 @@ bool Enabled() {
     return enabled;
 }
 
+// EDEN_NX2_JIT_IDLE_COMPILE (on with the block list; =0 off): a block one core compiles is
+// compiled by the other cores while they idle, instead of in the frame each one first runs it.
+bool IdleCompileEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_JIT_IDLE_COMPILE");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+constexpr size_t MaxPending = 1 << 18; ///< Per core
+
 struct State {
     std::mutex mutex;
     const Kernel::KProcess* process = nullptr; ///< Recorded, until it ends
@@ -67,6 +80,14 @@ struct State {
     std::vector<u64> order;        ///< The same, oldest first
     size_t first_kept = 0;         ///< order's first saved block (older ones did not fit)
     size_t saved_count = 0;        ///< order.size() at the last save
+    /// The process's JIT on each core, while it lives. Its core_mutex is held to use it.
+    std::array<ArmDynarmic64*, Hardware::NUM_CPU_CORES> cores{};
+    std::array<std::mutex, Hardware::NUM_CPU_CORES> core_mutex;
+    /// Absolute descriptors of new blocks other cores compiled, for this core's idle time
+    std::array<std::deque<u64>, Hardware::NUM_CPU_CORES> pending;
+    std::array<std::atomic<size_t>, Hardware::NUM_CPU_CORES> pending_size{};
+    std::atomic<u64> idle_compiled = 0;
+    std::atomic<u64> pending_dropped = 0;
     std::jthread saver; // last: stopped (and the list saved) before the rest goes
 };
 
@@ -84,15 +105,46 @@ u64 ToAbsolute(u64 relative, u64 base) {
     return (relative & ~PcMask) | (((relative & PcMask) + base) & PcMask);
 }
 
-void Record(const Kernel::KProcess* process, u64 descriptor) {
+void Record(const Kernel::KProcess* process, size_t core, u64 descriptor) {
     auto& state = Get();
     std::scoped_lock lock{state.mutex};
     if (process != state.process) {
         return;
     }
     const u64 relative = ToRelative(descriptor, state.base);
-    if (relative != Invalid && state.known.size() < MaxBlocks && state.known.insert(relative).second) {
-        state.order.push_back(relative);
+    if (relative == Invalid || state.known.size() >= MaxBlocks ||
+        !state.known.insert(relative).second) {
+        return;
+    }
+    state.order.push_back(relative);
+    if (!IdleCompileEnabled()) {
+        return;
+    }
+    for (size_t other = 0; other < state.cores.size(); ++other) {
+        if (other == core || state.cores[other] == nullptr) {
+            continue;
+        }
+        if (state.pending[other].size() >= MaxPending) {
+            ++state.pending_dropped;
+            continue;
+        }
+        state.pending[other].push_back(descriptor);
+        state.pending_size[other].store(state.pending[other].size(), std::memory_order_relaxed);
+    }
+}
+
+void ClearPending(State& state, size_t core) {
+    state.pending[core].clear();
+    state.pending_size[core].store(0, std::memory_order_relaxed);
+}
+
+/// The process's JIT on this core (nullptr: none). Takes the core's mutex, then the state's.
+void SetCore(size_t core, ArmDynarmic64* arm, const ArmDynarmic64* replaced) {
+    auto& state = Get();
+    std::scoped_lock lock{state.core_mutex[core], state.mutex};
+    if (replaced == nullptr || state.cores[core] == replaced) {
+        state.cores[core] = arm;
+        ClearPending(state, core);
     }
 }
 
@@ -179,6 +231,14 @@ void Load(const Kernel::KProcess& process, const BuildId& build_id) {
                 std::unique_lock wait_lock{wait_mutex};
                 wake.wait_for(wait_lock, stop, std::chrono::seconds{30}, [] { return false; });
                 Save();
+                const u64 compiled = Get().idle_compiled.exchange(0);
+                const u64 dropped = Get().pending_dropped.exchange(0);
+                if (compiled != 0 || dropped != 0) {
+                    LOG_INFO(Core_ARM,
+                             "nx2 jit idle compile: {} blocks compiled by idle cores in 30 s, {} "
+                             "not queued (queue full)",
+                             compiled, dropped);
+                }
             }
         });
     }
@@ -324,7 +384,7 @@ Dynarmic::A64::Vector DynarmicCallbacks64::MemoryRead128(u64 vaddr) {
 
 void DynarmicCallbacks64::BlockCompiled(u64 descriptor) {
     if (JitBlockList::Enabled()) {
-        JitBlockList::Record(m_process, descriptor);
+        JitBlockList::Record(m_process, m_parent.m_core_index, descriptor);
     }
 }
 
@@ -753,7 +813,42 @@ ArmDynarmic64::ArmDynarmic64(System& system, bool uses_wall_clock, Kernel::KProc
 
 ArmDynarmic64::~ArmDynarmic64() {
     if (JitBlockList::Enabled()) {
+        if (m_core_index < Hardware::NUM_CPU_CORES) {
+            JitBlockList::SetCore(m_core_index, nullptr, this);
+        }
         JitBlockList::End(m_cb->m_process);
+    }
+}
+
+void ArmDynarmic64::CompileForOtherCores(std::size_t core, const std::atomic<bool>& interrupted) {
+    if (!JitBlockList::Enabled() || !JitBlockList::IdleCompileEnabled() ||
+        core >= Hardware::NUM_CPU_CORES) {
+        return;
+    }
+    auto& state = JitBlockList::Get();
+    while (state.pending_size[core].load(std::memory_order_relaxed) != 0 && !interrupted) {
+        std::scoped_lock core_lock{state.core_mutex[core]};
+        ArmDynarmic64* arm = nullptr;
+        u64 descriptor = 0;
+        {
+            std::scoped_lock lock{state.mutex};
+            arm = state.cores[core];
+            if (arm == nullptr || state.pending[core].empty()) {
+                JitBlockList::ClearPending(state, core);
+                return;
+            }
+            descriptor = state.pending[core].front();
+            state.pending[core].pop_front();
+            state.pending_size[core].store(state.pending[core].size(), std::memory_order_relaxed);
+        }
+        // This core's thread is idle, so its JIT is not running. Precompile returns 0 when the
+        // code cache is too full: the rest is left to the run.
+        if (arm->m_jit->Precompile(&descriptor, 1) == 0) {
+            std::scoped_lock lock{state.mutex};
+            JitBlockList::ClearPending(state, core);
+            return;
+        }
+        ++state.idle_compiled;
     }
 }
 
@@ -779,6 +874,7 @@ void ArmDynarmic64::PrecompileBlockList(System& system, Kernel::KProcess& proces
             if (core_interface != nullptr &&
                 core_interface->GetArchitecture() == Architecture::AArch64) {
                 auto* const arm = static_cast<ArmDynarmic64*>(core_interface);
+                JitBlockList::SetCore(core, arm, nullptr);
                 workers.emplace_back([arm, &ready, &fitted] {
                     const size_t done = arm->m_jit->Precompile(ready.descriptors.data(),
                                                                ready.descriptors.size());

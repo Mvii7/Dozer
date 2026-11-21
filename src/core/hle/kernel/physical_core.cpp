@@ -10,6 +10,9 @@
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "common/thread.h"
+#if defined(_M_X64) || defined(__x86_64__)
+#include "core/arm/dynarmic/arm_dynarmic_64.h"
+#endif
 #include "core/core.h"
 #include "core/debugger/debugger.h"
 #include "core/hle/kernel/k_process.h"
@@ -226,6 +229,15 @@ void PhysicalCore::LogBacktrace(KernelCore& kernel) {
 }
 
 void PhysicalCore::Idle(KernelCore& kernel) {
+#if defined(_M_X64) || defined(__x86_64__)
+    // EDEN_NX2_JIT_IDLE_COMPILE: the new blocks other cores compiled, until this core has work.
+    if (!m_is_single_core) {
+        Core::ArmDynarmic64::CompileForOtherCores(m_core_index, m_is_interrupted);
+        if (m_is_interrupted) {
+            return;
+        }
+    }
+#endif
     // Guest job systems hand work between cores many times per frame; blocking at once adds the
     // host's thread wake-up latency to every handoff. EDEN_NX2_IDLE_SPIN_US=<n>: poll for up to
     // that many microseconds before blocking (0 blocks at once). Switch 2 titles poll 100 us by
