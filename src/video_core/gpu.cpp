@@ -18,6 +18,7 @@
 
 #include "common/assert.h"
 #include "common/nx2_reactive.h"
+#include "common/nx2_slow_frame.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "common/nx2_sync_serial.h"
@@ -404,6 +405,8 @@ struct GPU::Impl {
                      reads.load(std::memory_order_relaxed));
         }
         const s64 flush_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
+        namespace Slow = Common::Nx2SlowFrame;
+        const s64 slow_ns = Slow::Enabled() ? Slow::NowNs() : 0;
         // Only a read-trapped buffer flush counts against the read trap budget.
         const s64 budget_ns = raster_area.read_trap && VideoCommon::Nx2ReadBudget::Enabled()
                                   ? VideoCommon::Nx2ReadBudget::NowNs()
@@ -448,6 +451,8 @@ struct GPU::Impl {
             AsyncReadback::NoteRead();
         }
         VideoCommon::Nx2ReadBudget::AddSince(budget_ns, true);
+        Slow::AddWait(Slow::Counter::ReadFlushes, Slow::Counter::ReadFlushNs,
+                      Slow::Counter::ReadFlushMaxNs, slow_ns);
         if (stats) [[unlikely]] {
             const u64 wait_us = Common::Nx2Reactive::MicrosecondsSince(flush_ns);
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::SyncFlushes, 1);

@@ -14,6 +14,16 @@ and `=0` brings back the 2.0.0 code path.
   memory; their uploads took 78-97 ms, now 24-55 ms (most of it checking the memory for zeros).
   It needs the read trap budget's carry-over: with it on and the budget reset every 1/60 s,
   terrain detail flickered after entering new areas.
+- `EDEN_NX2_SLOW_FRAME_MS=<ms>` (diagnostic, off unless set): one "nx2 slow frame:" log line
+  for each frame longer than `<ms>`, with the images created and deleted, MB uploaded,
+  pipelines built, waits for the split's back, read trap flushes, game file reads and CPU JIT
+  compiles in it.
+- `EDEN_NX2_FS_READ_MBPS=<MB/s>`: the rate game data reads are held to (40 unless set, `=0` no
+  limit).
+- Read trap budget: what a 1/60 s leaves unused carries over, up to 4 ms (with the default
+  1 ms). Reset each 1/60 s, one wait a little longer than 1 ms left every later read of that
+  frame without its data; when that happened every frame, Donkey Kong Bananza's terrain detail
+  flickered (seen after entering new areas). Steady heavy reading is limited as before.
 - GPU thread split: it now starts before the game creates its first Switch 2 GPU channel. When the
   channel came first, the split took it over unreliably: the boot hung (the game's first command
   list never ran) or the front ran macros it never saw uploaded and crashed. Donkey Kong Bananza
@@ -25,14 +35,20 @@ and `=0` brings back the 2.0.0 code path.
   another core had compiled already; with the list only code never reached before is compiled in
   game. Boot takes about 4 s longer (Donkey Kong Bananza, ~400,000 blocks) and loading screens
   are shorter. A list is for one build of the game (a game update starts a new one), and it
-  keeps the newest blocks that fit in three quarters of a core's code cache.
+  keeps the newest blocks that fit in three quarters of the room a core's code cache has for them
+  (its slow-path region, a quarter of the cache, fills first). (Fixed: it stopped after one
+  block, because that region is only a quarter of the cache, and then cut the saved list down to
+  that session's blocks.)
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
-  (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and
-  High (the game's own). `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of
-  time (its ProceduralPlacement files, as they are read) and the foliage placed while playing;
+  (10% of the foliage and 50% of the thorns, thinned in patches, drawn up to 200 units), Medium
+  (50%, thorns 75%, 400 units) and High (the game's own). The thorns have their own density,
+  `EDEN_NX2_DK_FOLIAGE_THORN_DENSITY`, as they look odd as thin as grass can be.
+  `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of time (its
+  ProceduralPlacement files, as they are read) and the foliage placed while playing;
   `EDEN_NX2_DK_FOLIAGE_DISTANCE` brings every model's draw distance down to one line (under 100,
-  the code's default for the models without one too). Performance and Experimental choose Low instead of
-  Off, Quality and Safe High; the launchers set the same. A game's Foliage off box is read as Off.
+  the code's default for the models without one too). Performance and Experimental choose Low
+  instead of Off, Quality and Safe High; the launchers set the same. A game's Foliage off box is
+  read as Off.
 - Read traps: a copy back at a fence no longer disarms the traps of its pages
   (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
   fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World

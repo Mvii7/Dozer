@@ -155,7 +155,7 @@ TEST_CASE("Nx2DkFoliage: data that is not an archive is left alone", "[core]") {
 namespace {
 
 // A big endian ProceduralPlacement-like BYML: root {ReferencedMaterials: ["Grass050",
-// "Money000"], Posture: [plants]}, each plant {X, Y, Z, SX, ReferencedMaterialIndex}.
+// "Money000", "Thorn003"], Posture: [plants]}, each plant {X, Y, Z, SX, ReferencedMaterialIndex}.
 struct BigPlant {
     float x, y, z;
     u32 material;
@@ -198,7 +198,7 @@ std::vector<u8> Placement(const std::vector<BigPlant>& plants) {
     PutBig(out, 0); // root, below
     PutTable(out, PlacementKeys);
     const u32 strings = static_cast<u32>(out.size());
-    PutTable(out, {"Grass050", "Money000"});
+    PutTable(out, {"Grass050", "Money000", "Thorn003"});
     const auto key = [](std::string_view name) {
         for (size_t i = 0; i < PlacementKeys.size(); ++i) {
             if (PlacementKeys[i] == name) {
@@ -209,7 +209,7 @@ std::vector<u8> Placement(const std::vector<BigPlant>& plants) {
     };
     const u32 root = static_cast<u32>(out.size());
     const u32 materials = root + 4 + 2 * 8;
-    const u32 postures = materials + 4 + 4 + 2 * 4;
+    const u32 postures = materials + 4 + 4 + 3 * 4;
     const u32 first_plant = postures + 4 + (static_cast<u32>(plants.size()) + 3) / 4 * 4 +
                             4 * static_cast<u32>(plants.size());
     PutBig(out, 0xC1000002U);
@@ -217,10 +217,11 @@ std::vector<u8> Placement(const std::vector<BigPlant>& plants) {
     PutBig(out, postures);
     PutBig(out, key("ReferencedMaterials") | 0xC0);
     PutBig(out, materials);
-    PutBig(out, 0xC0000002U);
-    out.insert(out.end(), {0xA0, 0xA0, 0, 0});
+    PutBig(out, 0xC0000003U);
+    out.insert(out.end(), {0xA0, 0xA0, 0xA0, 0});
     PutBig(out, 0);
     PutBig(out, 1);
+    PutBig(out, 2);
     PutBig(out, 0xC0000000U | static_cast<u32>(plants.size()));
     for (size_t i = 0; i < plants.size(); ++i) {
         out.push_back(0xC1);
@@ -291,6 +292,40 @@ TEST_CASE("Nx2DkFoliage: the foliage placed in a stage thinned in patches", "[co
         }
     }
     REQUIRE(moved == 54);
+}
+
+TEST_CASE("Nx2DkFoliage: the thorns thinned with their own density", "[core]") {
+    std::vector<BigPlant> plants;
+    for (int i = 0; i < 100; ++i) {
+        plants.push_back({static_cast<float>(i % 10) * 2.5f, 5.0f,
+                          static_cast<float>(i / 10) * 2.5f, i < 50 ? 0U : 2U});
+    }
+    auto file = Placement(plants);
+    // 10% of the 50 on grass kept, 30% of the 50 thorns
+    REQUIRE(PatchPlacement(file, Levels{10, 0, 30}) == 45 + 35);
+    const size_t first = file.size() - plants.size() * 44;
+    size_t thorns = 0;
+    for (size_t i = 50; i < plants.size(); ++i) {
+        if (Detail::AsFloat(ReadBig(file, first + i * 44 + 4 + 3 * 8 + 4)) == 5.0f) {
+            ++thorns;
+        }
+    }
+    REQUIRE(thorns == 15);
+    // Thorns at 100%: only the grass
+    auto kept = Placement(plants);
+    REQUIRE(PatchPlacement(kept, Levels{10, 0, 100}) == 45);
+    // Unset, the thorns follow the density
+    REQUIRE(Levels{10, 0, 0}.Kept(true) == 10);
+    REQUIRE(Levels{0, 0, 30}.Kept(false) == 100);
+    REQUIRE(Levels{0, 0, 30}.Active());
+    REQUIRE_FALSE(Levels{0, 0, 100}.Active());
+    REQUIRE(IsThorn("Thorn003"));
+    REQUIRE(IsThorn("Work/Voxel/VoxelMaterial/Thorn003.al__VoxelMaterial.gyml"));
+    REQUIRE_FALSE(IsThorn("Work/Voxel/VoxelMaterial/Grass050.al__VoxelMaterial.gyml"));
+    REQUIRE_FALSE(IsThorn("TestThorn000"));
+    REQUIRE(IsGold("Money000"));
+    REQUIRE(IsGold("Work/Voxel/VoxelMaterial/Money000.al__VoxelMaterial.gyml"));
+    REQUIRE_FALSE(IsGold("Grass050"));
 }
 
 TEST_CASE("Nx2DkFoliage: the levels' variables", "[core]") {

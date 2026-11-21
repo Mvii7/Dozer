@@ -299,6 +299,17 @@
 # EDEN_NX2_MODE_GOV_<NAME> (MODE_GOV=1): HOLD=10 UP=36 DOWN=34 SPIKE=70 TO60=17 FROM60=19.5
 #   TO30=31 FROM30=36, and UP_FRAMES, DOWN_FRAMES, COOLDOWN (video_core/nx2_mode_gov.h).
 #EDEN_NX2_MODE_PACE21_DOWN_HOLD=37
+# SLOW_FRAME_MS=<ms> (diagnostic, off unless set): one "nx2 slow frame:" log line for each
+# present more than <ms> after the previous one, with what happened in between: images created
+# and deleted and their time, MB uploaded and its time, pipelines built and their lowering and
+# driver time, waits for the split's back, read trap flushes, the game's file reads and the
+# time IStorage reads were held to EDEN_NX2_FS_READ_MBPS, and the CPU JIT's compiles (how many
+# the same core or another core compiled before, the code ranges invalidated and the fastmem
+# faults that recompiled a block; none on NCE builds, which have no JIT).
+#EDEN_NX2_SLOW_FRAME_MS=100
+# FS_READ_MBPS=<MB/s>: the rate game data (IStorage) reads are held to, 40 unless set; =0 no
+# limit (each read is charged at most 64 KiB).
+#EDEN_NX2_FS_READ_MBPS=0
 
 # --- Donkey Kong Bananza dynamic frame rate (game-specific; core/loader/nx2_dk_dynamic_fps.h) ---
 # DK_DYN=1: while Bananza's main module loads, patch its frame rate controller in memory (a
@@ -318,12 +329,15 @@
 # DK_FOLIAGE_DENSITY=<1-99>: the % of the foliage kept. Each stage's foliage placed ahead of time
 # (ClusteredRendering/StageData/*.ProceduralPlacement.byml) is thinned in patches as it is read,
 # and the foliage placed while playing is scaled too.
+# DK_FOLIAGE_THORN_DENSITY=<1-100>: the same for the thorns (the foliage on Thorn ground); unset,
+# they follow DK_FOLIAGE_DENSITY.
 # DK_FOLIAGE_DISTANCE=<20-700>: the farthest any foliage is drawn, in units: each model's own far
 # clip (80-700) above it comes down to it; under 100, so does the code's default of 100 for the
 # models without one.
-# The Performance and Experimental presets and launchers set 10 and 200 (the Tuning tab's Low;
-# Medium is 50 and 400); Quality and Safe leave the foliage as the game makes it.
+# The Performance and Experimental presets and launchers set 10, 50 and 200 (the Tuning tab's Low;
+# Medium is 50, 75 and 400); Quality and Safe leave the foliage as the game makes it.
 #EDEN_NX2_DK_FOLIAGE_DENSITY=10
+#EDEN_NX2_DK_FOLIAGE_THORN_DENSITY=50
 #EDEN_NX2_DK_FOLIAGE_DISTANCE=200
 
 # --- Donkey Kong Bananza shadow quality (game-specific; core/loader/nx2_dk_shadow.h) ---
@@ -366,7 +380,10 @@
 # microseconds in each 1/60 s; past that a read goes on with what memory holds, as with read
 # traps off, and a copy back on its way still lands (one is waited for at most what is left of
 # the budget). Scenes that read little stay exact; bursts (Bananza's destruction, Mario Kart
-# World's races) stop waiting. A line every 10 s counts the waits and the reads that went on.
+# World's races) stop waiting. What a 1/60 s leaves unused carries over, up to 4 budgets, so one
+# wait a little over n does not leave the rest of that frame's reads without their data; after a
+# quiet stretch one wait (or download) may take up to 4n. A line every 10 s counts the waits and
+# the reads that went on.
 #EDEN_NX2_READ_TRAP_BUDGET_US=0
 # READ_TRAP_BUDGET_PREDICT=0: with the budget, a download (no copy back on its way) starts
 # even when what is left is less than downloads have been taking, and overshoots the budget.
