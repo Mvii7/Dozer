@@ -2088,6 +2088,17 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
     }
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
         *gpu_memory, gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
+    if (False(image.flags & ImageFlagBits::Converted) && ZeroUploadEnabled() &&
+        IsAllZero(swizzle_data)) {
+        // Zeros unswizzle to zeros (most new render targets): only the layout is needed.
+        const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, {});
+        if (!copies.empty()) {
+            std::memset(mapped_span.data(), 0,
+                        copies.back().buffer_offset + copies.back().buffer_size);
+        }
+        image.UploadMemory(staging, copies);
+        return;
+    }
     if (True(image.flags & ImageFlagBits::Converted)) {
         unswizzle_data_buffer.resize_destructive(image.unswizzled_size_bytes);
         auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, unswizzle_data_buffer);
@@ -3961,6 +3972,15 @@ bool TextureCache<P>::FirstUseEnabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("EDEN_NX2_FIRST_USE");
         return value != nullptr && value[0] == '1';
+    }();
+    return enabled;
+}
+
+template <class P>
+bool TextureCache<P>::ZeroUploadEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_ZERO_UPLOAD");
+        return value == nullptr || value[0] != '0';
     }();
     return enabled;
 }

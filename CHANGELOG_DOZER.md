@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Texture uploads (`EDEN_NX2_ZERO_UPLOAD=0` turns it off): an image whose guest memory is all
+  zeros is uploaded as zeros without the CPU unswizzle. Donkey Kong Bananza's spikes on entering
+  new areas unswizzled 230-317 MB on the CPU (75-110 ms), nearly all of it new render targets
+  over all-zero memory.
 - `EDEN_NX2_FIRST_USE=1` (diagnostic): what new images, uploaded from guest memory when they
   are created, are first used for, and how much of that memory was all zeros. Donkey Kong
   Bananza's spikes entering new areas unswizzle 250-317 MB of mostly render target formats on
