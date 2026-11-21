@@ -135,6 +135,19 @@ public:
         return count;
     }
 
+    bool PrecompileOne(u64 descriptor) {
+        // A fixed reserve: the run's own compiles keep their room, and the cache is never filled
+        // to the point GetBlock empties it.
+        if (block_of_code.SpaceRemaining() < conf.code_cache_size / 16) {
+            return false;
+        }
+        const IR::LocationDescriptor location{descriptor};
+        if (!A64::LocationDescriptor{location}.SingleStepping()) {
+            GetBlock(location);
+        }
+        return true;
+    }
+
     void ClearCache() {
         std::unique_lock lock{invalidation_mutex};
         invalidate_entire_cache = true;
@@ -352,6 +365,10 @@ void Jit::ClearCache() {
 
 std::size_t Jit::Precompile(const u64* descriptors, std::size_t count) {
     return impl->Precompile(descriptors, count);
+}
+
+bool Jit::PrecompileOne(u64 descriptor) {
+    return impl->PrecompileOne(descriptor);
 }
 
 void Jit::InvalidateCacheRange(u64 start_address, size_t length) {

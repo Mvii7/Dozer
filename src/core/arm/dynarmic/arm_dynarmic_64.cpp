@@ -841,9 +841,9 @@ void ArmDynarmic64::CompileForOtherCores(std::size_t core, const std::atomic<boo
             state.pending[core].pop_front();
             state.pending_size[core].store(state.pending[core].size(), std::memory_order_relaxed);
         }
-        // This core's thread is idle, so its JIT is not running. Precompile returns 0 when the
-        // code cache is too full: the rest is left to the run.
-        if (arm->m_jit->Precompile(&descriptor, 1) == 0) {
+        // This core's thread is idle, so its JIT is not running. When the code cache is too full
+        // the rest is left to the run.
+        if (!arm->m_jit->PrecompileOne(descriptor)) {
             std::scoped_lock lock{state.mutex};
             JitBlockList::ClearPending(state, core);
             return;
