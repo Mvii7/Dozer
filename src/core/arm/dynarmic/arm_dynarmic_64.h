@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <memory>
+#include <vector>
 #include "common/container/unordered_map.h"
 
 #include <dynarmic/interface/A64/a64.h>
@@ -114,7 +115,13 @@ private:
     std::size_t m_core_index{};
 
     std::optional<Dynarmic::A64::Jit> m_jit{};
-    bool m_block_list_done{}; ///< EDEN_NX2_JIT_BLOCK_LIST: the saved blocks compiled
+    // EDEN_NX2_JIT_BLOCK_LIST: this core has asked for the saved blocks; their compile state
+    // (0 not started, 1 compiling, 2 done).
+    bool m_block_list_done{};
+    std::atomic<u32> m_block_list_state{};
+    void StartBlockList();
+    bool ClaimBlockList();
+    void CompileBlockList(const std::vector<u64>& ready);
 
     // SVC callback
     u32 m_svc{};
