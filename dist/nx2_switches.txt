@@ -518,7 +518,9 @@
 # FIRST_USE=1: what the images uploaded when created (nothing overlapping them) are first used
 # for: drawn into, fully cleared, sampled, blit, DMA or deleted unused, with how much of their
 # guest memory was all zeros ("nx2 first use" lines: each frame that uploaded 16 MiB or more of
-# them, and every 600 frames).
+# them, and every 600 frames). Also every whole image unswizzled on the CPU by where it came from
+# (created clean, created over other images, later refresh), with zero bytes and top formats
+# ("nx2 cpu unswizzle" lines, same cadence).
 #EDEN_NX2_FIRST_USE=1
 #EDEN_NX2_PRESENT_DIAG=1
 #EDEN_NX2_MODE_DIAG=1
