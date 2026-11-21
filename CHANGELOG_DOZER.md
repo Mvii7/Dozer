@@ -19,9 +19,10 @@ and `=0` brings back the 2.0.0 code path.
   another core had compiled already; with the list only code never reached before is compiled in
   game. Boot takes about 4 s longer (Donkey Kong Bananza, ~400,000 blocks) and loading screens
   are shorter. A list is for one build of the game (a game update starts a new one), and it
-  keeps the newest blocks that fit in three quarters of a core's code cache. (Fixed: it stopped
-  after one block, because the cache's slow-path region is only a quarter of the cache, and then
-  cut the saved list down to that session's blocks.)
+  keeps the newest blocks that fit in three quarters of the room a core's code cache has for them
+  (its slow-path region, a quarter of the cache, fills first). (Fixed: it stopped after one
+  block, because that region is only a quarter of the cache, and then cut the saved list down to
+  that session's blocks.)
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
   (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and
   High (the game's own). `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of
