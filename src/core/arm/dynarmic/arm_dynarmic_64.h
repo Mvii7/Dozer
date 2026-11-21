@@ -103,6 +103,10 @@ public:
     /// parallel, before the process starts (after it is loaded).
     static void PrecompileBlockList(System& system, Kernel::KProcess& process);
 
+    /// EDEN_NX2_JIT_IDLE_COMPILE: on a core with nothing to run, its JIT compiles the new blocks
+    /// other cores compiled, one at a time, until it is interrupted.
+    static void CompileForOtherCores(std::size_t core, const std::atomic<bool>& interrupted);
+
 protected:
     const Kernel::DebugWatchpoint* HaltedWatchpoint() const override;
     void RewindBreakpointInstruction() override;
