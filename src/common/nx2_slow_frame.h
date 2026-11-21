@@ -38,6 +38,16 @@ enum class Counter : size_t {
     FsReadNs,
     FsThrottleNs,
     FastmemRecompiles,
+    UploadStagingNs,   ///< Staging buffers for whole-image uploads
+    UploadReadNs,      ///< Guest memory read for them
+    UploadUnswizzleNs, ///< CPU unswizzle (and conversion)
+    UploadRecordNs,    ///< Image::UploadMemory (the copy recorded)
+    GpuWaits,          ///< The host GPU waited for (Vulkan Scheduler::Wait that blocked)
+    GpuWaitNs,
+    GpuWaitMaxNs,
+    WorkerWaits, ///< Vulkan Scheduler::WaitWorker
+    WorkerWaitNs,
+    WorkerWaitMaxNs,
     Count,
 };
 
@@ -122,6 +132,14 @@ private:
     Counter counter;
     s64 start;
 };
+
+/// Adds the time since `start_ns` (0: off).
+inline void AddSince(Counter counter, s64 start_ns) {
+    if (start_ns != 0) {
+        g_counters[static_cast<size_t>(counter)].fetch_add(static_cast<u64>(NowNs() - start_ns),
+                                                           std::memory_order_relaxed);
+    }
+}
 
 inline void AddCpuUnswizzle(u32 format, u64 bytes) {
     if (Enabled()) [[unlikely]] {

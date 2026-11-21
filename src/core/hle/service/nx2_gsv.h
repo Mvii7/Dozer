@@ -1730,7 +1730,9 @@ private:
         LOG_INFO(Service,
                  "nx2 slow frame: {:.1f} ms (present #{}) | present wait {:.1f} ms composite {:.1f} "
                  "ms | images +{} ({:.1f} ms) -{} upload {:.1f} MB ({:.1f} ms, {:.1f} MB unswizzled on "
-                 "the CPU{}) | pipelines {} lower "
+                 "the CPU{}; staging {:.1f} ms, read {:.1f} ms, unswizzle {:.1f} ms, record {:.1f} "
+                 "ms) | host GPU waits {} {:.1f} ms (max {:.1f}), worker waits {} {:.1f} ms (max "
+                 "{:.1f}) | pipelines {} lower "
                  "{:.1f} ms driver {:.1f} ms | back drains {} {:.1f} ms (max {:.1f}) | read "
                  "flushes {} {:.1f} ms (max {:.1f}) | file reads {} {:.1f} MB {:.1f} ms (throttle "
                  "{:.1f} ms) | jit {} blocks {:.1f} ms ({} compiled before on the same core, {} on "
@@ -1742,6 +1744,11 @@ private:
                  static_cast<double>(get(Slow::Counter::UploadBytes)) / (1 << 20),
                  ms(Slow::Counter::UploadNs),
                  static_cast<double>(get(Slow::Counter::CpuUnswizzleBytes)) / (1 << 20), formats,
+                 ms(Slow::Counter::UploadStagingNs), ms(Slow::Counter::UploadReadNs),
+                 ms(Slow::Counter::UploadUnswizzleNs), ms(Slow::Counter::UploadRecordNs),
+                 get(Slow::Counter::GpuWaits), ms(Slow::Counter::GpuWaitNs),
+                 ms(Slow::Counter::GpuWaitMaxNs), get(Slow::Counter::WorkerWaits),
+                 ms(Slow::Counter::WorkerWaitNs), ms(Slow::Counter::WorkerWaitMaxNs),
                  get(Slow::Counter::Pipelines), ms(Slow::Counter::LowerNs),
                  ms(Slow::Counter::DriverNs), get(Slow::Counter::Drains),
                  ms(Slow::Counter::DrainNs), ms(Slow::Counter::DrainMaxNs),

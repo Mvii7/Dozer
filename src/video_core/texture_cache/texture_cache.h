@@ -1884,7 +1884,11 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::UploadBytes, image.guest_size_bytes);
     largest_upload = (std::max<u64>)(largest_upload, image.guest_size_bytes);
     if (!UploadInChunks(image)) {
+        const s64 staging_start =
+            Common::Nx2SlowFrame::Enabled() ? Common::Nx2SlowFrame::NowNs() : 0;
         auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
+        Common::Nx2SlowFrame::AddSince(Common::Nx2SlowFrame::Counter::UploadStagingNs,
+                                       staging_start);
         UploadImageContents(image, staging);
         runtime.InsertUploadMemoryBarrier();
     }
@@ -2069,17 +2073,30 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
 
     Common::Nx2SlowFrame::AddCpuUnswizzle(static_cast<u32>(image.info.format),
                                           image.guest_size_bytes);
+    namespace Slow = Common::Nx2SlowFrame;
+    s64 slow_start = Slow::Enabled() ? Slow::NowNs() : 0;
+    const auto slow_phase = [&slow_start](Slow::Counter counter) {
+        if (slow_start != 0) {
+            const s64 now = Slow::NowNs();
+            Slow::Add(counter, static_cast<u64>(now - slow_start));
+            slow_start = now;
+        }
+    };
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
         *gpu_memory, gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
+    slow_phase(Slow::Counter::UploadReadNs);
     if (True(image.flags & ImageFlagBits::Converted)) {
         unswizzle_data_buffer.resize_destructive(image.unswizzled_size_bytes);
         auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, unswizzle_data_buffer);
         ConvertImage(unswizzle_data_buffer, image.info, mapped_span, copies);
+        slow_phase(Slow::Counter::UploadUnswizzleNs);
         image.UploadMemory(staging, copies);
     } else {
         const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, mapped_span);
+        slow_phase(Slow::Counter::UploadUnswizzleNs);
         image.UploadMemory(staging, copies);
     }
+    slow_phase(Slow::Counter::UploadRecordNs);
 }
 
 template <class P>
