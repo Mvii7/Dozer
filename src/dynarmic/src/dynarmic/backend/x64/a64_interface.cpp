@@ -10,6 +10,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 
 #include <boost/icl/interval_set.hpp>
 #include "common/assert.h"
@@ -31,6 +32,11 @@
 namespace Dynarmic::A64 {
 
 using namespace Backend::X64;
+
+namespace {
+std::mutex compiled_any_mutex;
+std::unordered_set<u64> compiled_any;
+} // namespace
 
 static RunCodeCallbacks GenRunCodeCallbacks(A64::UserCallbacks* cb, CodePtr (*LookupBlock)(void* lookup_block_arg), void* arg, const A64::UserConfig& conf) {
     return RunCodeCallbacks{
@@ -284,6 +290,17 @@ private:
         const CodePtr entrypoint = emitter.Emit(ir_block).entrypoint;
         compile_stats.blocks.fetch_add(1, std::memory_order_relaxed);
         compile_stats.ns.fetch_add(static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()), std::memory_order_relaxed);
+        if (compile_stats.track.load(std::memory_order_relaxed)) {
+            const u64 key = descriptor.Value();
+            if (!compiled_here.insert(key).second) {
+                compile_stats.again.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                std::scoped_lock lock{compiled_any_mutex};
+                if (!compiled_any.insert(key).second) {
+                    compile_stats.other_jit.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        }
         return entrypoint;
     }
 
@@ -303,6 +320,7 @@ private:
                 block_of_code.ClearCache();
                 emitter.ClearCache();
             } else {
+                compile_stats.ranges.fetch_add(invalid_cache_ranges.iterative_size(), std::memory_order_relaxed);
                 emitter.InvalidateCacheRanges(invalid_cache_ranges);
             }
             invalid_cache_ranges.clear();
@@ -320,6 +338,7 @@ private:
     bool invalidate_entire_cache = false;
     boost::icl::interval_set<u64> invalid_cache_ranges;
     std::mutex invalidation_mutex;
+    std::unordered_set<u64> compiled_here;
 };
 
 Jit::Jit(UserConfig conf)
