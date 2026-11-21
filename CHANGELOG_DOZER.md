@@ -11,6 +11,11 @@ and `=0` brings back the 2.0.0 code path.
 - `EDEN_NX2_SLOW_FRAME_MS=<ms>` (diagnostic, off unless set): one "nx2 slow frame:" log line
   for each frame longer than `<ms>`, with the images created and deleted, MB uploaded,
   pipelines built, waits for the split's back and read trap flushes in it.
+- Vulkan: the device memory in use is asked of the driver at most every 50 ms instead of twice a
+  frame (`EDEN_NX2_MEMORY_QUERY_MS`, `=0` every call, Safe), and the buffer cache no longer asks
+  with Switch 2 titles, which collect by their buffers' own size. With NVIDIA's driver on Windows
+  each query goes to the kernel driver and opens registry keys: in Donkey Kong Bananza 0.55 s of
+  the GPU thread's 56 s in a recording, about 0.3 ms a frame.
 - Read traps: a copy back at a fence no longer disarms the traps of its pages
   (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
   fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World
