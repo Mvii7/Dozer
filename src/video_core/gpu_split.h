@@ -52,10 +52,13 @@ public:
         return instance;
     }
 
-    /// Whether the front sends work to the back (front thread only).
+    /// Whether the front sends work to the back.
     [[nodiscard]] bool Active() const {
-        return active;
+        return active.load(std::memory_order_relaxed);
     }
+    /// Whether MaybeStart would start the split now (EDEN_NX2_SPLIT, a Switch 2 title, the
+    /// accuracy settings).
+    [[nodiscard]] bool CanStart() const;
     /// Whether the front runs the engines' macros (EDEN_NX2_SPLIT=2).
     [[nodiscard]] bool FrontMacros() const {
         return front_macros;
@@ -345,7 +348,7 @@ private:
     bool StagedJoinContinues(const u64* entry) const;
 
     Core::System* system{};
-    bool active{};
+    std::atomic<bool> active{};
     bool front_macros{};
     std::unique_ptr<u64[]> ring;
 

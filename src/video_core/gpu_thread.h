@@ -134,6 +134,10 @@ public:
     /// Runs func on the GPU thread once the commands queued before it have been processed.
     void Run(std::function<void()>&& func, bool is_async);
 
+    /// Starts the GPU thread split if it may run and waits for it (a guest CPU thread, before
+    /// the first Switch 2 channel exists).
+    void StartSplit();
+
     void NotifyShutdown();
 
 private:
