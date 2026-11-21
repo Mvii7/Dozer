@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -157,6 +158,23 @@ inline void Put(Reader& in, size_t offset, u32 value) {
     }
 }
 
+/// The string at `index` of the string table of a little endian BYML that starts at `base`
+inline std::string_view StringAt(const Reader& in, size_t base, u32 index) {
+    const u32 table = in.U32(base + 8);
+    if (table == 0 || index >= in.U32(base + table) >> 8) {
+        return {};
+    }
+    const size_t start = base + table + in.U32(base + table + 4 + size_t{index} * 4);
+    size_t end = start;
+    while (in.Has(end, 1) && in.data[end] != 0) {
+        ++end;
+    }
+    return in.Has(start, end - start)
+               ? std::string_view{reinterpret_cast<const char*>(in.data.data()) + start,
+                                  end - start}
+               : std::string_view{};
+}
+
 /// `value` scaled by `percent`, at least 1 unless it was 0
 constexpr u32 Scaled(u32 value, int percent) {
     return value == 0 ? 0 : std::max<u32>(value * static_cast<u32>(percent) / 100, 1);
@@ -220,21 +238,40 @@ inline bool PatchModelSettings(std::span<u8> archive) {
 
 /// Bananza's foliage levels between off and the game's own (the Tuning tab's Foliage dropdown):
 /// EDEN_NX2_DK_FOLIAGE_DENSITY=<1-99>, the % of the foliage kept (placed in the stage's data, in
-/// patches, and placed while playing), and EDEN_NX2_DK_FOLIAGE_DISTANCE=<20-700>, the farthest any
-/// foliage is drawn, in units. Foliage off wins over both.
+/// patches, and placed while playing), EDEN_NX2_DK_FOLIAGE_THORN_DENSITY=<1-100>, the same for
+/// the thorns (the foliage on Thorn ground; unset, they follow the density), and
+/// EDEN_NX2_DK_FOLIAGE_DISTANCE=<20-700>, the farthest any foliage is drawn, in units. Foliage off
+/// wins over all three.
 constexpr const char* DensitySwitch = "EDEN_NX2_DK_FOLIAGE_DENSITY";
+constexpr const char* ThornDensitySwitch = "EDEN_NX2_DK_FOLIAGE_THORN_DENSITY";
 constexpr const char* DistanceSwitch = "EDEN_NX2_DK_FOLIAGE_DISTANCE";
 constexpr int MinDensity = 1, MaxDensity = 99;
+constexpr int MaxThornDensity = 100;
 constexpr int MinDistance = 20, MaxDistance = 700;
 
 struct Levels {
-    int density = 0;  ///< % kept, 0: the game's
-    int distance = 0; ///< units, 0: each model's own
+    int density = 0;       ///< % kept, 0: the game's
+    int distance = 0;      ///< units, 0: each model's own
+    int thorn_density = 0; ///< % of the thorns kept, 0: as the density
 
+    /// The % kept of the thorns or the rest, 100 when nothing is thinned
+    [[nodiscard]] int Kept(bool thorn) const {
+        const int percent = thorn && thorn_density != 0 ? thorn_density : density;
+        return percent == 0 ? 100 : percent;
+    }
+    [[nodiscard]] bool Thinned() const {
+        return Kept(false) < 100 || Kept(true) < 100;
+    }
     [[nodiscard]] bool Active() const {
-        return density != 0 || distance != 0;
+        return Thinned() || distance != 0;
     }
 };
+
+/// Whether a voxel material (a name or a path ending in one) is thorns
+constexpr bool IsThorn(std::string_view material) {
+    const auto slash = material.find_last_of('/');
+    return material.substr(slash == std::string_view::npos ? 0 : slash + 1).starts_with("Thorn");
+}
 
 /// `value` as a whole number from `min` to `max`, else 0.
 constexpr int LevelFrom(const char* value, int min, int max) {
@@ -257,13 +294,15 @@ inline Levels LevelsFromEnvironment() {
         return {};
     }
     return {LevelFrom(std::getenv(DensitySwitch), MinDensity, MaxDensity),
-            LevelFrom(std::getenv(DistanceSwitch), MinDistance, MaxDistance)};
+            LevelFrom(std::getenv(DistanceSwitch), MinDistance, MaxDistance),
+            LevelFrom(std::getenv(ThornDensitySwitch), MinDensity, MaxThornDensity)};
 }
 
 /// Scales the dynamic placements per frame of a decompressed ClusteredRendering/SystemSettings
-/// archive by the density. Returns whether it changed anything.
+/// archive by the higher of the two densities (it is shared). Returns whether it changed anything.
 inline bool PatchSystemSettings(std::span<u8> archive, const Levels& levels) {
-    if (levels.density == 0) {
+    const int percent = std::max(levels.Kept(false), levels.Kept(true));
+    if (percent >= 100) {
         return false;
     }
     Detail::Reader in{archive};
@@ -272,7 +311,7 @@ inline bool PatchSystemSettings(std::span<u8> archive, const Levels& levels) {
         Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
             if (key == "DynamicPlacementsPerFrameMax" &&
                 (type == Detail::TypeInt || type == Detail::TypeUInt)) {
-                Detail::Put(in, at, Detail::Scaled(in.U32(at), levels.density));
+                Detail::Put(in, at, Detail::Scaled(in.U32(at), percent));
                 changed = true;
             }
         });
@@ -281,23 +320,36 @@ inline bool PatchSystemSettings(std::span<u8> archive, const Levels& levels) {
 }
 
 /// Scales every DynamicPlacementProbability and the number of dynamically placed models of a
-/// decompressed ClusteredRendering/MaterialSettings archive by the density.
+/// decompressed ClusteredRendering/MaterialSettings archive by the density, or the thorns' for a
+/// material on Thorn ground (its MaterialName).
 inline bool PatchMaterialSettings(std::span<u8> archive, const Levels& levels) {
-    if (levels.density == 0) {
+    if (!levels.Thinned()) {
         return false;
     }
+    constexpr u8 TypeString = 0xA0;
     Detail::Reader in{archive};
     bool changed = false;
     Detail::ForEachSarcFile(in, [&](size_t base) {
+        bool thorn = false;
+        Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
+            if (key == "MaterialName" && type == TypeString &&
+                IsThorn(Detail::StringAt(in, base, in.U32(at)))) {
+                thorn = true;
+            }
+        });
+        const int percent = levels.Kept(thorn);
+        if (percent >= 100) {
+            return;
+        }
         Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
             if (key == "DynamicPlacementProbability" && type == Detail::TypeFloat) {
                 Detail::Put(in, at,
                             Detail::AsBits(Detail::AsFloat(in.U32(at)) *
-                                           static_cast<float>(levels.density) / 100.0f));
+                                           static_cast<float>(percent) / 100.0f));
                 changed = true;
             } else if ((key == "PlacedModelsMinNum" || key == "PlacedModelsMaxNum") &&
                        (type == Detail::TypeInt || type == Detail::TypeUInt)) {
-                Detail::Put(in, at, Detail::Scaled(in.U32(at), levels.density));
+                Detail::Put(in, at, Detail::Scaled(in.U32(at), percent));
                 changed = true;
             }
         });
@@ -433,7 +485,7 @@ constexpr std::string_view PlacementFolder = "ClusteredRendering/StageData";
 constexpr std::string_view PlacementSuffix = ".ProceduralPlacement.byml";
 
 inline bool PlacementsWanted(const Levels& levels) {
-    return levels.density != 0;
+    return levels.Thinned();
 }
 
 namespace Detail {
@@ -473,9 +525,10 @@ inline float PatchNoise(float x, float z) {
 
 } // namespace Detail
 
-/// Keeps `levels.density` % of the plants of a ProceduralPlacement BYML in place: the others are
-/// moved far below the stage and scaled to 0, so the counts the file keeps stay right. Plants on
-/// Money materials (gold) are kept. Returns how many were removed.
+/// Keeps the density's % of the plants of a ProceduralPlacement BYML, and the thorn density's of
+/// those on Thorn ground, in place: the others are moved far below the stage and scaled to 0, so
+/// the counts the file keeps stay right. Plants on Money materials (gold) are kept. Returns how
+/// many were removed.
 inline size_t PatchPlacement(std::span<u8> file, const Levels& levels) {
     if (!PlacementsWanted(levels)) {
         return 0;
@@ -578,9 +631,11 @@ inline size_t PatchPlacement(std::span<u8> file, const Levels& levels) {
     // Each plant's place in the patches, with a little of its own so patch edges are not sharp
     // (and none placed where no stage is: a position past this is the file's own business)
     constexpr float MostPosition = 1.0e6f;
-    std::vector<Plant*> thinned;
+    std::array<std::vector<Plant*>, 2> groups; // the rest, the thorns
     for (auto& plant : plants) {
-        if (plant.material < materials.size() && materials[plant.material].starts_with("Money")) {
+        const std::string_view material =
+            plant.material < materials.size() ? materials[plant.material] : std::string_view{};
+        if (material.starts_with("Money")) {
             continue;
         }
         if (!std::isfinite(plant.x) || !std::isfinite(plant.z) ||
@@ -590,26 +645,32 @@ inline size_t PatchPlacement(std::span<u8> file, const Levels& levels) {
         plant.score = 0.8f * Detail::PatchNoise(plant.x, plant.z) +
                       0.2f * Detail::Hash01(static_cast<s64>(plant.x * 16.0f),
                                             static_cast<s64>(plant.z * 16.0f), 2);
-        thinned.push_back(&plant);
+        groups[IsThorn(material) ? 1 : 0].push_back(&plant);
     }
-    const size_t keep = thinned.size() * static_cast<size_t>(levels.density) / 100;
-    if (keep >= thinned.size()) {
-        return 0;
-    }
-    std::nth_element(thinned.begin(), thinned.begin() + static_cast<std::ptrdiff_t>(keep),
-                     thinned.end(),
-                     [](const Plant* a, const Plant* b) { return a->score < b->score; });
-    for (auto it = thinned.begin() + static_cast<std::ptrdiff_t>(keep); it != thinned.end(); ++it) {
-        const Plant& plant = **it;
-        const float y = Detail::AsFloat(Detail::Big32(in, plant.y_at));
-        Detail::PutBig32(in, plant.y_at, Detail::AsBits(y - 10000.0f));
-        for (const size_t at : plant.scale_at) {
-            if (at != 0) {
-                Detail::PutBig32(in, at, Detail::AsBits(0.0f));
+    size_t removed = 0;
+    for (size_t group = 0; group < groups.size(); ++group) {
+        auto& thinned = groups[group];
+        const size_t keep = thinned.size() * static_cast<size_t>(levels.Kept(group == 1)) / 100;
+        if (keep >= thinned.size()) {
+            continue;
+        }
+        std::nth_element(thinned.begin(), thinned.begin() + static_cast<std::ptrdiff_t>(keep),
+                         thinned.end(),
+                         [](const Plant* a, const Plant* b) { return a->score < b->score; });
+        for (auto it = thinned.begin() + static_cast<std::ptrdiff_t>(keep); it != thinned.end();
+             ++it) {
+            const Plant& plant = **it;
+            const float y = Detail::AsFloat(Detail::Big32(in, plant.y_at));
+            Detail::PutBig32(in, plant.y_at, Detail::AsBits(y - 10000.0f));
+            for (const size_t at : plant.scale_at) {
+                if (at != 0) {
+                    Detail::PutBig32(in, at, Detail::AsBits(0.0f));
+                }
             }
         }
+        removed += thinned.size() - keep;
     }
-    return thinned.size() - keep;
+    return removed;
 }
 
 } // namespace Loader::Nx2DkFoliage
