@@ -2086,12 +2086,10 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
     if (FirstUseEnabled()) [[unlikely]] {
         NoteUpload(image);
     }
-    Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
-        *gpu_memory, gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
     if (False(image.flags & ImageFlagBits::Converted) && ZeroUploadEnabled() &&
-        IsAllZero(swizzle_data)) {
+        gpu_memory->IsZeroUnsafe(gpu_addr, image.guest_size_bytes)) {
         // Zeros unswizzle to zeros (most new render targets): only the layout is needed.
-        const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, {});
+        const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, {}, {});
         if (!copies.empty()) {
             std::memset(mapped_span.data(), 0,
                         copies.back().buffer_offset + copies.back().buffer_size);
@@ -2099,6 +2097,8 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
         image.UploadMemory(staging, copies);
         return;
     }
+    Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
+        *gpu_memory, gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
     if (True(image.flags & ImageFlagBits::Converted)) {
         unswizzle_data_buffer.resize_destructive(image.unswizzled_size_bytes);
         auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, unswizzle_data_buffer);
