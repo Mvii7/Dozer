@@ -410,6 +410,24 @@ public:
     FirstUseCounts first_use_period;
     std::vector<u8> first_use_scratch;
 
+    /// EDEN_NX2_FIRST_USE=1 also logs every whole image unswizzled on the CPU by where it came
+    /// from: created with nothing overlapping, created over other images (their copies land on
+    /// top), or a later refresh (split by whether the image had been written by the GPU).
+    enum UploadPath : size_t { UpCreatedClean, UpCreatedOverlap, UpLater, UpLaterGpuWritten,
+                               UpCount };
+    struct UploadCounts {
+        std::array<u64, UpCount> images{};
+        std::array<u64, UpCount> bytes{};
+        std::array<u64, UpCount> zero_bytes{};
+        std::array<std::unordered_map<u32, u64>, UpCount> formats; ///< bytes by pixel format
+    };
+    [[nodiscard]] bool GuestIsZero(GPUVAddr gpu_addr, size_t size);
+    void NoteUpload(const Image& image);
+    void LogUploads(UploadCounts& counts, std::string_view when);
+    UploadPath upload_path = UpLater;
+    UploadCounts upload_frame;
+    UploadCounts upload_period;
+
     Common::SpinRecursiveMutex mutex;
     /// The pages an image was ever registered or tracked on: elsewhere the cache holds nothing,
     /// and guest accesses skip its lock (RasterizerVulkan::MayHoldImages).

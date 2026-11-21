@@ -389,10 +389,20 @@ void TextureCache<P>::TickFrame() {
         if (first_use_frame.created_bytes >= 16_MiB) {
             LogFirstUse(first_use_frame, "frame");
         }
+        u64 frame_upload_bytes = 0;
+        for (const u64 bytes : upload_frame.bytes) {
+            frame_upload_bytes += bytes;
+        }
+        if (frame_upload_bytes >= 16_MiB) {
+            LogUploads(upload_frame, "frame");
+        }
         first_use_frame = {};
+        upload_frame = {};
         if (static u64 first_use_frames{}; ++first_use_frames % 600 == 0) {
             LogFirstUse(first_use_period, "last 600 frames");
+            LogUploads(upload_period, "last 600 frames");
             first_use_period = {};
+            upload_period = {};
         }
     }
     if (Nx2Stages::GpuPages().Live()) [[unlikely]] {
@@ -2073,6 +2083,9 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
         return;
     }
 
+    if (FirstUseEnabled()) [[unlikely]] {
+        NoteUpload(image);
+    }
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
         *gpu_memory, gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
     if (True(image.flags & ImageFlagBits::Converted)) {
@@ -2662,10 +2675,12 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
 
     // TODO: Only upload what we need
     const bool uploads_at_creation = True(new_image.flags & ImageFlagBits::CpuModified);
+    const bool nothing_overlaps = join_copies_to_do.empty() && join_right_aliased_ids.empty() &&
+                                  join_left_aliased_ids.empty() && join_bad_overlap_ids.empty();
+    upload_path = nothing_overlaps ? UpCreatedClean : UpCreatedOverlap;
     RefreshContents(new_image, new_image_id);
-    if (uploads_at_creation && join_copies_to_do.empty() && join_right_aliased_ids.empty() &&
-        join_left_aliased_ids.empty() && join_bad_overlap_ids.empty() && FirstUseEnabled())
-        [[unlikely]] {
+    upload_path = UpLater;
+    if (uploads_at_creation && nothing_overlaps && FirstUseEnabled()) [[unlikely]] {
         NoteFirstUseCreated(new_image);
     }
 
@@ -3951,13 +3966,61 @@ bool TextureCache<P>::FirstUseEnabled() {
 }
 
 template <class P>
+bool TextureCache<P>::GuestIsZero(GPUVAddr gpu_addr, size_t size) {
+    first_use_scratch.resize(size);
+    gpu_memory->ReadBlockUnsafe(gpu_addr, first_use_scratch.data(), size);
+    const u8* const data = first_use_scratch.data();
+    return size == 0 || (data[0] == 0 && std::memcmp(data, data + 1, size - 1) == 0);
+}
+
+template <class P>
+void TextureCache<P>::NoteUpload(const Image& image) {
+    UploadPath path = upload_path;
+    if (path == UpLater && True(image.flags & ImageFlagBits::GpuModified)) {
+        path = UpLaterGpuWritten;
+    }
+    const u64 size = image.guest_size_bytes;
+    const bool zero = GuestIsZero(image.gpu_addr, size);
+    for (UploadCounts* const counts : {&upload_frame, &upload_period}) {
+        ++counts->images[path];
+        counts->bytes[path] += size;
+        if (zero) {
+            counts->zero_bytes[path] += size;
+        }
+        counts->formats[path][static_cast<u32>(image.info.format)] += size;
+    }
+}
+
+template <class P>
+void TextureCache<P>::LogUploads(UploadCounts& counts, std::string_view when) {
+    static constexpr std::array<std::string_view, UpCount> names{
+        "created, nothing overlapping", "created over other images", "later refresh",
+        "later refresh of a GPU-written image"};
+    std::string paths;
+    for (size_t path = 0; path < UpCount; ++path) {
+        if (counts.images[path] == 0) {
+            continue;
+        }
+        std::vector<std::pair<u64, u32>> formats;
+        for (const auto& [format, bytes] : counts.formats[path]) {
+            formats.emplace_back(bytes, format);
+        }
+        std::sort(formats.begin(), formats.end(), std::greater{});
+        std::string top;
+        for (size_t i = 0; i < formats.size() && i < 4; ++i) {
+            top += fmt::format(" {} {} MiB", static_cast<PixelFormat>(formats[i].second),
+                               formats[i].first >> 20);
+        }
+        paths += fmt::format(" | {} {} ({} MiB, {} MiB zero; top:{})", names[path], counts.images[path],
+                             counts.bytes[path] >> 20, counts.zero_bytes[path] >> 20, top);
+    }
+    LOG_INFO(HW_GPU, "nx2 cpu unswizzle ({}):{}", when, paths.empty() ? std::string{" -"} : paths);
+}
+
+template <class P>
 void TextureCache<P>::NoteFirstUseCreated(Image& image) {
     const size_t size = image.guest_size_bytes;
-    first_use_scratch.resize(size);
-    gpu_memory->ReadBlockUnsafe(image.gpu_addr, first_use_scratch.data(), size);
-    const u8* const data = first_use_scratch.data();
-    image.nx2_first_use_zero =
-        size == 0 || (data[0] == 0 && std::memcmp(data, data + 1, size - 1) == 0);
+    image.nx2_first_use_zero = GuestIsZero(image.gpu_addr, size);
     image.nx2_first_use_pending = true;
     first_use_frame.created_bytes += size;
     first_use_period.created_bytes += size;
