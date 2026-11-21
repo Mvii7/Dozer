@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_FIRST_USE=1` (diagnostic): what new images, uploaded from guest memory when they
+  are created, are first used for, and how much of that memory was all zeros. Donkey Kong
+  Bananza's spikes entering new areas unswizzle 250-317 MB of mostly render target formats on
+  the CPU; this shows how much of it a skipped or cleared upload could save.
 - GPU thread split: it now starts before the game creates its first Switch 2 GPU channel. When the
   channel came first, the split took it over unreliably: the boot hung (the game's first command
   list never ran) or the front ran macros it never saw uploaded and crashed. Donkey Kong Bananza
