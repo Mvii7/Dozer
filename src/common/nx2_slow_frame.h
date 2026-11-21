@@ -42,6 +42,9 @@ enum class Counter : size_t {
     UploadReadNs,      ///< Guest memory read for them
     UploadUnswizzleNs, ///< CPU unswizzle (and conversion)
     UploadRecordNs,    ///< Image::UploadMemory (the copy recorded)
+    UploadZeroScanNs,  ///< EDEN_NX2_ZERO_UPLOAD: the check for all-zero guest memory
+    UploadFillNs,      ///< EDEN_NX2_ZERO_UPLOAD: zeros written to the staging buffer
+    ZeroUploadBytes,   ///< EDEN_NX2_ZERO_UPLOAD: guest bytes uploaded as zeros
     GpuWaits,          ///< The host GPU waited for (Vulkan Scheduler::Wait that blocked)
     GpuWaitNs,
     GpuWaitMaxNs,

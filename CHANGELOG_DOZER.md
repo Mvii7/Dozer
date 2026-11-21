@@ -14,6 +14,17 @@ and `=0` brings back the 2.0.0 code path.
   first time (no saved list yet, or a new part of a stage) was compiled in game once by each
   core that ran it, up to 6 times; now mostly once. Every 30 s the log says how many blocks idle
   cores compiled.
+- Vulkan: the device memory in use is asked of the driver at most every 50 ms instead of twice a
+  frame (`EDEN_NX2_MEMORY_QUERY_MS`, `=0` every call, Safe), and the buffer cache no longer asks
+  with Switch 2 titles, which collect by their buffers' own size. With NVIDIA's driver on Windows
+  each query goes to the kernel driver and opens registry keys: in Donkey Kong Bananza 0.55 s of
+  the GPU thread's 56 s in a recording, about 0.3 ms a frame.
+- Texture uploads (`EDEN_NX2_ZERO_UPLOAD=0` turns it off): an image whose guest memory is all
+  zeros is uploaded as zeros without the CPU unswizzle. Donkey Kong Bananza's spikes on entering
+  new areas unswizzled 230-317 MB on the CPU, nearly all of it new render targets over all-zero
+  memory; their uploads took 78-97 ms, now 24-55 ms (most of it checking the memory for zeros).
+  It needs the read trap budget's carry-over: with it on and the budget reset every 1/60 s,
+  terrain detail flickered after entering new areas.
 - `EDEN_NX2_SLOW_FRAME_MS=<ms>` (diagnostic, off unless set): one "nx2 slow frame:" log line
   for each frame longer than `<ms>`, with the images created and deleted, MB uploaded,
   pipelines built, waits for the split's back, read trap flushes, game file reads and CPU JIT
