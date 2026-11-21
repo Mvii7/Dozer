@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Vulkan: the device memory in use is asked of the driver at most every 50 ms instead of twice a
+  frame (`EDEN_NX2_MEMORY_QUERY_MS`, `=0` every call, Safe), and the buffer cache no longer asks
+  with Switch 2 titles, which collect by their buffers' own size. With NVIDIA's driver on Windows
+  each query goes to the kernel driver and opens registry keys: in Donkey Kong Bananza 0.55 s of
+  the GPU thread's 56 s in a recording, about 0.3 ms a frame.
 - Texture uploads (`EDEN_NX2_ZERO_UPLOAD=0` turns it off): an image whose guest memory is all
   zeros is uploaded as zeros without the CPU unswizzle. Donkey Kong Bananza's spikes on entering
   new areas unswizzled 230-317 MB on the CPU, nearly all of it new render targets over all-zero
