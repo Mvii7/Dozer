@@ -171,10 +171,10 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         foliage->addItem(tr("Medium"));
         foliage->addItem(tr("High"));
         foliage->setToolTip(
-            tr("The grass, flowers and plants. Off: none. Low: 10% of them, thinned in patches, "
-               "drawn up to 200 units. Medium: 50%, drawn up to 400 units. High: as the game "
-               "makes them. Fewer plants and a shorter distance mean fewer draws. Needs a "
-               "restart."));
+            tr("The grass, flowers and plants. Off: none. Low: 10% of them (50% of the thorns), "
+               "thinned in patches, drawn up to 200 units. Medium: 50% (thorns 75%), drawn up to "
+               "400 units. High: as the game makes them. Fewer plants and a shorter distance "
+               "mean fewer draws. Needs a restart."));
         form->addRow(tr("Foliage"), foliage);
         connect(foliage, &QComboBox::activated, this, [this](int index) {
             const int chosen = Perf::FoliageOff + index;
