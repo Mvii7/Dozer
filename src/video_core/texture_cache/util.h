@@ -69,9 +69,13 @@ struct OverlapResult {
 
 [[nodiscard]] bool IsValidEntry(const Tegra::MemoryManager& gpu_memory, const TICEntry& config);
 
+/// With an empty `output`, only returns the copies (the layout it would write).
 [[nodiscard]] boost::container::small_vector<BufferImageCopy, 16> UnswizzleImage(
     Tegra::MemoryManager& gpu_memory, GPUVAddr gpu_addr, const ImageInfo& info,
     std::span<const u8> input, std::span<u8> output);
+
+/// True when every byte of `data` is zero.
+[[nodiscard]] bool IsAllZero(std::span<const u8> data);
 
 /// Unswizzles only the blocks of a 2D block-linear image that overlap `dirty_ranges` (sorted,
 /// non-overlapping [begin, end) byte offsets from the image start) into `output`. Returns no copies
