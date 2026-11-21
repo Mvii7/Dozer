@@ -6,9 +6,11 @@
 
 #pragma once
 
+#include <atomic>
 #include <list>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "common/polyfill_thread.h"
@@ -95,6 +97,11 @@ private:
     Common::Event m_stopped{};
     std::vector<std::jthread> m_threads{};
     std::stop_source m_stop_source{};
+
+    // Named in the shutdown log when this manager's thread does not stop.
+    std::vector<std::string> m_names{};
+    std::atomic<u32> m_busy{};         ///< Requests in progress (several threads may serve them)
+    std::atomic<u32> m_busy_command{}; ///< The last one's command
 };
 
 } // namespace Service
