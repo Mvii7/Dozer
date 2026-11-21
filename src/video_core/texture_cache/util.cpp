@@ -869,9 +869,12 @@ boost::container::small_vector<BufferImageCopy, 16> UnswizzleImage(Tegra::Memory
     const Extent2D tile_size = DefaultBlockSize(info.format);
     const Extent3D size = info.size;
 
+    const bool layout_only = output.empty();
     if (info.type == ImageType::Linear) {
-        ASSERT(output.size_bytes() >= guest_size_bytes);
-        gpu_memory.ReadBlockUnsafe(gpu_addr, output.data(), guest_size_bytes);
+        if (!layout_only) {
+            ASSERT(output.size_bytes() >= guest_size_bytes);
+            gpu_memory.ReadBlockUnsafe(gpu_addr, output.data(), guest_size_bytes);
+        }
 
         ASSERT((info.pitch >> bpp_log2) << bpp_log2 == info.pitch);
         return {{
@@ -926,16 +929,38 @@ boost::container::small_vector<BufferImageCopy, 16> UnswizzleImage(Tegra::Memory
         size_t guest_layer_offset = 0;
 
         for (s32 layer = 0; layer < info.resources.layers; ++layer) {
-            const std::span<u8> dst = output.subspan(host_offset);
-            const std::span<const u8> src = input.subspan(guest_offset + guest_layer_offset);
-            UnswizzleTexture(dst, src, 1U << bpp_log2, num_tiles.width, num_tiles.height,
-                             num_tiles.depth, block.height, block.depth, stride_alignment, gpu_memory.UsesNativeTiling());
+            if (!layout_only) {
+                const std::span<u8> dst = output.subspan(host_offset);
+                const std::span<const u8> src = input.subspan(guest_offset + guest_layer_offset);
+                UnswizzleTexture(dst, src, 1U << bpp_log2, num_tiles.width, num_tiles.height,
+                                 num_tiles.depth, block.height, block.depth, stride_alignment,
+                                 gpu_memory.UsesNativeTiling());
+            }
             guest_layer_offset += layer_stride;
             host_offset += host_bytes_per_layer;
         }
         guest_offset += level_sizes[level];
     }
     return copies;
+}
+
+bool IsAllZero(std::span<const u8> data) {
+    const u8* ptr = data.data();
+    size_t size = data.size_bytes();
+    for (; size >= 64; ptr += 64, size -= 64) {
+        u64 words[8];
+        std::memcpy(words, ptr, sizeof(words));
+        if ((words[0] | words[1] | words[2] | words[3] | words[4] | words[5] | words[6] |
+             words[7]) != 0) {
+            return false;
+        }
+    }
+    for (; size > 0; ++ptr, --size) {
+        if (*ptr != 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 boost::container::small_vector<BufferImageCopy, 16> UnswizzleImageRows(
