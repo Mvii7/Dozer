@@ -323,6 +323,9 @@ TEST_CASE("Nx2DkFoliage: the thorns thinned with their own density", "[core]") {
     REQUIRE(IsThorn("Work/Voxel/VoxelMaterial/Thorn003.al__VoxelMaterial.gyml"));
     REQUIRE_FALSE(IsThorn("Work/Voxel/VoxelMaterial/Grass050.al__VoxelMaterial.gyml"));
     REQUIRE_FALSE(IsThorn("TestThorn000"));
+    REQUIRE(IsGold("Money000"));
+    REQUIRE(IsGold("Work/Voxel/VoxelMaterial/Money000.al__VoxelMaterial.gyml"));
+    REQUIRE_FALSE(IsGold("Grass050"));
 }
 
 TEST_CASE("Nx2DkFoliage: the levels' variables", "[core]") {

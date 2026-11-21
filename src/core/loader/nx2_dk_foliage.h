@@ -175,6 +175,40 @@ inline std::string_view StringAt(const Reader& in, size_t base, u32 index) {
                : std::string_view{};
 }
 
+/// The string value of `key` in the root dictionary of a little endian BYML at `base`, else empty
+inline std::string_view RootString(const Reader& in, size_t base, std::string_view key) {
+    constexpr u8 TypeString = 0xA0;
+    if (!in.Has(base, 16) || in.data[base] != 'Y' || in.data[base + 1] != 'B') {
+        return {};
+    }
+    const u32 key_table = in.U32(base + 4);
+    const size_t root = base + in.U32(base + 12);
+    if (key_table == 0 || !in.Has(root, 4) || in.data[root] != TypeDict) {
+        return {};
+    }
+    const size_t keys = base + key_table;
+    const u32 key_count = in.U32(keys) >> 8;
+    const u32 count = in.U32(root) >> 8;
+    for (u32 i = 0; i < count && in.Has(root + 4 + size_t{i} * 8, 8); ++i) {
+        const u32 head = in.U32(root + 4 + size_t{i} * 8);
+        const u32 index = head & 0xFFFFFF;
+        if (static_cast<u8>(head >> 24) != TypeString || index >= key_count) {
+            continue;
+        }
+        const size_t start = keys + in.U32(keys + 4 + size_t{index} * 4);
+        size_t end = start;
+        while (in.Has(end, 1) && in.data[end] != 0) {
+            ++end;
+        }
+        if (in.Has(start, end - start) &&
+            std::string_view{reinterpret_cast<const char*>(in.data.data()) + start,
+                             end - start} == key) {
+            return StringAt(in, base, in.U32(root + 8 + size_t{i} * 8));
+        }
+    }
+    return {};
+}
+
 /// `value` scaled by `percent`, at least 1 unless it was 0
 constexpr u32 Scaled(u32 value, int percent) {
     return value == 0 ? 0 : std::max<u32>(value * static_cast<u32>(percent) / 100, 1);
@@ -267,10 +301,20 @@ struct Levels {
     }
 };
 
-/// Whether a voxel material (a name or a path ending in one) is thorns
-constexpr bool IsThorn(std::string_view material) {
+/// A voxel material's name, from a name or a path ending in one
+constexpr std::string_view MaterialBase(std::string_view material) {
     const auto slash = material.find_last_of('/');
-    return material.substr(slash == std::string_view::npos ? 0 : slash + 1).starts_with("Thorn");
+    return material.substr(slash == std::string_view::npos ? 0 : slash + 1);
+}
+
+/// Whether a voxel material is thorns
+constexpr bool IsThorn(std::string_view material) {
+    return MaterialBase(material).starts_with("Thorn");
+}
+
+/// Whether a voxel material is gold, which is never thinned
+constexpr bool IsGold(std::string_view material) {
+    return MaterialBase(material).starts_with("Money");
 }
 
 /// `value` as a whole number from `min` to `max`, else 0.
@@ -321,22 +365,16 @@ inline bool PatchSystemSettings(std::span<u8> archive, const Levels& levels) {
 
 /// Scales every DynamicPlacementProbability and the number of dynamically placed models of a
 /// decompressed ClusteredRendering/MaterialSettings archive by the density, or the thorns' for a
-/// material on Thorn ground (its MaterialName).
+/// material on Thorn ground. Each BYML is one material (its root MaterialName); the
+/// AdditionalMaterials share its settings, so they go with it.
 inline bool PatchMaterialSettings(std::span<u8> archive, const Levels& levels) {
     if (!levels.Thinned()) {
         return false;
     }
-    constexpr u8 TypeString = 0xA0;
     Detail::Reader in{archive};
     bool changed = false;
     Detail::ForEachSarcFile(in, [&](size_t base) {
-        bool thorn = false;
-        Detail::WalkByml(in, base, [&](std::string_view key, u8 type, size_t at) {
-            if (key == "MaterialName" && type == TypeString &&
-                IsThorn(Detail::StringAt(in, base, in.U32(at)))) {
-                thorn = true;
-            }
-        });
+        const bool thorn = IsThorn(Detail::RootString(in, base, "MaterialName"));
         const int percent = levels.Kept(thorn);
         if (percent >= 100) {
             return;
@@ -635,7 +673,7 @@ inline size_t PatchPlacement(std::span<u8> file, const Levels& levels) {
     for (auto& plant : plants) {
         const std::string_view material =
             plant.material < materials.size() ? materials[plant.material] : std::string_view{};
-        if (material.starts_with("Money")) {
+        if (IsGold(material)) {
             continue;
         }
         if (!std::isfinite(plant.x) || !std::isfinite(plant.z) ||

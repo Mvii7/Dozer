@@ -185,7 +185,7 @@ changes them (not even Safe), and they have no global setting. For Bananza the
 program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`,
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
 it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
-**Foliage** (Off, Low, Medium, High: none (`DK_FOLIAGE_OFF=1`), 10% of the foliage and 30% of
+**Foliage** (Off, Low, Medium, High: none (`DK_FOLIAGE_OFF=1`), 10% of the foliage and 50% of
 the thorns drawn up to 200 units (`DK_FOLIAGE_DENSITY=10`, `DK_FOLIAGE_THORN_DENSITY=50`,
 `DK_FOLIAGE_DISTANCE=200`), 50% and 75% up to 400, High the game's own),
 **Reflection updates**
