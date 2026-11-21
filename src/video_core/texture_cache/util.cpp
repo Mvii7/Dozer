@@ -864,12 +864,13 @@ boost::container::small_vector<BufferImageCopy, 16> UnswizzleImage(Tegra::Memory
                                                                    const ImageInfo& info,
                                                                    std::span<const u8> input,
                                                                    std::span<u8> output) {
-    const size_t guest_size_bytes = input.size_bytes();
+    const bool layout_only = output.empty();
+    const size_t guest_size_bytes =
+        layout_only ? CalculateGuestSizeInBytes(info) : input.size_bytes();
     const u32 bpp_log2 = BytesPerBlockLog2(info.format);
     const Extent2D tile_size = DefaultBlockSize(info.format);
     const Extent3D size = info.size;
 
-    const bool layout_only = output.empty();
     if (info.type == ImageType::Linear) {
         if (!layout_only) {
             ASSERT(output.size_bytes() >= guest_size_bytes);
@@ -942,25 +943,6 @@ boost::container::small_vector<BufferImageCopy, 16> UnswizzleImage(Tegra::Memory
         guest_offset += level_sizes[level];
     }
     return copies;
-}
-
-bool IsAllZero(std::span<const u8> data) {
-    const u8* ptr = data.data();
-    size_t size = data.size_bytes();
-    for (; size >= 64; ptr += 64, size -= 64) {
-        u64 words[8];
-        std::memcpy(words, ptr, sizeof(words));
-        if ((words[0] | words[1] | words[2] | words[3] | words[4] | words[5] | words[6] |
-             words[7]) != 0) {
-            return false;
-        }
-    }
-    for (; size > 0; ++ptr, --size) {
-        if (*ptr != 0) {
-            return false;
-        }
-    }
-    return true;
 }
 
 boost::container::small_vector<BufferImageCopy, 16> UnswizzleImageRows(
