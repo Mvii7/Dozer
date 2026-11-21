@@ -557,7 +557,7 @@ typename P::ImageView& TextureCache<P>::GetImageView(ImageViewId id) noexcept {
 }
 
 template <class P>
-bool TextureCache<P>::ColorTargetWrittenBeforeThisFrame(u32 index) {
+bool TextureCache<P>::ColorTargetRedrawnEachFrame(u32 index) {
     const auto& regs = maxwell3d->regs;
     const auto& rt = regs.rt[index];
     const GPUVAddr gpu_addr = rt.Address();
@@ -572,8 +572,19 @@ bool TextureCache<P>::ColorTargetWrittenBeforeThisFrame(u32 index) {
     if (!image_id) {
         return false;
     }
-    const ImageBase& image = slot_images[image_id];
-    return image.first_gpu_write_frame != 0 && image.first_gpu_write_frame <= frame_tick;
+    return RedrawnEachFrame(slot_images[image_id]);
+}
+
+template <class P>
+bool TextureCache<P>::RedrawnEachFrame(const ImageBase& image) const noexcept {
+    // First written before last frame and written again last frame. A texture drawn once, cleared
+    // and then filled, or filled over a few frames does not pass: a skipped write there stays
+    // missing or shows the fill catching up.
+    const bool written_last_frame =
+        image.last_gpu_write_frame == frame_tick ||
+        (image.last_gpu_write_frame == frame_tick + 1 && image.prior_gpu_write_frame == frame_tick);
+    return image.first_gpu_write_frame != 0 && image.first_gpu_write_frame < frame_tick &&
+           written_last_frame;
 }
 
 template <class P>
@@ -582,11 +593,8 @@ bool TextureCache<P>::HoldsGpuData(ImageViewId id) const noexcept {
     if (!image_id || image_id == NULL_IMAGE_ID) {
         return true;
     }
-    // Written in an earlier frame: an image first written this frame (or built once) would keep
-    // nothing useful if the write were skipped.
     const ImageBase& image = slot_images[image_id];
-    return True(image.flags & ImageFlagBits::GpuModified) && image.first_gpu_write_frame != 0 &&
-           image.first_gpu_write_frame <= frame_tick;
+    return True(image.flags & ImageFlagBits::GpuModified) && RedrawnEachFrame(image);
 }
 
 template <class P>
@@ -1816,6 +1824,8 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         return;
     }
     image.first_gpu_write_frame = 0;
+    image.last_gpu_write_frame = 0;
+    image.prior_gpu_write_frame = 0;
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::TextureUpload};
 
     if (!image.partial_dirty_pages.empty() || !image.partial_remapped.empty()) {
@@ -3803,6 +3813,10 @@ void TextureCache<P>::MarkModification(ImageBase& image) noexcept {
     image.flags |= ImageFlagBits::GpuModified;
     if (image.first_gpu_write_frame == 0) {
         image.first_gpu_write_frame = frame_tick + 1;
+    }
+    if (image.last_gpu_write_frame != frame_tick + 1) {
+        image.prior_gpu_write_frame = image.last_gpu_write_frame;
+        image.last_gpu_write_frame = frame_tick + 1;
     }
     image.modification_tick = ++modification_tick;
     if (Nx2Stages::GpuPages().Live() && !image.nx2_pages_set) [[unlikely]] {

@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Shader freezes: a draw whose pipeline is still compiling is skipped only when its color targets
+  are redrawn each frame (first drawn before last frame, drawn again last frame), and dispatches
+  wait in full again (`EDEN_NX2_ASYNC_SKIP_COMPUTE=1` skips them as before, now under the same
+  rule). Since the bounded waits, an object's texture in the Mario Kart World intro was seen
+  filling in: a target or image drawn once, or cleared and then filled, passed the old test.
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
   (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and
   High (the game's own). `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of

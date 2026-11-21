@@ -127,7 +127,8 @@ public:
     void TickFrame() noexcept;
 
     /// A native dispatch whose pipeline is still compiling, with outputs that already hold GPU
-    /// writes: whether to go on with it (built in time, or EDEN_NX2_ASYNC_SKIP=0) or skip it.
+    /// writes: whether to go on with it (built in time, or without EDEN_NX2_ASYNC_SKIP_COMPUTE=1)
+    /// or skip it.
     [[nodiscard]] bool WaitForUnbuiltDispatch(ComputePipeline& pipeline);
 
     /// What a native draw does when its pipeline is still compiling (EDEN_NX2_ASYNC_SKIP).
@@ -253,6 +254,8 @@ private:
     std::chrono::microseconds native_draw_wait_budget{};
     /// What is left of native_draw_wait_budget this frame (GPU thread only).
     std::chrono::microseconds native_draw_wait_left{};
+    /// EDEN_NX2_ASYNC_SKIP_COMPUTE: dispatches may be skipped too.
+    bool skip_native_dispatches{};
     /// Set by CurrentGraphicsPipeline for the lookup it makes.
     bool texture_cache_locked{};
     u64 skipped_native_draws{};

@@ -485,6 +485,14 @@ PipelineCache::NativeDrawWait GetNativeDrawWait() {
     return PipelineCache::NativeDrawWait::Bounded;
 }
 
+// EDEN_NX2_ASYNC_SKIP_COMPUTE=1: native dispatches whose outputs are redrawn each frame are skipped
+// like draws. Off: they wait in full, as a compute output can be state the game builds up over
+// frames (an object's texture filled in over the Mario Kart World intro).
+bool IsNativeDispatchSkipAllowed() {
+    const char* const value = std::getenv("EDEN_NX2_ASYNC_SKIP_COMPUTE");
+    return value != nullptr && value[0] == '1';
+}
+
 // EDEN_NX2_ASYNC_DRAW_WAIT_MS=<milliseconds>: how long native draws may wait in all, per frame,
 // for pipelines still compiling (translation waits included). Default 8.
 std::chrono::microseconds GetNativeDrawWaitBudget() {
@@ -564,6 +572,7 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
       native_draw_wait{use_asynchronous_shaders ? GetNativeDrawWait() : NativeDrawWait::Full},
       native_draw_wait_budget{GetNativeDrawWaitBudget()},
       native_draw_wait_left{native_draw_wait_budget},
+      skip_native_dispatches{IsNativeDispatchSkipAllowed()},
       num_translation_threads{use_async_translation ? GetTotalTranslationWorkers() : 0},
       workers(device.HasBrokenParallelShaderCompiling() ? 1ULL : GetTotalPipelineWorkers(),
               "VkPipelineBuilder", {}, Common::ThreadPlacement::Background),
@@ -1148,6 +1157,9 @@ GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) {
 }
 
 bool PipelineCache::WaitForUnbuiltDispatch(ComputePipeline& pipeline) {
+    if (!skip_native_dispatches) {
+        return true;
+    }
     switch (native_draw_wait) {
     case NativeDrawWait::Full:
         return true;
@@ -1182,9 +1194,9 @@ void PipelineCache::ChargeNativeDrawWait(std::chrono::steady_clock::duration wai
 }
 
 bool PipelineCache::CanSkipNativeDraw() {
-    // Depth-tested draws into color targets drawn in earlier frames are scene geometry, redrawn
-    // every frame. Others can build a texture used later: Mario Kart World bakes its terrain once
-    // with depth-tested draws (Lichii b7980efd7), so a target first written this frame waits.
+    // Depth-tested draws into color targets redrawn each frame are scene geometry. Others can build
+    // a texture used later: Mario Kart World bakes its terrain once with depth-tested draws (Lichii
+    // b7980efd7), so a target not drawn last frame as well waits.
     const auto& regs = maxwell3d->regs;
     if (regs.zeta_enable == 0 || regs.depth_test_enable == 0) {
         return false;
@@ -1201,7 +1213,7 @@ bool PipelineCache::CanSkipNativeDraw() {
         if (!texture_cache_locked && !lock.owns_lock()) {
             lock.lock();
         }
-        if (!texture_cache.ColorTargetWrittenBeforeThisFrame(rt_index)) {
+        if (!texture_cache.ColorTargetRedrawnEachFrame(rt_index)) {
             return false;
         }
         writes_color = true;

@@ -235,13 +235,16 @@ public:
     /// Mark an image as modified from the GPU
     void MarkModification(ImageId id) noexcept;
 
-    /// Whether color target `index`'s image was first written by the GPU in an earlier frame.
-    /// The caller holds the mutex.
-    [[nodiscard]] bool ColorTargetWrittenBeforeThisFrame(u32 index);
+    /// Whether color target `index`'s image is redrawn each frame (RedrawnEachFrame). The caller
+    /// holds the mutex.
+    [[nodiscard]] bool ColorTargetRedrawnEachFrame(u32 index);
 
-    /// Whether the view's image holds GPU writes from an earlier frame (a null view has nothing to
-    /// hold).
+    /// Whether the view's image holds GPU writes and is redrawn each frame (a null view has
+    /// nothing to hold).
     [[nodiscard]] bool HoldsGpuData(ImageViewId id) const noexcept;
+
+    /// Whether the GPU first wrote the image before last frame and wrote it again last frame.
+    [[nodiscard]] bool RedrawnEachFrame(const ImageBase& image) const noexcept;
 
     /// Fill image_view_ids with the graphics/compute images in indices
     void FillImageViews(std::span<ImageViewInOut> views, bool compute, bool blacklist = true);
