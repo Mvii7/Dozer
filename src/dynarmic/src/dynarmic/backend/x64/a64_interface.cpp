@@ -129,8 +129,13 @@ public:
     }
 
     std::size_t Precompile(const u64* descriptors, std::size_t count) {
-        // Room for what the run compiles: a full cache is emptied at the next new block.
-        const std::size_t reserve = conf.code_cache_size / 4;
+        // Room for what the run compiles: a full cache is emptied at the next new block. A
+        // quarter of the room at the first call (the boot's, into an empty cache), whatever the
+        // size of later calls; the far code region, a quarter of the cache, runs out first.
+        if (precompile_reserve == 0) {
+            precompile_reserve = block_of_code.SpaceRemaining() / 4;
+        }
+        const std::size_t reserve = precompile_reserve;
         for (std::size_t i = 0; i < count; ++i) {
             if (block_of_code.SpaceRemaining() < reserve) {
                 return i;
@@ -354,6 +359,7 @@ private:
     const UserConfig conf;
     A64JitState jit_state;
     BlockOfCode block_of_code;
+    std::size_t precompile_reserve = 0; ///< Precompile's, set at its first call
     A64EmitX64 emitter;
     Optimization::PolyfillOptions polyfill_options;
     bool is_executing = false;

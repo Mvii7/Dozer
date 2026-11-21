@@ -771,8 +771,8 @@ void PatchManager::ApplyLayeredFS(VirtualFile& romfs, ContentRecordType type) co
         if (auto layer = MakeFoliageLevelsLayer(extracted, foliage_levels)) {
             layers.emplace_back(std::move(layer));
             mods.emplace_back(fmt::format(
-                "Dozer: Donkey Kong Bananza foliage density {}%, distance {}",
-                foliage_levels.density == 0 ? 100 : foliage_levels.density,
+                "Dozer: Donkey Kong Bananza foliage density {}%, thorns {}%, distance {}",
+                foliage_levels.Kept(false), foliage_levels.Kept(true),
                 foliage_levels.distance == 0 ? std::string{"each model's own"}
                                              : std::to_string(foliage_levels.distance)));
         }
