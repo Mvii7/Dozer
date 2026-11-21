@@ -65,6 +65,8 @@
 # ZERO_UPLOAD=1: an image whose guest memory is all zeros (most new render targets) is uploaded
 # as zeros without unswizzling it on the CPU. Off: in Donkey Kong Bananza terrain detail started
 # flickering after entering new areas with it on, though the images it uploads are the same.
+# =2 also runs the unswizzle it skips (same time spent) and logs any image whose result is not
+# the zeros and layout it uploads ("EDEN_NX2_ZERO_UPLOAD=2" lines).
 #EDEN_NX2_ZERO_UPLOAD=1
 #EDEN_NX2_PACE_GUEST_SLEEP=1
 #EDEN_NX2_PACE_GUEST_TAIL_US=1000

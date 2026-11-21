@@ -19,6 +19,7 @@
 #include <boost/container/small_vector.hpp>
 
 #include "common/alignment.h"
+#include "common/nx2_zero_check.h"
 #include "common/nx2_reactive.h"
 #include "common/settings.h"
 #include "common/slot_vector.h"
@@ -2090,6 +2091,9 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
         gpu_memory->IsZeroUnsafe(gpu_addr, image.guest_size_bytes)) {
         // Zeros unswizzle to zeros (most new render targets): only the layout is needed.
         const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, {}, {});
+        if (ZeroUploadMode() == 2) [[unlikely]] {
+            CheckZeroUpload(image, mapped_span, copies);
+        }
         if (!copies.empty()) {
             std::memset(mapped_span.data(), 0,
                         copies.back().buffer_offset + copies.back().buffer_size);
@@ -3977,12 +3981,66 @@ bool TextureCache<P>::FirstUseEnabled() {
 }
 
 template <class P>
-bool TextureCache<P>::ZeroUploadEnabled() {
-    static const bool enabled = [] {
+int TextureCache<P>::ZeroUploadMode() {
+    static const int mode = [] {
         const char* value = std::getenv("EDEN_NX2_ZERO_UPLOAD");
-        return value != nullptr && value[0] == '1';
+        return value != nullptr && (value[0] == '1' || value[0] == '2') ? value[0] - '0' : 0;
     }();
-    return enabled;
+    return mode;
+}
+
+template <class P>
+bool TextureCache<P>::ZeroUploadEnabled() {
+    return ZeroUploadMode() != 0;
+}
+
+template <class P>
+void TextureCache<P>::CheckZeroUpload(Image& image, std::span<u8> mapped_span,
+                                      std::span<const BufferImageCopy> copies) {
+    // The unswizzle the zero path skips, run as without it (same time spent), its result
+    // compared with the zeros and the layout uploaded instead.
+    static u64 checked = 0;
+    static u64 differed = 0;
+    Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
+        *gpu_memory, image.gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
+    const auto unswizzled =
+        UnswizzleImage(*gpu_memory, image.gpu_addr, image.info, swizzle_data, mapped_span);
+    const auto same = [](const BufferImageCopy& a, const BufferImageCopy& b) {
+        return a.buffer_offset == b.buffer_offset && a.buffer_size == b.buffer_size &&
+               a.buffer_row_length == b.buffer_row_length &&
+               a.buffer_image_height == b.buffer_image_height &&
+               a.image_subresource.base_level == b.image_subresource.base_level &&
+               a.image_subresource.base_layer == b.image_subresource.base_layer &&
+               a.image_subresource.num_layers == b.image_subresource.num_layers &&
+               a.image_offset.x == b.image_offset.x && a.image_offset.y == b.image_offset.y &&
+               a.image_offset.z == b.image_offset.z &&
+               a.image_extent.width == b.image_extent.width &&
+               a.image_extent.height == b.image_extent.height &&
+               a.image_extent.depth == b.image_extent.depth;
+    };
+    bool same_layout = unswizzled.size() == copies.size();
+    for (size_t i = 0; same_layout && i < copies.size(); ++i) {
+        same_layout = same(unswizzled[i], copies[i]);
+    }
+    const size_t size =
+        unswizzled.empty() ? 0 : unswizzled.back().buffer_offset + unswizzled.back().buffer_size;
+    const bool zero = Common::IsAllZero(mapped_span.data(), size);
+    ++checked;
+    if (!same_layout || !zero) {
+        if (++differed <= 64) {
+            LOG_WARNING(HW_GPU,
+                        "EDEN_NX2_ZERO_UPLOAD=2: {} {}x{}x{} at {:#x} ({} bytes, {} levels, {} "
+                        "layers) differs: layout {}, unswizzled data {} ({} of {} checked differ)",
+                        image.info.format, image.info.size.width, image.info.size.height,
+                        image.info.size.depth, image.gpu_addr, image.guest_size_bytes,
+                        image.info.resources.levels, image.info.resources.layers,
+                        same_layout ? "same" : "differs", zero ? "zero" : "not zero", differed,
+                        checked);
+        }
+    } else if ((checked & (checked - 1)) == 0) {
+        LOG_INFO(HW_GPU, "EDEN_NX2_ZERO_UPLOAD=2: {} images checked, {} differed", checked,
+                 differed);
+    }
 }
 
 template <class P>
