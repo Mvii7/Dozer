@@ -1812,11 +1812,11 @@ void TextureCache<P>::DownloadImageIntoBuffer(typename TextureCache<P>::Image* i
 
 template <class P>
 void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
-    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::UploadNs};
     if (False(image.flags & ImageFlagBits::CpuModified)) {
         // Only upload modified images
         return;
     }
+    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::UploadNs};
     image.first_gpu_write_frame = 0;
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::TextureUpload};
 
