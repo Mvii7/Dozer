@@ -3984,7 +3984,10 @@ template <class P>
 int TextureCache<P>::ZeroUploadMode() {
     static const int mode = [] {
         const char* value = std::getenv("EDEN_NX2_ZERO_UPLOAD");
-        return value != nullptr && (value[0] == '1' || value[0] == '2') ? value[0] - '0' : 0;
+        if (value == nullptr) {
+            return 1;
+        }
+        return value[0] == '1' || value[0] == '2' ? value[0] - '0' : 0;
     }();
     return mode;
 }
