@@ -120,6 +120,19 @@ public:
         return hr;
     }
 
+    std::size_t Precompile(const u64* descriptors, std::size_t count) {
+        std::size_t compiled = 0;
+        for (std::size_t i = 0; i < count; ++i) {
+            const IR::LocationDescriptor descriptor{descriptors[i]};
+            if (A64::LocationDescriptor{descriptor}.SingleStepping() || emitter.GetBasicBlock(descriptor)) {
+                continue;
+            }
+            GetBlock(descriptor);
+            ++compiled;
+        }
+        return compiled;
+    }
+
     void ClearCache() {
         std::unique_lock lock{invalidation_mutex};
         invalidate_entire_cache = true;
@@ -279,7 +292,11 @@ private:
         ir_block.Reset(arch_descriptor);
         A64::Translate(ir_block, arch_descriptor, get_code, {conf.define_unpredictable_behaviour, conf.wall_clock_cntpct});
         Optimization::Optimize(ir_block, conf, polyfill_options);
-        return emitter.Emit(ir_block).entrypoint;
+        const CodePtr entrypoint = emitter.Emit(ir_block).entrypoint;
+        if (on_block_compiled) {
+            on_block_compiled(descriptor.Value());
+        }
+        return entrypoint;
     }
 
     void PerformRequestedCacheInvalidation(HaltReason hr) {
@@ -331,6 +348,10 @@ HaltReason Jit::Step() {
 
 void Jit::ClearCache() {
     impl->ClearCache();
+}
+
+std::size_t Jit::Precompile(const u64* descriptors, std::size_t count) {
+    return impl->Precompile(descriptors, count);
 }
 
 void Jit::InvalidateCacheRange(u64 start_address, size_t length) {
