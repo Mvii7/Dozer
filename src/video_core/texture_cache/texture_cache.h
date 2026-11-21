@@ -2067,8 +2067,8 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
         return;
     }
 
-    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::CpuUnswizzleBytes,
-                              image.guest_size_bytes);
+    Common::Nx2SlowFrame::AddCpuUnswizzle(static_cast<u32>(image.info.format),
+                                          image.guest_size_bytes);
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
         *gpu_memory, gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
     if (True(image.flags & ImageFlagBits::Converted)) {
