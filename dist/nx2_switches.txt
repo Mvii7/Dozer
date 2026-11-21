@@ -301,8 +301,9 @@
 #EDEN_NX2_MODE_PACE21_DOWN_HOLD=37
 # SLOW_FRAME_MS=<ms> (diagnostic, off unless set): one "nx2 slow frame:" log line for each
 # present more than <ms> after the previous one, with what happened in between: images created
-# and deleted and their time, MB uploaded and its time, pipelines built and their lowering and
-# driver time, waits for the split's back, read trap flushes, the game's file reads and the
+# and deleted and their time, MB uploaded and its time, draws, dispatches and clears recorded and
+# their time (with their render targets, images, uploads and pipelines), render target setup and
+# framebuffers created, pipelines built and their lowering and driver time, waits for the split's back, read trap flushes, the game's file reads and the
 # time IStorage reads were held to EDEN_NX2_FS_READ_MBPS, and the CPU JIT's compiles (how many
 # the same core or another core compiled before, the code ranges invalidated and the fastmem
 # faults that recompiled a block; none on NCE builds, which have no JIT).

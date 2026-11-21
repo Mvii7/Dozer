@@ -51,6 +51,15 @@ enum class Counter : size_t {
     WorkerWaits, ///< Vulkan Scheduler::WaitWorker
     WorkerWaitNs,
     WorkerWaitMaxNs,
+    Draws,          ///< Draws recorded (on the split's back), with the time below: it includes
+    DrawNs,         ///< their render targets, images, uploads and pipelines
+    Dispatches,     ///< Compute dispatches recorded, likewise
+    DispatchNs,
+    Clears,         ///< Clears recorded, including their render targets
+    ClearNs,
+    RenderTargetNs, ///< TextureCache::UpdateRenderTargets (draws and clears)
+    Framebuffers,   ///< Framebuffers created
+    FramebufferNs,
     Count,
 };
 

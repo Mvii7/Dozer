@@ -903,6 +903,7 @@ bool TextureCache<P>::RescaleRenderTargets() {
 
 template <class P>
 void TextureCache<P>::UpdateRenderTargets(bool is_clear) {
+    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::RenderTargetNs};
     using namespace VideoCommon::Dirty;
     auto& flags = maxwell3d->dirty.flags;
     // EDEN_NX2_RX_MASKED_TARGETS: only the targets this draw can write are modified by it.
@@ -1050,6 +1051,8 @@ FramebufferId TextureCache<P>::GetFramebufferId(const RenderTargets& key) {
     if (!is_new) {
         return framebuffer_id;
     }
+    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::FramebufferNs};
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::Framebuffers, 1);
     std::array<ImageView*, NUM_RT> color_buffers;
     std::ranges::transform(key.color_buffer_ids, color_buffers.begin(), [this](ImageViewId id) {
         return id ? &slot_image_views[id] : nullptr;

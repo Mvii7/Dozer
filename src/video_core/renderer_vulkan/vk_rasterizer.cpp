@@ -28,6 +28,7 @@
 #include "common/assert.h"
 #include "shader_recompiler/exception.h"
 #include "common/logging.h"
+#include "common/nx2_slow_frame.h"
 #include "common/nx2_reactive.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
@@ -424,6 +425,8 @@ RasterizerVulkan::~RasterizerVulkan() {
 
 template <typename Func>
 void RasterizerVulkan::PrepareDraw(bool is_indexed, bool indirect, Func&& draw_func) {
+    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::DrawNs};
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::Draws, 1);
 
     SCOPE_EXIT {
         gpu.TickWork();
@@ -1747,6 +1750,8 @@ void RasterizerVulkan::ClearRecord(u32 layer_count) {
     if (!use_color && !use_depth && !use_stencil) {
         return;
     }
+    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::ClearNs};
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::Clears, 1);
 
     std::scoped_lock lock{texture_cache.mutex};
     texture_cache.UpdateRenderTargets(true);
@@ -1921,6 +1926,8 @@ void RasterizerVulkan::ClearRecord(u32 layer_count) {
 }
 
 void RasterizerVulkan::DispatchCompute() {
+    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::DispatchNs};
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::Dispatches, 1);
     NoteLightWork();
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::Compute};
     VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::ComputeDispatches, 1);
@@ -5741,6 +5748,8 @@ void RasterizerVulkan::PrepareDrawC(const StageDrawReader& in, const StageDrawPa
     namespace Profile = VideoCommon::Nx2Profile;
     namespace Stages = VideoCommon::Nx2Stages;
     using Stages::DrawKind;
+    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::DrawNs};
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::Draws, 1);
     const Stages::DrawToC& head = in.Head();
     SCOPE_EXIT {
         gpu.TickWork();

@@ -1732,7 +1732,8 @@ private:
                  "ms | images +{} ({:.1f} ms) -{} upload {:.1f} MB ({:.1f} ms, {:.1f} MB unswizzled on "
                  "the CPU{}; staging {:.1f} ms, read {:.1f} ms, unswizzle {:.1f} ms, record {:.1f} "
                  "ms; {:.1f} MB as zeros: zero check {:.1f} ms, zero fill {:.1f} ms) | host GPU waits {} {:.1f} ms (max {:.1f}), worker waits {} {:.1f} ms (max "
-                 "{:.1f}) | pipelines {} lower "
+                 "{:.1f}) | draws {} {:.1f} ms, dispatches {} {:.1f} ms, clears {} {:.1f} ms, render "
+                 "targets {:.1f} ms, framebuffers +{} {:.1f} ms | pipelines {} lower "
                  "{:.1f} ms driver {:.1f} ms | back drains {} {:.1f} ms (max {:.1f}) | read "
                  "flushes {} {:.1f} ms (max {:.1f}) | file reads {} {:.1f} MB {:.1f} ms (throttle "
                  "{:.1f} ms) | jit {} blocks {:.1f} ms ({} compiled before on the same core, {} on "
@@ -1751,7 +1752,11 @@ private:
                  get(Slow::Counter::GpuWaits), ms(Slow::Counter::GpuWaitNs),
                  ms(Slow::Counter::GpuWaitMaxNs), get(Slow::Counter::WorkerWaits),
                  ms(Slow::Counter::WorkerWaitNs), ms(Slow::Counter::WorkerWaitMaxNs),
-                 get(Slow::Counter::Pipelines), ms(Slow::Counter::LowerNs),
+                 get(Slow::Counter::Draws), ms(Slow::Counter::DrawNs),
+                 get(Slow::Counter::Dispatches), ms(Slow::Counter::DispatchNs),
+                 get(Slow::Counter::Clears), ms(Slow::Counter::ClearNs),
+                 ms(Slow::Counter::RenderTargetNs), get(Slow::Counter::Framebuffers),
+                 ms(Slow::Counter::FramebufferNs), get(Slow::Counter::Pipelines), ms(Slow::Counter::LowerNs),
                  ms(Slow::Counter::DriverNs), get(Slow::Counter::Drains),
                  ms(Slow::Counter::DrainNs), ms(Slow::Counter::DrainMaxNs),
                  get(Slow::Counter::ReadFlushes), ms(Slow::Counter::ReadFlushNs),
