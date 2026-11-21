@@ -1709,7 +1709,8 @@ private:
         };
         LOG_INFO(Service,
                  "nx2 slow frame: {:.1f} ms (present #{}) | present wait {:.1f} ms composite {:.1f} "
-                 "ms | images +{} ({:.1f} ms) -{} upload {:.1f} MB ({:.1f} ms) | pipelines {} lower "
+                 "ms | images +{} ({:.1f} ms) -{} upload {:.1f} MB ({:.1f} ms, {:.1f} MB unswizzled on "
+                 "the CPU) | pipelines {} lower "
                  "{:.1f} ms driver {:.1f} ms | back drains {} {:.1f} ms (max {:.1f}) | read "
                  "flushes {} {:.1f} ms (max {:.1f}) | file reads {} {:.1f} MB {:.1f} ms (throttle "
                  "{:.1f} ms) | jit {} blocks {:.1f} ms, {} cache clears",
@@ -1719,6 +1720,7 @@ private:
                  get(Slow::Counter::ImagesDeleted),
                  static_cast<double>(get(Slow::Counter::UploadBytes)) / (1 << 20),
                  ms(Slow::Counter::UploadNs),
+                 static_cast<double>(get(Slow::Counter::CpuUnswizzleBytes)) / (1 << 20),
                  get(Slow::Counter::Pipelines), ms(Slow::Counter::LowerNs),
                  ms(Slow::Counter::DriverNs), get(Slow::Counter::Drains),
                  ms(Slow::Counter::DrainNs), ms(Slow::Counter::DrainMaxNs),

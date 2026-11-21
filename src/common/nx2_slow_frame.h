@@ -23,6 +23,7 @@ enum class Counter : size_t {
     ImagesDeleted,
     UploadBytes,
     UploadNs,
+    CpuUnswizzleBytes,
     Pipelines,
     LowerNs,
     DriverNs,
