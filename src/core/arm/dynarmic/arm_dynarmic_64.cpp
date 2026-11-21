@@ -815,11 +815,18 @@ void ArmDynarmic64::StartBlockList() {
     }
     if (start) {
         // Every core's JIT compiles the list on a thread of its own; a core not created yet
-        // compiles it when it first runs.
+        // compiles it when it first runs. (No RTTI: an AArch64 interface is this class unless
+        // NCE may run the process.)
+#ifndef HAS_NCE
         const auto& ready = JitBlockList::Ready(*process);
         for (size_t core = 0; core < Hardware::NUM_CPU_CORES; ++core) {
-            auto* const arm = dynamic_cast<ArmDynarmic64*>(process->GetArmInterface(core));
-            if (arm == nullptr || !arm->ClaimBlockList()) {
+            ArmInterface* const core_interface = process->GetArmInterface(core);
+            if (core_interface == nullptr ||
+                core_interface->GetArchitecture() != Architecture::AArch64) {
+                continue;
+            }
+            auto* const arm = static_cast<ArmDynarmic64*>(core_interface);
+            if (!arm->ClaimBlockList()) {
                 continue;
             }
             state.workers.emplace_back([arm, &ready] {
@@ -827,6 +834,7 @@ void ArmDynarmic64::StartBlockList() {
                 arm->CompileBlockList(ready);
             });
         }
+#endif
     }
     if (ClaimBlockList()) {
         JitBlockList::precompiling = true;
