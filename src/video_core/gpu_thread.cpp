@@ -151,10 +151,6 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                 break;
             }
             last_progress = std::chrono::steady_clock::now();
-            // The guest may have set up its Ampere channel while this thread waited: start the
-            // split before the first command list, or that list runs on the single-thread path
-            // and the boot can hang.
-            split.MaybeStart(system);
             if (split.Active()) {
                 // Only command lists are parsed here; everything else runs on the back thread
                 // in order, and so does the signal that the command ran.

@@ -7,10 +7,6 @@ off unless a launcher or the menu program's Tuning tab sets them, the per-draw s
 and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
-- GPU thread split: it now also starts when a command arrives, before that command runs. A game
-  that set up its channel and sent its first command list while the GPU thread waited had that
-  list run on the single-thread path, and the boot could hang (seen with Donkey Kong Bananza
-  booting faster).
 
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
   (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and
