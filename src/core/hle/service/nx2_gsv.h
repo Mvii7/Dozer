@@ -1699,6 +1699,7 @@ private:
     void LogSlowFrame(long long frame_us, long long fence_us, long long composite_us) {
         namespace Slow = Common::Nx2SlowFrame;
         const auto c = Slow::Take();
+        const Slow::JitCounts jit = Slow::g_take_jit ? Slow::g_take_jit() : Slow::JitCounts{};
         if (static_cast<u64>(frame_us) <= Slow::ThresholdUs()) {
             return;
         }
@@ -1708,18 +1709,24 @@ private:
         };
         LOG_INFO(Service,
                  "nx2 slow frame: {:.1f} ms (present #{}) | present wait {:.1f} ms composite {:.1f} "
-                 "ms | images +{} -{} upload {:.1f} MB | pipelines {} lower {:.1f} ms driver "
-                 "{:.1f} ms | back drains {} {:.1f} ms (max {:.1f}) | read flushes {} {:.1f} ms "
-                 "(max {:.1f})",
+                 "ms | images +{} ({:.1f} ms) -{} upload {:.1f} MB ({:.1f} ms) | pipelines {} lower "
+                 "{:.1f} ms driver {:.1f} ms | back drains {} {:.1f} ms (max {:.1f}) | read "
+                 "flushes {} {:.1f} ms (max {:.1f}) | file reads {} {:.1f} MB {:.1f} ms (throttle "
+                 "{:.1f} ms) | jit {} blocks {:.1f} ms, {} cache clears",
                  static_cast<double>(frame_us) / 1e3, m_presents,
                  static_cast<double>(fence_us) / 1e3, static_cast<double>(composite_us) / 1e3,
-                 get(Slow::Counter::ImagesCreated), get(Slow::Counter::ImagesDeleted),
+                 get(Slow::Counter::ImagesCreated), ms(Slow::Counter::ImageCreateNs),
+                 get(Slow::Counter::ImagesDeleted),
                  static_cast<double>(get(Slow::Counter::UploadBytes)) / (1 << 20),
+                 ms(Slow::Counter::UploadNs),
                  get(Slow::Counter::Pipelines), ms(Slow::Counter::LowerNs),
                  ms(Slow::Counter::DriverNs), get(Slow::Counter::Drains),
                  ms(Slow::Counter::DrainNs), ms(Slow::Counter::DrainMaxNs),
                  get(Slow::Counter::ReadFlushes), ms(Slow::Counter::ReadFlushNs),
-                 ms(Slow::Counter::ReadFlushMaxNs));
+                 ms(Slow::Counter::ReadFlushMaxNs), get(Slow::Counter::FsReads),
+                 static_cast<double>(get(Slow::Counter::FsReadBytes)) / (1 << 20),
+                 ms(Slow::Counter::FsReadNs), ms(Slow::Counter::FsThrottleNs), jit.blocks,
+                 static_cast<double>(jit.ns) / 1e6, jit.clears);
     }
 
     void DiagPresent(const u32* w, std::chrono::steady_clock::time_point entered,

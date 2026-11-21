@@ -1812,6 +1812,7 @@ void TextureCache<P>::DownloadImageIntoBuffer(typename TextureCache<P>::Image* i
 
 template <class P>
 void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
+    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::UploadNs};
     if (False(image.flags & ImageFlagBits::CpuModified)) {
         // Only upload modified images
         return;
@@ -2619,7 +2620,10 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
             }
         }
     }
-    const ImageId new_image_id = slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    const ImageId new_image_id = [&] {
+        Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::ImageCreateNs};
+        return slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    }();
     Image& new_image = slot_images[new_image_id];
 
     new_image.allocation_tick = frame_tick;
