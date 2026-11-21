@@ -77,6 +77,25 @@ bool Enabled() {
     return enabled;
 }
 
+/// Tests: EDEN_NX2_JIT_BLOCK_LIST_THREADS=0 has each core compile its list on its own thread when
+/// it first runs; EDEN_NX2_JIT_BLOCK_LIST_MAX=<n> compiles only the first n saved blocks.
+bool Threads() {
+    static const bool threads = [] {
+        const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST_THREADS");
+        return value == nullptr || value[0] != '0';
+    }();
+    return threads;
+}
+
+size_t MaxCompiled() {
+    static const size_t max = [] {
+        const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST_MAX");
+        return value == nullptr || value[0] == '\0' ? MaxBlocks
+                                                    : static_cast<size_t>(std::strtoull(value, nullptr, 10));
+    }();
+    return max;
+}
+
 struct State {
     std::mutex mutex;
     const Kernel::KProcess* process = nullptr;
@@ -248,6 +267,9 @@ const std::vector<u64>& Ready(Kernel::KProcess& process) {
     std::vector<u64> list;
     list.reserve(state.saved_list.size());
     for (const u64 relative : state.saved_list) {
+        if (list.size() == MaxCompiled()) {
+            break;
+        }
         list.push_back(ToAbsolute(relative, state.base));
     }
     std::sort(list.begin(), list.end(),
@@ -819,7 +841,7 @@ void ArmDynarmic64::StartBlockList() {
         // NCE may run the process.)
 #ifndef HAS_NCE
         const auto& ready = JitBlockList::Ready(*process);
-        for (size_t core = 0; core < Hardware::NUM_CPU_CORES; ++core) {
+        for (size_t core = 0; JitBlockList::Threads() && core < Hardware::NUM_CPU_CORES; ++core) {
             ArmInterface* const core_interface = process->GetArmInterface(core);
             if (core_interface == nullptr ||
                 core_interface->GetArchitecture() != Architecture::AArch64) {
