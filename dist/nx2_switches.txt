@@ -367,6 +367,11 @@
 # faults more than 1000 times in a second leaves fastmem anyway. Only with read traps on; the
 # reactive stats line shows "fastmem read fallbacks" and "read faults kept".
 #EDEN_NX2_TRAP_FASTMEM=0
+# MEMORY_QUERY_MS=<n> (unset: 50; 0: every call, Safe): the texture and buffer caches ask the
+# driver how much device memory is in use at most every n milliseconds and reuse the answer in
+# between. With NVIDIA's driver on Windows each query goes to the kernel driver and opens
+# registry keys: ~0.3 ms a frame on the GPU thread in Donkey Kong Bananza.
+#EDEN_NX2_MEMORY_QUERY_MS=0
 # TRAP_REARM=0: a buffer page's read trap is armed by the GPU's first write there only; after
 # the guest's first read, later GPU writes reach it only through the copies back at fences, so a
 # read before the next fence can find older data. Unset (on): each read lets the next GPU write

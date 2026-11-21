@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Vulkan: the device memory in use is asked of the driver at most every 50 ms instead of twice a
+  frame (`EDEN_NX2_MEMORY_QUERY_MS`, `=0` every call, Safe), and the buffer cache no longer asks
+  with Switch 2 titles, which collect by their buffers' own size. With NVIDIA's driver on Windows
+  each query goes to the kernel driver and opens registry keys: in Donkey Kong Bananza 0.55 s of
+  the GPU thread's 56 s in a recording, about 0.3 ms a frame.
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
   (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and
   High (the game's own). `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of
