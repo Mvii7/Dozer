@@ -320,7 +320,7 @@
 # clip (80-700) above it comes down to it; under 100, so does the code's default of 100 for the
 # models without one.
 # The Performance and Experimental presets and launchers set 10, 30 and 200 (the Tuning tab's Low;
-# Medium is 50, 75 and 400); Quality and Safe leave the foliage as the game makes it.
+# Medium is 50, 60 and 400); Quality and Safe leave the foliage as the game makes it.
 #EDEN_NX2_DK_FOLIAGE_DENSITY=10
 #EDEN_NX2_DK_FOLIAGE_THORN_DENSITY=30
 #EDEN_NX2_DK_FOLIAGE_DISTANCE=200

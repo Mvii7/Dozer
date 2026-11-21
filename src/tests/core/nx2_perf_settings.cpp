@@ -749,7 +749,7 @@ TEST_CASE("Nx2PerfSettings: Bananza's foliage", "[core]") {
     switches.dk_foliage = FoliageMedium;
     REQUIRE(foliage(switches) == std::vector<Var>{{"EDEN_NX2_DK_FOLIAGE_DENSITY", "50"},
                                                   {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "400"},
-                                                  {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "75"}});
+                                                  {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "60"}});
     switches.dk_foliage = FoliageHigh;
     REQUIRE(foliage(switches).empty());
     for (const Var& var : Wanted(Performance(), Game::Bananza)) {

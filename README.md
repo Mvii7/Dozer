@@ -187,7 +187,7 @@ program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE
 it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
 **Foliage** (Off, Low, Medium, High: none (`DK_FOLIAGE_OFF=1`), 10% of the foliage and 30% of
 the thorns drawn up to 200 units (`DK_FOLIAGE_DENSITY=10`, `DK_FOLIAGE_THORN_DENSITY=30`,
-`DK_FOLIAGE_DISTANCE=200`), 50% and 75% up to 400, High the game's own),
+`DK_FOLIAGE_DISTANCE=200`), 50% and 60% up to 400, High the game's own),
 **Reflection updates**
 (Very low, Low, Medium, High: the reflection cube map captured every 240, 32, 16 or 8 frames,
 High the game's own; `DK_CUBEMAP_INTERVAL=240` / `32` / `16`) and
@@ -383,7 +383,7 @@ the same way (foliage off wins over both):
 `start-performance.bat` and `start-reactive-experimental.bat` set the Low level (10% kept, 30% of
 the thorns, drawn up to 200 units); `start-quality.bat` and `start-safe.bat` leave the foliage as the game makes it. In
 the menu program it is the **Foliage** dropdown in Bananza's Properties > Tuning: Off, Low,
-Medium (50%, thorns 75%, 400 units) and High. The Performance and Experimental presets choose Low, Quality and
+Medium (50%, thorns 60%, 400 units) and High. The Performance and Experimental presets choose Low, Quality and
 Safe High. A game's Foliage off box from before the dropdown is read as Off when ticked, High
 when unticked. It applies when the game starts.
 

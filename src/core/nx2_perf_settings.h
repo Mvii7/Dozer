@@ -63,7 +63,7 @@ inline constexpr int ShadowVeryHigh = 4;
 /// is drawn, EDEN_NX2_DK_FOLIAGE_DISTANCE), High the game's own.
 inline constexpr int FoliageOff = 1;
 inline constexpr int FoliageLow = 2;    ///< 10% kept (thorns 30%), drawn up to 200 units
-inline constexpr int FoliageMedium = 3; ///< 50% kept (thorns 75%), drawn up to 400 units
+inline constexpr int FoliageMedium = 3; ///< 50% kept (thorns 60%), drawn up to 400 units
 inline constexpr int FoliageHigh = 4;
 
 /// Bananza's reflection update steps: how often the reflection cube map is captured again.
@@ -610,7 +610,7 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
         } else if (switches.dk_foliage == FoliageMedium) {
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_DENSITY", "50"});
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_DISTANCE", "400"});
-            vars.push_back({"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "75"});
+            vars.push_back({"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "60"});
         }
         if (switches.dk_shadow >= ShadowLow && switches.dk_shadow < ShadowVeryHigh) {
             static constexpr std::array<std::string_view, 3> Cascades{"1", "2", "3"};
