@@ -115,6 +115,11 @@ struct State {
     size_t saved_count = 0;
     bool ready_done = false;
     std::vector<u64> ready; ///< The saved blocks in executable memory, absolute
+    // Diagnostic: the first 64 bytes of each ready block's code when it was compiled, checked
+    // against memory once, 30 s after the list was loaded.
+    Core::Memory::Memory* memory = nullptr;
+    std::vector<std::pair<u64, u32>> ready_code; ///< (hash, first instruction)
+    bool code_checked = false;
     // Diagnostics: the saved blocks compiled at boot and those skipped (not executable then),
     // relative, and the game's compiles of each kind and of new blocks.
     std::unordered_set<u64> ready_set;
@@ -162,6 +167,42 @@ void Record(u64 descriptor) {
     if (state.known.size() < MaxBlocks) {
         state.known.insert(relative);
     }
+}
+
+std::pair<u64, u32> CodeAt(Core::Memory::Memory& memory, u64 pc) {
+    std::array<u32, 16> words{};
+    memory.ReadBlockUnsafe(pc, words.data(), sizeof(words));
+    u64 hash = 0xcbf29ce484222325ULL;
+    for (const u32 word : words) {
+        hash = (hash ^ word) * 0x100000001b3ULL;
+    }
+    return {hash, words[0]};
+}
+
+/// Logs the ready blocks whose code changed in memory since they were compiled.
+void CheckCode() {
+    auto& state = Get();
+    std::scoped_lock lock{state.mutex};
+    if (state.code_checked || state.memory == nullptr || state.ready_code.size() != state.ready.size()) {
+        return;
+    }
+    state.code_checked = true;
+    size_t changed = 0;
+    for (size_t i = 0; i < state.ready.size(); ++i) {
+        const u64 pc = state.ready[i] & PcMask;
+        const auto now = CodeAt(*state.memory, pc);
+        if (now.first == state.ready_code[i].first) {
+            continue;
+        }
+        if (++changed <= 40) {
+            LOG_INFO(Core_ARM,
+                     "nx2 jit block list: code changed since boot at {:#x} (code+{:#x}): first "
+                     "instruction {:08x} -> {:08x}",
+                     pc, pc - state.base, state.ready_code[i].second, now.second);
+        }
+    }
+    LOG_INFO(Core_ARM, "nx2 jit block list: {} of {} blocks compiled at boot have changed code",
+             changed, state.ready.size());
 }
 
 void LogGameCompiles() {
@@ -259,6 +300,7 @@ bool Load(const Kernel::KProcess& process) {
                 wake.wait_for(wait_lock, stop, std::chrono::seconds{30}, [] { return false; });
                 if (!stop.stop_requested()) {
                     LogGameCompiles();
+                    CheckCode();
                 }
                 Save();
             }
@@ -275,6 +317,9 @@ const std::vector<u64>& Ready(Kernel::KProcess& process) {
         return state.ready;
     }
     state.ready_done = true;
+    state.memory = &process.GetMemory();
+    state.ready_code.clear();
+    state.code_checked = false;
     std::vector<u64> list;
     list.reserve(state.saved_list.size());
     for (size_t i = SkipFirst(); i < state.saved_list.size() && list.size() < MaxCompiled(); ++i) {
@@ -308,6 +353,7 @@ const std::vector<u64>& Ready(Kernel::KProcess& process) {
         }
         if (executable && pc + sizeof(u32) <= region_end) {
             state.ready.push_back(descriptor);
+            state.ready_code.push_back(CodeAt(process.GetMemory(), pc));
             state.ready_set.insert(ToRelative(descriptor, state.base));
         } else {
             state.skipped.insert(ToRelative(descriptor, state.base));
@@ -827,6 +873,11 @@ ArmDynarmic64::~ArmDynarmic64() {
         m_block_list_state.wait(state);
     }
     if (m_block_list_done && JitBlockList::Enabled()) {
+        {
+            auto& state = JitBlockList::Get();
+            std::scoped_lock lock{state.mutex};
+            state.memory = nullptr;
+        }
         JitBlockList::Save();
     }
 }
