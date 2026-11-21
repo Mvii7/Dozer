@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <optional>
+#include "core/arm/dynarmic/arm_dynarmic_64.h"
 #include "core/core.h"
 #include "core/file_sys/content_archive.h"
 #include "core/file_sys/nca_metadata.h"
@@ -108,6 +109,8 @@ std::unique_ptr<Process> CreateApplicationProcess(std::vector<u8>& out_control, 
         launch.update_storage_id = GetStorageIdForFrontendSlot(storage.GetSlotForEntry(FileSys::GetUpdateTitleID(launch.title_id), FileSys::ContentRecordType::Program));
 
         system.GetARPManager().Register(launch.title_id, launch, out_control);
+        // EDEN_NX2_JIT_BLOCK_LIST: the code an earlier session ran, compiled before the game runs.
+        Core::ArmDynarmic64::PrecompileBlockList(*process->GetHandle());
         return process;
     }
     return nullptr;

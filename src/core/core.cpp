@@ -1,14 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include <algorithm>
 #include <array>
-#include <chrono>
 #include <cstdlib>
 #include <atomic>
 #include <memory>
-#include <string>
-#include <thread>
 #include <utility>
 
 #include "game_settings.h"
@@ -20,14 +16,11 @@
 #include "common/settings.h"
 #include "common/settings_enums.h"
 #include "common/string_util.h"
-#include "core/arm/dynarmic/arm_dynarmic_64.h"
 #include "core/arm/exclusive_monitor.h"
 #include "core/core.h"
 
 #include "launch_timestamp_cache.h"
 #include "core/core_timing.h"
-#include "core/hardware_properties.h"
-#include "core/hle/kernel/k_thread.h"
 #include "core/cpu_manager.h"
 #include "core/debugger/debugger.h"
 #include "core/device_memory.h"
@@ -170,121 +163,6 @@ bool IsSwitch2Program(const FileSys::VirtualFile& file, u64& program_id) {
     const auto dir = file != nullptr ? file->GetContainingDirectory() : nullptr;
     const auto npdm = dir != nullptr ? dir->GetFile("main.npdm") : nullptr;
     return load_npdm(npdm);
-}
-
-} // namespace
-
-namespace {
-
-/// EDEN_NX2_THREAD_DUMP=1: when emulation stops, one line per thread of the application (its
-/// state, what it waits on, its registers and frame-pointer return addresses, with their offsets
-/// from the code address) and one per core (its thread and live PC), to see where a hung game
-/// stopped.
-void DumpThreads(Kernel::KernelCore& kernel) {
-    const char* value = std::getenv("EDEN_NX2_THREAD_DUMP");
-    if (value == nullptr || value[0] != '1') {
-        return;
-    }
-    Kernel::KProcess* const process = kernel.ApplicationProcess();
-    if (process == nullptr) {
-        return;
-    }
-    auto& memory = process->GetMemory();
-    const u64 base = GetInteger(process->GetEntryPoint());
-    const auto describe = [base](u64 address) {
-        return address >= base ? fmt::format("{:#x} (+{:#x})", address, address - base)
-                               : fmt::format("{:#x}", address);
-    };
-    LOG_INFO(Core, "nx2 thread dump: code at {:#x}", base);
-    for (auto& thread : process->GetThreadList()) {
-        const auto& context = thread.GetContext();
-        std::string frames;
-        u64 frame = context.fp;
-        for (int depth = 0; depth < 12 && frame != 0 && (frame & 7) == 0 &&
-                            memory.IsValidVirtualAddressRange(frame, 16);
-             ++depth) {
-            const u64 next = memory.Read64(frame);
-            frames += ' ' + describe(memory.Read64(frame + 8));
-            if (next <= frame) {
-                break;
-            }
-            frame = next;
-        }
-        // A synchronization wait (svcWaitSynchronization: x1 handles, x2 count, x3 timeout):
-        // the objects it waits on.
-        std::string objects;
-        if (thread.GetWaitReasonForDebugging() ==
-                Kernel::ThreadWaitReasonForDebugging::Synchronization &&
-            context.r[2] <= 64 && memory.IsValidVirtualAddressRange(context.r[1], context.r[2] * 4)) {
-            for (u64 i = 0; i < context.r[2] && i < 8; ++i) {
-                const Kernel::Handle handle = memory.Read32(context.r[1] + i * 4);
-                auto object = process->GetHandleTable().GetObjectWithoutPseudoHandle(kernel, handle);
-                objects += fmt::format(" {:#x}:{}", handle,
-                                       object.IsNull() ? "none" : object->GetTypeName());
-            }
-        }
-        LOG_INFO(Core,
-                 "nx2 thread dump: thread {} state {:#x} wait {} priority {} core {} pc {} lr {} "
-                 "sp {:#x} x0 {:#x} x1 {:#x} x2 {:#x} x3 {:#x} address key {:#x} | waits on{} | "
-                 "frames{}",
-                 thread.GetThreadId(), static_cast<u32>(thread.GetRawState()),
-                 static_cast<u32>(thread.GetWaitReasonForDebugging()), thread.GetPriority(),
-                 thread.GetActiveCore(), describe(context.pc), describe(context.lr), context.sp,
-                 context.r[0], context.r[1], context.r[2], context.r[3],
-                 GetInteger(thread.GetAddressKey()), objects, frames);
-    }
-    for (size_t core = 0; core < Core::Hardware::NUM_CPU_CORES; ++core) {
-        const Kernel::KThread* const current = kernel.Scheduler(core).GetSchedulerCurrentThread();
-        Kernel::Svc::ThreadContext context{};
-        if (Core::ArmInterface* const arm = process->GetArmInterface(core)) {
-            arm->GetContext(context);
-        }
-        LOG_INFO(Core, "nx2 thread dump: core {} runs thread {} pc {} lr {}", core,
-                 current != nullptr ? current->GetThreadId() : ~u64{0}, describe(context.pc),
-                 describe(context.lr));
-        if (context.pc == 0 || context.pc < base) {
-            continue;
-        }
-        // A core running game code: where it is over 50 ms, its registers, the code around
-        // those addresses and the memory its first registers point at.
-        u64 low = context.pc;
-        u64 high = context.pc;
-        std::string samples;
-        for (int sample = 0; sample < 50; ++sample) {
-            Kernel::Svc::ThreadContext now{};
-            process->GetArmInterface(core)->GetContext(now);
-            low = (std::min)(low, now.pc);
-            high = (std::max)(high, now.pc);
-            if (sample % 5 == 0) {
-                samples += ' ' + describe(now.pc);
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds{1});
-        }
-        std::string registers;
-        for (size_t i = 0; i < 29; ++i) {
-            registers += fmt::format(" x{} {:#x}", i, context.r[i]);
-        }
-        LOG_INFO(Core, "nx2 thread dump: core {} pcs{} | fp {:#x} sp {:#x}{}", core, samples,
-                 context.fp, context.sp, registers);
-        const u64 start = (low - 0x80) & ~u64{3};
-        const u64 end = (std::min)(high + 0x80, start + 0x400);
-        std::string code;
-        for (u64 address = start; address < end; address += 4) {
-            if (!memory.IsValidVirtualAddressRange(address, 4)) {
-                break;
-            }
-            code += fmt::format(" {:08x}", memory.Read32(address));
-        }
-        LOG_INFO(Core, "nx2 thread dump: core {} code at {}:{}", core, describe(start), code);
-        for (size_t i = 0; i < 9; ++i) {
-            const u64 address = context.r[i] & ~u64{7};
-            if (address != 0 && memory.IsValidVirtualAddressRange(address, 32)) {
-                LOG_INFO(Core, "nx2 thread dump: core {} [x{}] {:#x}: {:#x} {:#x} {:#x} {:#x}", core,
-                         i, address, memory.Read64(address), memory.Read64(address + 8),
-                         memory.Read64(address + 16), memory.Read64(address + 24));
-            }
-        }
-    }
 }
 
 } // namespace
@@ -554,9 +432,6 @@ struct System::Impl {
         // Make the process created be the application
         kernel.SetApplicationProcess(process->GetHandle());
 
-        // EDEN_NX2_JIT_BLOCK_LIST: compile the saved blocks before the game runs.
-        Core::ArmDynarmic64::PrecompileBlockList(*process->GetHandle());
-
         // Set up the rest of the system.
         SystemResultStatus init_result{SetupForApplicationProcess(system, emu_window)};
         if (init_result != SystemResultStatus::Success) {
@@ -610,7 +485,6 @@ struct System::Impl {
     }
 
     void ShutdownMainProcess() {
-        DumpThreads(kernel);
         SetShuttingDown(true);
         Common::ADPF::Shutdown();
 
