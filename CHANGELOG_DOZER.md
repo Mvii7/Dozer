@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Read trap budget: what a 1/60 s leaves unused carries over, up to 4 ms (with the default
+  1 ms). Reset each 1/60 s, one wait a little longer than 1 ms left every later read of that
+  frame without its data; when that happened every frame, Donkey Kong Bananza's terrain detail
+  flickered (seen after entering new areas). The average stays at most the budget per 1/60 s.
 - Texture uploads (`EDEN_NX2_ZERO_UPLOAD=1`, experiment, off): an image whose guest memory is
   all zeros is uploaded as zeros without the CPU unswizzle. Donkey Kong Bananza's spikes on
   entering new areas unswizzled 230-317 MB on the CPU, nearly all of it new render targets over

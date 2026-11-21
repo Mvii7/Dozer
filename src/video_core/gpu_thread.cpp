@@ -253,9 +253,9 @@ void ThreadManager::StartSplit() {
     // On the GPU thread, in the order of its queue; run by the back thread instead when the split
     // started meanwhile.
     PushCommand(RunCommand{[this] {
-                    auto& split = VideoCommon::GpuSplit::Get();
-                    if (!split.Active()) {
-                        split.MaybeStart(system);
+                    auto& gpu_split = VideoCommon::GpuSplit::Get();
+                    if (!gpu_split.Active()) {
+                        gpu_split.MaybeStart(system);
                     }
                 }},
                 true, true);
