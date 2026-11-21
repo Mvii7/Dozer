@@ -494,27 +494,41 @@ struct System::Impl {
         is_powered_on = false;
         exit_locked = false;
         exit_requested = false;
+        LOG_INFO(Core, "Shutdown: notify GPU");
         if (gpu_core)
             gpu_core->NotifyShutdown();
 
+        LOG_INFO(Core, "Shutdown: stop event");
         stop_event.request_stop();
         core_timing.SyncPause(false);
         Network::CancelPendingSocketOperations();
+        LOG_INFO(Core, "Shutdown: suspend emulation");
         kernel.SuspendEmulation(true);
+        LOG_INFO(Core, "Shutdown: close services");
         kernel.CloseServices();
+        LOG_INFO(Core, "Shutdown: shut down cores");
         kernel.ShutdownCores();
+        LOG_INFO(Core, "Shutdown: services");
         services.reset();
         service_manager.reset();
+        LOG_INFO(Core, "Shutdown: file system");
         fs_controller.Reset();
         cheat_engine.reset();
         core_timing.ClearPendingEvents();
+        LOG_INFO(Core, "Shutdown: app loader");
         app_loader.reset();
+        LOG_INFO(Core, "Shutdown: audio");
         audio_core.reset();
+        LOG_INFO(Core, "Shutdown: GPU");
         gpu_core.reset();
+        LOG_INFO(Core, "Shutdown: host1x");
         host1x_core.reset();
         perf_stats.reset();
+        LOG_INFO(Core, "Shutdown: CPU manager");
         cpu_manager.Shutdown();
+        LOG_INFO(Core, "Shutdown: debugger");
         debugger.reset();
+        LOG_INFO(Core, "Shutdown: kernel");
         kernel.Shutdown();
         stop_event = {};
         Network::RestartSocketOperations();
@@ -527,6 +541,7 @@ struct System::Impl {
         // Reset all glue registrations
         arp_manager.ResetAll();
 
+        LOG_INFO(Core, "Shutdown: done");
         LOG_DEBUG(Core, "Shutdown OK");
     }
 
