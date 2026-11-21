@@ -22,6 +22,8 @@
 
 #include "launch_timestamp_cache.h"
 #include "core/core_timing.h"
+#include "core/hardware_properties.h"
+#include "core/hle/kernel/k_thread.h"
 #include "core/cpu_manager.h"
 #include "core/debugger/debugger.h"
 #include "core/device_memory.h"
@@ -164,6 +166,64 @@ bool IsSwitch2Program(const FileSys::VirtualFile& file, u64& program_id) {
     const auto dir = file != nullptr ? file->GetContainingDirectory() : nullptr;
     const auto npdm = dir != nullptr ? dir->GetFile("main.npdm") : nullptr;
     return load_npdm(npdm);
+}
+
+} // namespace
+
+namespace {
+
+/// EDEN_NX2_THREAD_DUMP=1: when emulation stops, one line per thread of the application (its
+/// state, what it waits on, its registers and frame-pointer return addresses, with their offsets
+/// from the code address) and one per core (its thread and live PC), to see where a hung game
+/// stopped.
+void DumpThreads(Kernel::KernelCore& kernel) {
+    const char* value = std::getenv("EDEN_NX2_THREAD_DUMP");
+    if (value == nullptr || value[0] != '1') {
+        return;
+    }
+    Kernel::KProcess* const process = kernel.ApplicationProcess();
+    if (process == nullptr) {
+        return;
+    }
+    auto& memory = process->GetMemory();
+    const u64 base = GetInteger(process->GetEntryPoint());
+    const auto describe = [base](u64 address) {
+        return address >= base ? fmt::format("{:#x} (+{:#x})", address, address - base)
+                               : fmt::format("{:#x}", address);
+    };
+    LOG_INFO(Core, "nx2 thread dump: code at {:#x}", base);
+    for (auto& thread : process->GetThreadList()) {
+        const auto& context = thread.GetContext();
+        std::string frames;
+        u64 frame = context.fp;
+        for (int depth = 0; depth < 12 && frame != 0 && (frame & 7) == 0 &&
+                            memory.IsValidVirtualAddressRange(frame, 16);
+             ++depth) {
+            const u64 next = memory.Read64(frame);
+            frames += ' ' + describe(memory.Read64(frame + 8));
+            if (next <= frame) {
+                break;
+            }
+            frame = next;
+        }
+        LOG_INFO(Core,
+                 "nx2 thread dump: thread {} state {:#x} wait {} priority {} core {} pc {} lr {} "
+                 "sp {:#x} x0 {:#x} x1 {:#x} x2 {:#x} | frames{}",
+                 thread.GetThreadId(), static_cast<u32>(thread.GetRawState()),
+                 static_cast<u32>(thread.GetWaitReasonForDebugging()), thread.GetPriority(),
+                 thread.GetActiveCore(), describe(context.pc), describe(context.lr), context.sp,
+                 context.r[0], context.r[1], context.r[2], frames);
+    }
+    for (size_t core = 0; core < Core::Hardware::NUM_CPU_CORES; ++core) {
+        const Kernel::KThread* const current = kernel.Scheduler(core).GetSchedulerCurrentThread();
+        Kernel::Svc::ThreadContext context{};
+        if (Core::ArmInterface* const arm = process->GetArmInterface(core)) {
+            arm->GetContext(context);
+        }
+        LOG_INFO(Core, "nx2 thread dump: core {} runs thread {} pc {} lr {}", core,
+                 current != nullptr ? current->GetThreadId() : ~u64{0}, describe(context.pc),
+                 describe(context.lr));
+    }
 }
 
 } // namespace
@@ -489,6 +549,7 @@ struct System::Impl {
     }
 
     void ShutdownMainProcess() {
+        DumpThreads(kernel);
         SetShuttingDown(true);
         Common::ADPF::Shutdown();
 

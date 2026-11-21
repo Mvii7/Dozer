@@ -61,6 +61,9 @@
 # reached in an earlier session is then not compiled in the frame
 # that first runs it, once by each core (x64 only).
 #EDEN_NX2_JIT_BLOCK_LIST=1
+# THREAD_DUMP=1: when emulation stops, a log line per game thread (state, wait, registers,
+# return addresses) and per core, to see where a hung game stopped.
+#EDEN_NX2_THREAD_DUMP=1
 #EDEN_NX2_PACE_GUEST_SLEEP=1
 #EDEN_NX2_PACE_GUEST_TAIL_US=1000
 # vi2 104 = GetHdrStatus, SDR reply (one line "104: 1 0 0" in a file works too)
