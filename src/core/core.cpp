@@ -16,6 +16,7 @@
 #include "common/settings.h"
 #include "common/settings_enums.h"
 #include "common/string_util.h"
+#include "core/arm/dynarmic/arm_dynarmic_64.h"
 #include "core/arm/exclusive_monitor.h"
 #include "core/core.h"
 
@@ -431,6 +432,9 @@ struct System::Impl {
 
         // Make the process created be the application
         kernel.SetApplicationProcess(process->GetHandle());
+
+        // EDEN_NX2_JIT_BLOCK_LIST: compile the saved blocks before the game runs.
+        Core::ArmDynarmic64::PrecompileBlockList(*process->GetHandle());
 
         // Set up the rest of the system.
         SystemResultStatus init_result{SetupForApplicationProcess(system, emu_window)};

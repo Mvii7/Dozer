@@ -99,6 +99,10 @@ public:
     void ClearInstructionCache() override;
     void InvalidateCacheRange(u64 addr, std::size_t size) override;
 
+    /// EDEN_NX2_JIT_BLOCK_LIST: every core's JIT compiles the process's saved blocks, in
+    /// parallel, before the process starts.
+    static void PrecompileBlockList(Kernel::KProcess& process);
+
 protected:
     const Kernel::DebugWatchpoint* HaltedWatchpoint() const override;
     void RewindBreakpointInstruction() override;

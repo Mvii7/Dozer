@@ -57,8 +57,8 @@
 # --- experiments (off by default; NX2_NOTES.md; added by Dozer) ---
 # JIT_BLOCK_LIST=1: the CPU JIT's compiled blocks are saved per game (<cache>/nx2_jit/<title
 # id>.bin, every 30 s and when emulation stops, as offsets from where the game's code loaded),
-# and when the first core starts every core compiles the saved ones in parallel, each waiting for
-# its own before it runs. Code reached in an earlier session is then not compiled in the frame
+# and after the game loads, before it runs, every core compiles the saved ones in parallel. Code
+# reached in an earlier session is then not compiled in the frame
 # that first runs it, once by each core (x64 only).
 #EDEN_NX2_JIT_BLOCK_LIST=1
 #EDEN_NX2_PACE_GUEST_SLEEP=1

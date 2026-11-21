@@ -40,10 +40,9 @@ namespace Core {
 namespace {
 // EDEN_NX2_JIT_BLOCK_LIST=1: the blocks the JIT compiles are saved per title
 // (<cache>/nx2_jit/<title id>.bin, every 30 s and when emulation stops), as offsets from the
-// process's code address (the loader moves it every boot). When the first core starts, every
-// core's JIT compiles the saved blocks in executable memory, in parallel, and each core waits for
-// its own before it runs, so code reached in an earlier session is not compiled in the frame that
-// first runs it, once by each core.
+// process's code address (the loader moves it every boot). After the game is loaded and before it
+// runs, every core's JIT compiles the saved blocks in executable memory, in parallel, so code
+// reached in an earlier session is not compiled in the frame that first runs it, once by each core.
 namespace JitBlockList {
 
 constexpr u64 Magic = 0x32304C424A32584EULL; // "NX2JBL02"
@@ -59,9 +58,9 @@ bool Enabled() {
     return enabled;
 }
 
-/// Tests: EDEN_NX2_JIT_BLOCK_LIST_THREADS=0 has each core compile its list on its own thread when
-/// it first runs; EDEN_NX2_JIT_BLOCK_LIST_MAX=<n> compiles only the first n saved blocks, after
-/// the first EDEN_NX2_JIT_BLOCK_LIST_SKIP=<n>.
+/// Tests: EDEN_NX2_JIT_BLOCK_LIST_THREADS=0 has the cores compile their lists one after another;
+/// EDEN_NX2_JIT_BLOCK_LIST_MAX=<n> compiles only the first n saved blocks, after the first
+/// EDEN_NX2_JIT_BLOCK_LIST_SKIP=<n>.
 bool Threads() {
     static const bool threads = [] {
         const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST_THREADS");
@@ -109,8 +108,6 @@ struct State {
     u64 compiled_ready = 0;
     u64 compiled_skipped = 0;
     u64 compiled_new = 0;
-    bool started = false;
-    std::vector<std::jthread> workers;
     std::jthread saver; // last: stopped (and the list saved) before the rest goes
 };
 
@@ -242,8 +239,6 @@ bool Load(const Kernel::KProcess& process) {
         }
     }
     Save(); // a previous game's
-    auto& workers = state.workers;
-    workers.clear(); // joins them
     std::scoped_lock lock{state.mutex};
     state.process = &process;
     state.base = GetInteger(process.GetEntryPoint());
@@ -255,7 +250,6 @@ bool Load(const Kernel::KProcess& process) {
     state.ready_set.clear();
     state.skipped.clear();
     state.ready_done = false;
-    state.started = false;
     state.compiled_ready = state.compiled_skipped = state.compiled_new = 0;
     std::ifstream file{state.path, std::ios::binary};
     u64 header[2]{};
@@ -864,49 +858,52 @@ ArmDynarmic64::~ArmDynarmic64() {
     }
 }
 
+void ArmDynarmic64::PrecompileBlockList(Kernel::KProcess& process) {
+#ifdef HAS_NCE
+    if (Settings::IsNceEnabled()) {
+        return;
+    }
+#endif
+    if (!process.IsApplication() || !process.Is64Bit() || !JitBlockList::Load(process)) {
+        return;
+    }
+    // Before the process runs, so the game never sees its cores stop. (No RTTI: a 64-bit
+    // process's interfaces are this class unless NCE runs it.)
+    const auto& ready = JitBlockList::Ready(process);
+    std::vector<std::jthread> workers;
+    for (size_t core = 0; core < Hardware::NUM_CPU_CORES; ++core) {
+        ArmInterface* const core_interface = process.GetArmInterface(core);
+        if (core_interface == nullptr ||
+            core_interface->GetArchitecture() != Architecture::AArch64) {
+            continue;
+        }
+        auto* const arm = static_cast<ArmDynarmic64*>(core_interface);
+        if (!arm->ClaimBlockList()) {
+            continue;
+        }
+        if (!JitBlockList::Threads()) {
+            JitBlockList::precompiling = true;
+            arm->CompileBlockList(ready);
+            JitBlockList::precompiling = false;
+            continue;
+        }
+        workers.emplace_back([arm, &ready] {
+            JitBlockList::precompiling = true;
+            arm->CompileBlockList(ready);
+        });
+    }
+}
+
 void ArmDynarmic64::StartBlockList() {
     Kernel::KProcess* const process = m_cb->m_process;
     if (process == nullptr || !process->IsApplication() || !JitBlockList::Load(*process)) {
         return;
     }
-    auto& state = JitBlockList::Get();
-    bool start = false;
-    {
-        std::scoped_lock lock{state.mutex};
-        start = !state.started;
-        state.started = true;
-    }
-    if (start) {
-        // Every core's JIT compiles the list on a thread of its own; a core not created yet
-        // compiles it when it first runs. (No RTTI: an AArch64 interface is this class unless
-        // NCE may run the process.)
-#ifndef HAS_NCE
-        const auto& ready = JitBlockList::Ready(*process);
-        for (size_t core = 0; JitBlockList::Threads() && core < Hardware::NUM_CPU_CORES; ++core) {
-            ArmInterface* const core_interface = process->GetArmInterface(core);
-            if (core_interface == nullptr ||
-                core_interface->GetArchitecture() != Architecture::AArch64) {
-                continue;
-            }
-            auto* const arm = static_cast<ArmDynarmic64*>(core_interface);
-            if (!arm->ClaimBlockList()) {
-                continue;
-            }
-            state.workers.emplace_back([arm, &ready] {
-                JitBlockList::precompiling = true;
-                arm->CompileBlockList(ready);
-            });
-        }
-#endif
-    }
+    // Compiled at load; a process started another way compiles its list on each core here.
     if (ClaimBlockList()) {
         JitBlockList::precompiling = true;
         CompileBlockList(JitBlockList::Ready(*process));
         JitBlockList::precompiling = false;
-    }
-    for (u32 list_state = m_block_list_state.load(); list_state == 1;
-         list_state = m_block_list_state.load()) {
-        m_block_list_state.wait(list_state);
     }
 }
 

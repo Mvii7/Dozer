@@ -9,7 +9,7 @@ and `=0` brings back the 2.0.0 code path.
 ## Unreleased (Dozer)
 
 - `EDEN_NX2_JIT_BLOCK_LIST=1` (experiment, x64): the CPU JIT's compiled blocks are saved per
-  game and compiled by each core before its first run. Donkey Kong Bananza's spikes on entering
+  game and compiled by every core, in parallel, after the game loads and before it runs. Donkey Kong Bananza's spikes on entering
   new parts of a stage were the JIT compiling 10,000-55,000 blocks in a frame (up to 0.65 s of
   compiling), 45-90% of them blocks another core had compiled already.
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
