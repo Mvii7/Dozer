@@ -515,6 +515,11 @@
 #EDEN_NX2_VDEC_EOS_RELEASE_NOW=1
 
 # --- diagnostics and unattended runs (logging only; leave them off for play) ---
+# FIRST_USE=1: what the images uploaded when created (nothing overlapping them) are first used
+# for: drawn into, fully cleared, sampled, blit, DMA or deleted unused, with how much of their
+# guest memory was all zeros ("nx2 first use" lines: each frame that uploaded 16 MiB or more of
+# them, and every 600 frames).
+#EDEN_NX2_FIRST_USE=1
 #EDEN_NX2_PRESENT_DIAG=1
 #EDEN_NX2_MODE_DIAG=1
 #EDEN_NX2_MODE_DIAG_MAX=48

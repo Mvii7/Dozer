@@ -15,6 +15,8 @@
 #include <string>
 #include <type_traits>
 // TODO: find out which don't require stable iters
+#include <array>
+#include <string_view>
 #include <unordered_map>
 #include "common/container/unordered_map.h"
 #include "common/container/unordered_set.h"
@@ -381,8 +383,32 @@ public:
     /// Create channel state.
     void CreateChannel(Tegra::Control::ChannelState& channel) final override;
 
+    /// EDEN_NX2_FIRST_USE: where an image is used (PrepareImage's caller).
+    enum class UseSite : u8 { Other, RenderTarget, Sampled, BlitSrc, BlitDst, Dma };
+
     /// Prepare an image to be used
-    void PrepareImage(ImageId image_id, bool is_modification, bool invalidate);
+    void PrepareImage(ImageId image_id, bool is_modification, bool invalidate,
+                      UseSite site = UseSite::Other);
+
+    /// EDEN_NX2_FIRST_USE=1: what the images uploaded at creation, with nothing overlapping them,
+    /// are first used for: a log line for each frame that uploaded 16 MiB or more of them, and
+    /// one every 600 frames.
+    enum FirstUseKind : size_t { FuClear, FuDraw, FuSampled, FuBlitSrc, FuBlitDst, FuDma, FuOther,
+                                 FuUnused, FuCount };
+    struct FirstUseCounts {
+        std::array<u64, FuCount> images{};
+        std::array<u64, FuCount> bytes{};
+        std::array<u64, FuCount> zero_bytes{};
+        std::unordered_map<u32, u64> draw_formats; ///< FuDraw bytes by pixel format
+        u64 created_bytes{};
+    };
+    [[nodiscard]] static bool FirstUseEnabled();
+    void NoteFirstUseCreated(Image& image);
+    void NoteFirstUse(Image& image, FirstUseKind kind);
+    void LogFirstUse(FirstUseCounts& counts, std::string_view when);
+    FirstUseCounts first_use_frame;
+    FirstUseCounts first_use_period;
+    std::vector<u8> first_use_scratch;
 
     Common::SpinRecursiveMutex mutex;
     /// The pages an image was ever registered or tracked on: elsewhere the cache holds nothing,
@@ -554,7 +580,8 @@ private:
     void SynchronizeAliases(ImageId image_id);
 
     /// Prepare an image view to be used
-    void PrepareImageView(ImageViewId image_view_id, bool is_modification, bool invalidate);
+    void PrepareImageView(ImageViewId image_view_id, bool is_modification, bool invalidate,
+                          UseSite site = UseSite::Other);
 
     /// Execute copies from one image to the other, even if they are incompatible
     void CopyImage(ImageId dst_id, ImageId src_id, std::vector<ImageCopy> copies);

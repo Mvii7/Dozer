@@ -38,6 +38,7 @@
 #include "common/nx2_slow_frame.h"
 #include "video_core/nx2_stages.h"
 #include "video_core/nx2_mode_diag.h"
+#include "video_core/texture_cache/formatter.h"
 #include "video_core/textures/decoders.h"
 
 namespace VideoCommon {
@@ -385,6 +386,16 @@ void TextureCache<P>::ApplyThresholdOverrides(bool log) {
 
 template <class P>
 void TextureCache<P>::TickFrame() {
+    if (FirstUseEnabled()) [[unlikely]] {
+        if (first_use_frame.created_bytes >= 16_MiB) {
+            LogFirstUse(first_use_frame, "frame");
+        }
+        first_use_frame = {};
+        if (static u64 first_use_frames{}; ++first_use_frames % 600 == 0) {
+            LogFirstUse(first_use_period, "last 600 frames");
+            first_use_period = {};
+        }
+    }
     if (Nx2Stages::GpuPages().Live()) [[unlikely]] {
         // Between cache operations: the page summary's queued clean-ups are made.
         Nx2Stages::GpuPages().Settle();
@@ -934,11 +945,11 @@ void TextureCache<P>::UpdateRenderTargets(bool is_clear) {
         for (size_t index = 0; index < NUM_RT; ++index) {
             ImageViewId& color_buffer_id = render_targets.color_buffer_ids[index];
             PrepareImageView(color_buffer_id, color_marked(index),
-                             is_clear && IsFullClear(color_buffer_id));
+                             is_clear && IsFullClear(color_buffer_id), UseSite::RenderTarget);
         }
         const ImageViewId depth_buffer_id = render_targets.depth_buffer_id;
         PrepareImageView(depth_buffer_id, depth_marked(),
-                         is_clear && IsFullClear(depth_buffer_id));
+                         is_clear && IsFullClear(depth_buffer_id), UseSite::RenderTarget);
         return;
     }
 
@@ -953,11 +964,12 @@ void TextureCache<P>::UpdateRenderTargets(bool is_clear) {
     for (size_t index = 0; index < NUM_RT; ++index) {
         ImageViewId& color_buffer_id = render_targets.color_buffer_ids[index];
         PrepareImageView(color_buffer_id, color_marked(index),
-                         is_clear && IsFullClear(color_buffer_id));
+                         is_clear && IsFullClear(color_buffer_id), UseSite::RenderTarget);
     }
     const ImageViewId depth_buffer_id = render_targets.depth_buffer_id;
 
-    PrepareImageView(depth_buffer_id, depth_marked(), is_clear && IsFullClear(depth_buffer_id));
+    PrepareImageView(depth_buffer_id, depth_marked(), is_clear && IsFullClear(depth_buffer_id),
+                     UseSite::RenderTarget);
 
     rt_active_mask = 0;
     rt_image_id = {};
@@ -1028,7 +1040,7 @@ ImageViewId TextureCache<P>::VisitImageView(u32 index, bool compute) {
             const auto [pair, is_new_tc] = channel_state->image_views.try_emplace(descriptor);
             if (is_new_tc)
                 pair->second = CreateImageView(descriptor);
-            PrepareImageView(pair->second, false, false);
+            PrepareImageView(pair->second, false, false, UseSite::Sampled);
             table.bound_ids[index] = pair->second;
             return pair->second;
         }
@@ -1037,7 +1049,7 @@ ImageViewId TextureCache<P>::VisitImageView(u32 index, bool compute) {
     }
     const auto id = table.bound_ids[index];
     if (id != NULL_IMAGE_VIEW_ID)
-        PrepareImageView(id, false, false);
+        PrepareImageView(id, false, false, UseSite::Sampled);
     return id;
 }
 
@@ -1220,8 +1232,8 @@ bool TextureCache<P>::BlitImage(const Tegra::Engines::Fermi2D::Surface& dst,
     const ImageId dst_id = images.dst_id;
     const ImageId src_id = images.src_id;
 
-    PrepareImage(src_id, false, false);
-    PrepareImage(dst_id, true, false);
+    PrepareImage(src_id, false, false, UseSite::BlitSrc);
+    PrepareImage(dst_id, true, false, UseSite::BlitDst);
 
     Image& dst_image = slot_images[dst_id];
     Image& src_image = slot_images[src_id];
@@ -2661,7 +2673,13 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
     }
 
     // TODO: Only upload what we need
+    const bool uploads_at_creation = True(new_image.flags & ImageFlagBits::CpuModified);
     RefreshContents(new_image, new_image_id);
+    if (uploads_at_creation && join_copies_to_do.empty() && join_right_aliased_ids.empty() &&
+        join_left_aliased_ids.empty() && join_bad_overlap_ids.empty() && FirstUseEnabled())
+        [[unlikely]] {
+        NoteFirstUseCreated(new_image);
+    }
 
     if (can_rescale) {
         ScaleUp(new_image);
@@ -2898,7 +2916,7 @@ std::pair<u32, u32> TextureCache<P>::PrepareDmaImage(ImageId dst_id, GPUVAddr ba
                                                      bool mark_as_modified) {
     const auto& image = slot_images[dst_id];
     const auto base = image.TryFindBase(base_addr);
-    PrepareImage(dst_id, mark_as_modified, false);
+    PrepareImage(dst_id, mark_as_modified, false, UseSite::Dma);
     const auto& new_image = slot_images[dst_id];
     lru_cache.Touch(new_image.lru_index, frame_tick);
     return std::make_pair(base->level, base->layer);
@@ -3621,6 +3639,9 @@ void TextureCache<P>::UntrackImage(ImageBase& image, ImageId image_id) {
 template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     ImageBase& image = slot_images[image_id];
+    if (image.nx2_first_use_pending) [[unlikely]] {
+        NoteFirstUse(slot_images[image_id], FuUnused);
+    }
     ++images_deleted;
     Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::ImagesDeleted, 1);
     if (image.nx2_read_latched && track_read_latches) [[unlikely]] {
@@ -3934,8 +3955,84 @@ void TextureCache<P>::SynchronizeAliases(ImageId image_id) {
 }
 
 template <class P>
-void TextureCache<P>::PrepareImage(ImageId image_id, bool is_modification, bool invalidate) {
+bool TextureCache<P>::FirstUseEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_FIRST_USE");
+        return value != nullptr && value[0] == '1';
+    }();
+    return enabled;
+}
+
+template <class P>
+void TextureCache<P>::NoteFirstUseCreated(Image& image) {
+    const size_t size = image.guest_size_bytes;
+    first_use_scratch.resize(size);
+    gpu_memory->ReadBlockUnsafe(image.gpu_addr, first_use_scratch.data(), size);
+    const u8* const data = first_use_scratch.data();
+    image.nx2_first_use_zero =
+        size == 0 || (data[0] == 0 && std::memcmp(data, data + 1, size - 1) == 0);
+    image.nx2_first_use_pending = true;
+    first_use_frame.created_bytes += size;
+    first_use_period.created_bytes += size;
+}
+
+template <class P>
+void TextureCache<P>::NoteFirstUse(Image& image, FirstUseKind kind) {
+    image.nx2_first_use_pending = false;
+    const u64 size = image.guest_size_bytes;
+    for (FirstUseCounts* const counts : {&first_use_frame, &first_use_period}) {
+        ++counts->images[kind];
+        counts->bytes[kind] += size;
+        if (image.nx2_first_use_zero) {
+            counts->zero_bytes[kind] += size;
+        }
+        if (kind == FuDraw) {
+            counts->draw_formats[static_cast<u32>(image.info.format)] += size;
+        }
+    }
+}
+
+template <class P>
+void TextureCache<P>::LogFirstUse(FirstUseCounts& counts, std::string_view when) {
+    static constexpr std::array<std::string_view, FuCount> names{
+        "full clear", "drawn into", "sampled", "blit source", "blit destination", "DMA", "other",
+        "deleted unused"};
+    std::string uses;
+    for (size_t kind = 0; kind < FuCount; ++kind) {
+        if (counts.images[kind] != 0) {
+            uses += fmt::format(" | {} {} ({} MiB, {} MiB zero)", names[kind], counts.images[kind],
+                                counts.bytes[kind] >> 20, counts.zero_bytes[kind] >> 20);
+        }
+    }
+    std::vector<std::pair<u64, u32>> formats;
+    for (const auto& [format, bytes] : counts.draw_formats) {
+        formats.emplace_back(bytes, format);
+    }
+    std::sort(formats.begin(), formats.end(), std::greater{});
+    std::string drawn;
+    for (size_t i = 0; i < formats.size() && i < 5; ++i) {
+        drawn += fmt::format(" {} {} MiB", static_cast<PixelFormat>(formats[i].second),
+                             formats[i].first >> 20);
+    }
+    LOG_INFO(HW_GPU,
+             "nx2 first use ({}): {} MiB uploaded at creation with nothing overlapping; first "
+             "used as{} | drawn into by format:{}",
+             when, counts.created_bytes >> 20, uses.empty() ? std::string{" -"} : uses,
+             drawn.empty() ? std::string{" -"} : drawn);
+}
+
+template <class P>
+void TextureCache<P>::PrepareImage(ImageId image_id, bool is_modification, bool invalidate,
+                                   UseSite site) {
     Image& image = slot_images[image_id];
+    if (image.nx2_first_use_pending) [[unlikely]] {
+        static constexpr std::array<FirstUseKind, 6> kinds{FuOther, FuDraw,    FuSampled,
+                                                           FuBlitSrc, FuBlitDst, FuDma};
+        const auto kind = site == UseSite::RenderTarget && invalidate
+                              ? FuClear
+                              : kinds[static_cast<size_t>(site)];
+        NoteFirstUse(image, kind);
+    }
     if (invalidate) {
         RestorePartialPages(image);
         image.flags &= ~(ImageFlagBits::CpuModified | ImageFlagBits::GpuModified);
@@ -3981,7 +4078,7 @@ void TextureCache<P>::PrepareImage(ImageId image_id, bool is_modification, bool 
 
 template <class P>
 void TextureCache<P>::PrepareImageView(ImageViewId image_view_id, bool is_modification,
-                                       bool invalidate) {
+                                       bool invalidate, UseSite site) {
     if (!image_view_id) {
         return;
     }
@@ -3989,7 +4086,7 @@ void TextureCache<P>::PrepareImageView(ImageViewId image_view_id, bool is_modifi
     if (image_view.IsBuffer()) {
         return;
     }
-    PrepareImage(image_view.image_id, is_modification, invalidate);
+    PrepareImage(image_view.image_id, is_modification, invalidate, site);
 }
 
 template <class P>
