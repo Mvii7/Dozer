@@ -34,6 +34,13 @@
 # AMD drivers (they sample black or fault on unbound memory, which left Mario Kart World's terrain
 # dark): those images are backed normally. =1 allows unbound images on every GPU, =0 on none.
 #EDEN_NX2_SPARSE_UNBACKED=0
+# JIT_BLOCK_LIST (on; =0 off): the CPU JIT's compiled blocks are saved per game
+# (<cache>/nx2_jit/<title id>.bin, every 30 s and when emulation stops, as offsets from where the
+# game's code loaded), and after the game loads, before it runs, every core compiles the saved
+# ones in parallel. Code reached in an earlier session is then not compiled in the frame that
+# first runs it, once by each core (x64 only). Boot takes a few seconds longer. A game update
+# starts a new list; the newest blocks that fit in 3/4 of a core's code cache are kept.
+#EDEN_NX2_JIT_BLOCK_LIST=0
 
 # --- GPU thread shortcuts (on by default; =0 as before; added by Dozer) ---
 # =2 keeps them on and logs what they would get wrong: VERTEX_CLEAN, LIGHT_SYNC_SKIP,
