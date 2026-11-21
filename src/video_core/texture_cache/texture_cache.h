@@ -2089,8 +2089,6 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
         return;
     }
 
-    Common::Nx2SlowFrame::AddCpuUnswizzle(static_cast<u32>(image.info.format),
-                                          image.guest_size_bytes);
     if (FirstUseEnabled()) [[unlikely]] {
         NoteUpload(image);
     }
@@ -2107,6 +2105,8 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
         image.UploadMemory(staging, copies);
         return;
     }
+    Common::Nx2SlowFrame::AddCpuUnswizzle(static_cast<u32>(image.info.format),
+                                          image.guest_size_bytes);
     if (True(image.flags & ImageFlagBits::Converted)) {
         unswizzle_data_buffer.resize_destructive(image.unswizzled_size_bytes);
         auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, unswizzle_data_buffer);
