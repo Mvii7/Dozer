@@ -7,6 +7,10 @@ off unless a launcher or the menu program's Tuning tab sets them, the per-draw s
 and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
+- GPU thread split: it now starts before the game creates its first Switch 2 GPU channel. When the
+  channel came first, the split took it over unreliably: the boot hung (the game's first command
+  list never ran) or the front ran macros it never saw uploaded and crashed. Donkey Kong Bananza
+  hit it about half the time with the JIT block list, which makes its boot faster.
 
 - `EDEN_NX2_SLOW_FRAME_MS=<ms>` (diagnostic, off unless set): one "nx2 slow frame:" log line
   for each frame longer than `<ms>`, with the images created and deleted, MB uploaded,

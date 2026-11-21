@@ -44,6 +44,7 @@
 #include "video_core/host1x/host1x.h"
 #include "video_core/host1x/syncpoint_manager.h"
 #include "video_core/memory_manager.h"
+#include "video_core/nx2.h"
 #include "video_core/nx2_async_readback.h"
 #include "video_core/rasterizer_download_area.h"
 #include "video_core/nx2_profile.h"
@@ -109,6 +110,12 @@ struct GPU::Impl {
     }
 
     void InitChannel(Control::ChannelState& to_init, u64 program_id) {
+        // The GPU thread split takes over a channel that exists when it starts unreliably (the
+        // front ran macros it never saw uploaded, or the game's first list never ran): start it
+        // first.
+        if (g_nx2_ampere.load(std::memory_order_relaxed)) {
+            gpu_thread.StartSplit();
+        }
         to_init.Init(system, program_id);
         VideoCommon::Nx2Stages::BindNewChannel(to_init, *renderer->ReadRasterizer());
         renderer->ReadRasterizer()->InitializeChannel(to_init);
