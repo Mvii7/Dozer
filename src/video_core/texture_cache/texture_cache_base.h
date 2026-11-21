@@ -383,50 +383,8 @@ public:
     /// Create channel state.
     void CreateChannel(Tegra::Control::ChannelState& channel) final override;
 
-    /// EDEN_NX2_FIRST_USE: where an image is used (PrepareImage's caller).
-    enum class UseSite : u8 { Other, RenderTarget, Sampled, BlitSrc, BlitDst, Dma };
-
     /// Prepare an image to be used
-    void PrepareImage(ImageId image_id, bool is_modification, bool invalidate,
-                      UseSite site = UseSite::Other);
-
-    /// EDEN_NX2_FIRST_USE=1: what the images uploaded at creation, with nothing overlapping them,
-    /// are first used for: a log line for each frame that uploaded 16 MiB or more of them, and
-    /// one every 600 frames.
-    enum FirstUseKind : size_t { FuClear, FuDraw, FuSampled, FuBlitSrc, FuBlitDst, FuDma, FuOther,
-                                 FuUnused, FuCount };
-    struct FirstUseCounts {
-        std::array<u64, FuCount> images{};
-        std::array<u64, FuCount> bytes{};
-        std::array<u64, FuCount> zero_bytes{};
-        std::unordered_map<u32, u64> draw_formats; ///< FuDraw bytes by pixel format
-        u64 created_bytes{};
-    };
-    [[nodiscard]] static bool FirstUseEnabled();
-    void NoteFirstUseCreated(Image& image);
-    void NoteFirstUse(Image& image, FirstUseKind kind);
-    void LogFirstUse(FirstUseCounts& counts, std::string_view when);
-    FirstUseCounts first_use_frame;
-    FirstUseCounts first_use_period;
-    std::vector<u8> first_use_scratch;
-
-    /// EDEN_NX2_FIRST_USE=1 also logs every whole image unswizzled on the CPU by where it came
-    /// from: created with nothing overlapping, created over other images (their copies land on
-    /// top), or a later refresh (split by whether the image had been written by the GPU).
-    enum UploadPath : size_t { UpCreatedClean, UpCreatedOverlap, UpLater, UpLaterGpuWritten,
-                               UpCount };
-    struct UploadCounts {
-        std::array<u64, UpCount> images{};
-        std::array<u64, UpCount> bytes{};
-        std::array<u64, UpCount> zero_bytes{};
-        std::array<std::unordered_map<u32, u64>, UpCount> formats; ///< bytes by pixel format
-    };
-    [[nodiscard]] bool GuestIsZero(GPUVAddr gpu_addr, size_t size);
-    void NoteUpload(const Image& image);
-    void LogUploads(UploadCounts& counts, std::string_view when);
-    UploadPath upload_path = UpLater;
-    UploadCounts upload_frame;
-    UploadCounts upload_period;
+    void PrepareImage(ImageId image_id, bool is_modification, bool invalidate);
 
     Common::SpinRecursiveMutex mutex;
     /// The pages an image was ever registered or tracked on: elsewhere the cache holds nothing,
@@ -606,8 +564,7 @@ private:
     void SynchronizeAliases(ImageId image_id);
 
     /// Prepare an image view to be used
-    void PrepareImageView(ImageViewId image_view_id, bool is_modification, bool invalidate,
-                          UseSite site = UseSite::Other);
+    void PrepareImageView(ImageViewId image_view_id, bool is_modification, bool invalidate);
 
     /// Execute copies from one image to the other, even if they are incompatible
     void CopyImage(ImageId dst_id, ImageId src_id, std::vector<ImageCopy> copies);

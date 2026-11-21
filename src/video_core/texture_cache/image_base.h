@@ -142,10 +142,6 @@ struct ImageBase {
     /// pages marked since it was last GPU-modified; cleared when it is unmarked (not GPU-modified
     /// or unregistered any more), so MarkModification marks them once, not on every draw.
     bool nx2_pages_set = false;
-    /// EDEN_NX2_FIRST_USE: uploaded when created with nothing overlapping it, and not used yet;
-    /// whether the guest memory it uploaded was all zeros.
-    bool nx2_first_use_pending = false;
-    bool nx2_first_use_zero = false;
     /// A guest CPU read (GetFlushArea) made this image forced_flushed, not its pitch linear
     /// layout at creation: it is downloaded at every render target bind since.
     bool nx2_read_latched = false;

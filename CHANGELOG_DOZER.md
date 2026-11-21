@@ -18,11 +18,6 @@ and `=0` brings back the 2.0.0 code path.
   memory; their uploads took 78-97 ms, now 24-55 ms (most of it checking the memory for zeros).
   It needs the read trap budget's carry-over: with it on and the budget reset every 1/60 s,
   terrain detail flickered after entering new areas.
-- `EDEN_NX2_FIRST_USE=1` (diagnostic): what new images, uploaded from guest memory when they
-  are created, are first used for, and how much of that memory was all zeros. Donkey Kong
-  Bananza's spikes entering new areas unswizzle 250-317 MB of mostly render target formats on
-  the CPU; this shows how much of it a skipped or cleared upload could save. It also splits
-  every CPU unswizzle by where it came from (new image, new image over others, later refresh).
 - GPU thread split: it now starts before the game creates its first Switch 2 GPU channel. When the
   channel came first, the split took it over unreliably: the boot hung (the game's first command
   list never ran) or the front ran macros it never saw uploaded and crashed. Donkey Kong Bananza

@@ -592,6 +592,13 @@ void MemoryManager::ReadBlockImpl(GPUVAddr gpu_src_addr, void* dest_buffer, std:
 
 bool MemoryManager::IsZeroUnsafe(GPUVAddr gpu_addr, std::size_t size) const {
     WaitPendingWrites(gpu_addr, size);
+    // Most images that are not zero show it in their first bytes: skip the walk for them.
+    std::array<u8, 256> head;
+    const std::size_t head_size = std::min(size, head.size());
+    ReadBlockUnsafe(gpu_addr, head.data(), head_size);
+    if (!Common::IsAllZero(head.data(), head_size)) {
+        return false;
+    }
     bool zero = true;
     std::vector<u8> scratch;
     auto reads_zero = [](std::size_t, std::size_t, std::size_t) {};
