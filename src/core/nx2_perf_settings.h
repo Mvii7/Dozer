@@ -59,11 +59,11 @@ inline constexpr int ShadowMedium = 2;
 inline constexpr int ShadowVeryHigh = 4;
 
 /// Bananza's foliage steps: Off (EDEN_NX2_DK_FOLIAGE_OFF=1), Low and Medium (the foliage kept,
-/// EDEN_NX2_DK_FOLIAGE_DENSITY, and how far it is drawn, EDEN_NX2_DK_FOLIAGE_DISTANCE), High the
-/// game's own.
+/// EDEN_NX2_DK_FOLIAGE_DENSITY, the thorns kept, EDEN_NX2_DK_FOLIAGE_THORN_DENSITY, and how far it
+/// is drawn, EDEN_NX2_DK_FOLIAGE_DISTANCE), High the game's own.
 inline constexpr int FoliageOff = 1;
-inline constexpr int FoliageLow = 2;    ///< 10% kept, drawn up to 200 units
-inline constexpr int FoliageMedium = 3; ///< 50% kept, drawn up to 400 units
+inline constexpr int FoliageLow = 2;    ///< 10% kept (thorns 50%), drawn up to 200 units
+inline constexpr int FoliageMedium = 3; ///< 50% kept (thorns 75%), drawn up to 400 units
 inline constexpr int FoliageHigh = 4;
 
 /// Bananza's reflection update steps: how often the reflection cube map is captured again.
@@ -549,7 +549,7 @@ inline constexpr std::array<std::string_view, 73> SafeOff{
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
-inline constexpr std::array<std::string_view, 20> Names{
+inline constexpr std::array<std::string_view, 21> Names{
     "EDEN_NX2_BACK_STAGES",   "EDEN_NX2_BACK_CUTS",
     "EDEN_NX2_ACQUIRE_PEEK",  "EDEN_NX2_JIT_SAME",
     "EDEN_NX2_FRONT_MACRO_LEAN", "EDEN_NX2_FG_TIMED",
@@ -560,6 +560,7 @@ inline constexpr std::array<std::string_view, 20> Names{
     "EDEN_NX2_DK_FOLIAGE_OFF", "EDEN_NX2_DK_SHADOW_CASCADES",
     "EDEN_NX2_DK_CUBEMAP_INTERVAL", "EDEN_NX2_READ_TRAP_BUDGET_US",
     "EDEN_NX2_DK_FOLIAGE_DENSITY", "EDEN_NX2_DK_FOLIAGE_DISTANCE",
+    "EDEN_NX2_DK_FOLIAGE_THORN_DENSITY",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -606,9 +607,11 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
         } else if (switches.dk_foliage == FoliageLow) {
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"});
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"});
+            vars.push_back({"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "50"});
         } else if (switches.dk_foliage == FoliageMedium) {
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_DENSITY", "50"});
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_DISTANCE", "400"});
+            vars.push_back({"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "75"});
         }
         if (switches.dk_shadow >= ShadowLow && switches.dk_shadow < ShadowVeryHigh) {
             static constexpr std::array<std::string_view, 3> Cascades{"1", "2", "3"};

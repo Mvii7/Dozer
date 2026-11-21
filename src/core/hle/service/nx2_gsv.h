@@ -26,6 +26,7 @@
 #include "common/alignment.h"
 #include "common/display_hdr.h"
 #include "common/div_ceil.h"
+#include "common/nx2_slow_frame.h"
 #include "common/settings.h"
 #include "common/thread.h"
 #include "core/core.h"
@@ -36,6 +37,7 @@
 #include "core/frontend/framebuffer_layout.h"
 #include "core/perf_stats.h"
 #include "video_core/gpu.h"
+#include "video_core/texture_cache/formatter.h"
 #include "video_core/framebuffer_config.h"
 #include "core/core_timing.h"
 #include "core/hle/kernel/k_client_session.h"
@@ -1275,6 +1277,9 @@ private:
                 m_stats.frame_us += frame;
                 m_stats.max_frame_us = (std::max)(m_stats.max_frame_us, frame);
                 m_stats.hitches += frame > 100'000 ? 1 : 0;
+                if (Common::Nx2SlowFrame::Enabled()) [[unlikely]] {
+                    LogSlowFrame(frame, to_us(waited - entered), to_us(composited - waited));
+                }
                 if (m_pace_one && m_dk_dyn_applied) {
                     m_stats.dyn_step.Add(frame);
                 }
@@ -1689,6 +1694,72 @@ private:
         LOG_INFO(Service, "nx2:vi2 diag request {} ({} data words, present #{}):{}{}", command,
                  w[1] & 0x3FFU, m_presents, text,
                  m_diag.requests.size() == 256 ? " (further new requests not logged)" : "");
+    }
+
+    // EDEN_NX2_SLOW_FRAME_MS: what happened since the previous present, when it came late.
+    void LogSlowFrame(long long frame_us, long long fence_us, long long composite_us) {
+        namespace Slow = Common::Nx2SlowFrame;
+        const auto c = Slow::Take();
+        const auto by_format = Slow::TakeCpuUnswizzleByFormat();
+        const Slow::JitCounts jit = Slow::g_take_jit ? Slow::g_take_jit() : Slow::JitCounts{};
+        if (static_cast<u64>(frame_us) <= Slow::ThresholdUs()) {
+            return;
+        }
+        const auto get = [&](Slow::Counter counter) { return c[static_cast<size_t>(counter)]; };
+        // The formats with the most MB unswizzled on the CPU.
+        std::string formats;
+        {
+            std::array<size_t, 256> order{};
+            for (size_t i = 0; i < order.size(); ++i) {
+                order[i] = i;
+            }
+            std::partial_sort(order.begin(), order.begin() + 4, order.end(),
+                              [&](size_t a, size_t b) { return by_format[a] > by_format[b]; });
+            for (size_t i = 0; i < 4 && by_format[order[i]] != 0; ++i) {
+                formats += fmt::format(
+                    "{}{} {:.1f} MB", formats.empty() ? ": " : ", ",
+                    order[i] < VideoCore::Surface::MaxPixelFormat
+                        ? fmt::format("{}", static_cast<VideoCore::Surface::PixelFormat>(order[i]))
+                        : fmt::format("format {}", order[i]),
+                    static_cast<double>(by_format[order[i]]) / (1 << 20));
+            }
+        }
+        const auto ms = [&](Slow::Counter counter) {
+            return static_cast<double>(get(counter)) / 1e6;
+        };
+        LOG_INFO(Service,
+                 "nx2 slow frame: {:.1f} ms (present #{}) | present wait {:.1f} ms composite {:.1f} "
+                 "ms | images +{} ({:.1f} ms) -{} upload {:.1f} MB ({:.1f} ms, {:.1f} MB unswizzled on "
+                 "the CPU{}; staging {:.1f} ms, read {:.1f} ms, unswizzle {:.1f} ms, record {:.1f} "
+                 "ms; {:.1f} MB as zeros: zero check {:.1f} ms, zero fill {:.1f} ms) | host GPU waits {} {:.1f} ms (max {:.1f}), worker waits {} {:.1f} ms (max "
+                 "{:.1f}) | pipelines {} lower "
+                 "{:.1f} ms driver {:.1f} ms | back drains {} {:.1f} ms (max {:.1f}) | read "
+                 "flushes {} {:.1f} ms (max {:.1f}) | file reads {} {:.1f} MB {:.1f} ms (throttle "
+                 "{:.1f} ms) | jit {} blocks {:.1f} ms ({} compiled before on the same core, {} on "
+                 "another), {} cache clears, {} ranges invalidated, {} fastmem faults recompiled",
+                 static_cast<double>(frame_us) / 1e3, m_presents,
+                 static_cast<double>(fence_us) / 1e3, static_cast<double>(composite_us) / 1e3,
+                 get(Slow::Counter::ImagesCreated), ms(Slow::Counter::ImageCreateNs),
+                 get(Slow::Counter::ImagesDeleted),
+                 static_cast<double>(get(Slow::Counter::UploadBytes)) / (1 << 20),
+                 ms(Slow::Counter::UploadNs),
+                 static_cast<double>(get(Slow::Counter::CpuUnswizzleBytes)) / (1 << 20), formats,
+                 ms(Slow::Counter::UploadStagingNs), ms(Slow::Counter::UploadReadNs),
+                 ms(Slow::Counter::UploadUnswizzleNs), ms(Slow::Counter::UploadRecordNs),
+                 static_cast<double>(get(Slow::Counter::ZeroUploadBytes)) / (1 << 20),
+                 ms(Slow::Counter::UploadZeroScanNs), ms(Slow::Counter::UploadFillNs),
+                 get(Slow::Counter::GpuWaits), ms(Slow::Counter::GpuWaitNs),
+                 ms(Slow::Counter::GpuWaitMaxNs), get(Slow::Counter::WorkerWaits),
+                 ms(Slow::Counter::WorkerWaitNs), ms(Slow::Counter::WorkerWaitMaxNs),
+                 get(Slow::Counter::Pipelines), ms(Slow::Counter::LowerNs),
+                 ms(Slow::Counter::DriverNs), get(Slow::Counter::Drains),
+                 ms(Slow::Counter::DrainNs), ms(Slow::Counter::DrainMaxNs),
+                 get(Slow::Counter::ReadFlushes), ms(Slow::Counter::ReadFlushNs),
+                 ms(Slow::Counter::ReadFlushMaxNs), get(Slow::Counter::FsReads),
+                 static_cast<double>(get(Slow::Counter::FsReadBytes)) / (1 << 20),
+                 ms(Slow::Counter::FsReadNs), ms(Slow::Counter::FsThrottleNs), jit.blocks,
+                 static_cast<double>(jit.ns) / 1e6, jit.again, jit.other_jit, jit.clears,
+                 jit.ranges, get(Slow::Counter::FastmemRecompiles));
     }
 
     void DiagPresent(const u32* w, std::chrono::steady_clock::time_point entered,

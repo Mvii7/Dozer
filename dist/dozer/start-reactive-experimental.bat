@@ -99,9 +99,10 @@ set EDEN_NX2_MODE_PACE=2
 set EDEN_NX2_PACE_SPIN_US=1500
 rem Donkey Kong Bananza dynamic frame rate (DK_DYN above; 0 = the game's own 60/30 rule).
 set EDEN_NX2_DK_DYN=%DK_DYN%
-rem Donkey Kong Bananza foliage low: 10% of its grass, flowers and plants, in patches, drawn up to 200 units (README).
+rem Donkey Kong Bananza foliage low: 10% of its grass, flowers and plants (50% of the thorns), in patches, drawn up to 200 units (README).
 set EDEN_NX2_DK_FOLIAGE_OFF=
 set EDEN_NX2_DK_FOLIAGE_DENSITY=10
+set EDEN_NX2_DK_FOLIAGE_THORN_DENSITY=50
 set EDEN_NX2_DK_FOLIAGE_DISTANCE=200
 rem Donkey Kong Bananza: medium shadows (the sun shadow in 2 cascades) and very low reflection
 rem updates (the reflection cube map captured every 240 frames instead of 8, README).

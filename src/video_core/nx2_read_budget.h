@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -13,10 +14,15 @@
 // EDEN_NX2_READ_TRAP_BUDGET_US=<n> (unset: 1000, 0: off). With read traps, the guest CPU's reads of
 // GPU-written buffer memory wait for its data (a copy back or a download) at most n microseconds
 // in each 1/60 s; past that, a read goes on with what memory holds, as with read traps off, and a
-// copy back already on its way still lands. Big scenes read little and stay exact; Donkey Kong
-// Bananza's destruction reads ~2,400 times per 10 s and waited 0.5-0.8 s for it. A download (no
-// copy back on its way) is skipped when what is left is less than downloads have been taking
-// (EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0: started anyway, and overshoots the budget).
+// copy back already on its way still lands. What a 1/60 s leaves unused carries over, up to
+// CarrySlices budgets: with the budget reset each 1/60 s, one wait a little longer than it left
+// every later read of that 1/60 s without its data, and a game that reads the same data each
+// frame then drew from stale data every frame (Donkey Kong Bananza's terrain detail flickered).
+// Big scenes read little and stay exact; Donkey Kong Bananza's destruction reads ~2,400 times
+// per 10 s and waited 0.5-0.8 s for it. A download (no copy back on its way) is skipped when what
+// is left is less than downloads have been taking (EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0: started
+// anyway, and overshoots the budget). After a quiet stretch one wait may take the carried budget
+// (up to 4 ms with the default), and downloads are skipped less.
 namespace VideoCommon::Nx2ReadBudget {
 
 [[nodiscard]] inline u64 BudgetUs() noexcept {
@@ -45,9 +51,12 @@ namespace VideoCommon::Nx2ReadBudget {
         .count();
 }
 
+/// Budgets a quiet stretch can save up for later waits.
+inline constexpr s64 CarrySlices = 4;
+
 struct State {
     std::atomic<s64> slice{-1};
-    std::atomic<u64> used_us{};
+    std::atomic<s64> credit_us{}; ///< What is left; below zero after a wait longer than it
     // Since the last line.
     std::atomic<u64> waited{};
     std::atomic<u64> waited_us{};
@@ -84,7 +93,7 @@ inline void MaybeLog(s64 now) {
              g_state.download_avg_us.load(std::memory_order_relaxed));
 }
 
-/// What is left of this slice's budget (none with the budget off).
+/// What is left of the budget (none with the budget off).
 [[nodiscard]] inline u64 RemainingUs() {
     if (!Enabled()) {
         return 0;
@@ -92,13 +101,21 @@ inline void MaybeLog(s64 now) {
     const s64 now = NowNs();
     const s64 slice = now / SliceNs;
     if (s64 seen = g_state.slice.load(std::memory_order_relaxed);
-        seen != slice &&
+        seen < slice &&
         g_state.slice.compare_exchange_strong(seen, slice, std::memory_order_relaxed)) {
-        g_state.used_us.store(0, std::memory_order_relaxed);
+        // Each 1/60 s since adds a budget, up to CarrySlices of them; an overshoot is forgiven.
+        const s64 budget = static_cast<s64>(BudgetUs());
+        const s64 elapsed = seen < 0 ? 1 : (std::min)(slice - seen, CarrySlices);
+        s64 credit = g_state.credit_us.load(std::memory_order_relaxed);
+        while (!g_state.credit_us.compare_exchange_weak(
+            credit, (std::min)((std::max)(credit, s64{0}) + elapsed * budget,
+                               CarrySlices * budget),
+            std::memory_order_relaxed)) {
+        }
     }
     MaybeLog(now);
-    const u64 used = g_state.used_us.load(std::memory_order_relaxed);
-    return used < BudgetUs() ? BudgetUs() - used : 0;
+    const s64 credit = g_state.credit_us.load(std::memory_order_relaxed);
+    return credit > 0 ? static_cast<u64>(credit) : 0;
 }
 
 /// A read went on without its data (counted).
@@ -106,7 +123,7 @@ inline void NoteLenient() {
     g_state.lenient.fetch_add(1, std::memory_order_relaxed);
 }
 
-/// Whether this slice's budget is spent: the read then goes on without waiting (counted).
+/// Whether the budget is spent: the read then goes on without waiting (counted).
 [[nodiscard]] inline bool TakeLenient() {
     if (!Enabled() || RemainingUs() != 0) {
         return false;
@@ -135,7 +152,7 @@ inline void AddSince(s64 start_ns, bool download = false) {
         return;
     }
     const u64 us = static_cast<u64>((NowNs() - start_ns) / 1000);
-    g_state.used_us.fetch_add(us, std::memory_order_relaxed);
+    g_state.credit_us.fetch_sub(static_cast<s64>(us), std::memory_order_relaxed);
     g_state.waited.fetch_add(1, std::memory_order_relaxed);
     g_state.waited_us.fetch_add(us, std::memory_order_relaxed);
     if (download) {

@@ -16,6 +16,7 @@
 
 #include "common/alignment.h"
 #include "common/common_types.h"
+#include "common/nx2_slow_frame.h"
 #include "common/polyfill_thread.h"
 #include "common/settings.h"
 #include "video_core/gpu_split.h"
@@ -185,10 +186,15 @@ public:
     /// be waiting for them).
     void Wait(u64 tick, double target_fps = 0.0, bool may_flush = true) {
         if (tick > 0 && (may_flush || WaitForSubmission(tick))) {
+            namespace Slow = Common::Nx2SlowFrame;
+            const s64 slow_start =
+                Slow::Enabled() && !master_semaphore->IsFree(tick) ? Slow::NowNs() : 0;
             if (tick >= master_semaphore->CurrentTick()) {
                 Flush();
             }
             master_semaphore->Wait(tick);
+            Slow::AddWait(Slow::Counter::GpuWaits, Slow::Counter::GpuWaitNs,
+                          Slow::Counter::GpuWaitMaxNs, slow_start);
         }
         if (Settings::values.use_speed_limit.GetValue() && target_fps > 0.0) {
             auto now = std::chrono::steady_clock::now();

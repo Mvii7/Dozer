@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "common/nx2_slow_frame.h"
 #include "core/file_sys/errors.h"
 #include "core/hle/service/cmif_serialization.h"
 #include "core/hle/service/filesystem/fsp/fs_i_file.h"
@@ -33,6 +34,10 @@ Result IFile::Read(
     LOG_DEBUG(Service_FS, "called, option={}, offset={:#x}, length={}", option.value, offset,
               size);
 
+    namespace Slow = Common::Nx2SlowFrame;
+    Slow::Timer slow_timer{Slow::Counter::FsReadNs};
+    Slow::Add(Slow::Counter::FsReads, 1);
+    Slow::Add(Slow::Counter::FsReadBytes, static_cast<u64>(size));
     // Read the data from the Storage backend
     R_RETURN(
         backend->Read(reinterpret_cast<size_t*>(out_size.Get()), offset, out_buffer.data(), size));

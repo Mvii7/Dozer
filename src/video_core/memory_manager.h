@@ -120,6 +120,8 @@ public:
      * being flushed.
      */
     void ReadBlockUnsafe(GPUVAddr gpu_src_addr, void* dest_buffer, std::size_t size) const;
+    /// True when the range reads as all zeros (as ReadBlockUnsafe would), checked in place.
+    [[nodiscard]] bool IsZeroUnsafe(GPUVAddr gpu_addr, std::size_t size) const;
     /// Reads `count` consecutive words as Read<u32> would, including the syncpoint shim,
     /// in one copy when the range does not overlap that shim.
     void ReadWordsUnsafe(GPUVAddr gpu_src_addr, u32* dest, std::size_t count) const;

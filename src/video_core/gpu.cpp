@@ -18,6 +18,7 @@
 
 #include "common/assert.h"
 #include "common/nx2_reactive.h"
+#include "common/nx2_slow_frame.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "common/nx2_sync_serial.h"
@@ -43,6 +44,7 @@
 #include "video_core/host1x/host1x.h"
 #include "video_core/host1x/syncpoint_manager.h"
 #include "video_core/memory_manager.h"
+#include "video_core/nx2.h"
 #include "video_core/nx2_async_readback.h"
 #include "video_core/rasterizer_download_area.h"
 #include "video_core/nx2_profile.h"
@@ -108,6 +110,12 @@ struct GPU::Impl {
     }
 
     void InitChannel(Control::ChannelState& to_init, u64 program_id) {
+        // The GPU thread split takes over a channel that exists when it starts unreliably (the
+        // front ran macros it never saw uploaded, or the game's first list never ran): start it
+        // first.
+        if (g_nx2_ampere.load(std::memory_order_relaxed)) {
+            gpu_thread.StartSplit();
+        }
         to_init.Init(system, program_id);
         VideoCommon::Nx2Stages::BindNewChannel(to_init, *renderer->ReadRasterizer());
         renderer->ReadRasterizer()->InitializeChannel(to_init);
@@ -397,6 +405,8 @@ struct GPU::Impl {
                      reads.load(std::memory_order_relaxed));
         }
         const s64 flush_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
+        namespace Slow = Common::Nx2SlowFrame;
+        const s64 slow_ns = Slow::Enabled() ? Slow::NowNs() : 0;
         // Only a read-trapped buffer flush counts against the read trap budget.
         const s64 budget_ns = raster_area.read_trap && VideoCommon::Nx2ReadBudget::Enabled()
                                   ? VideoCommon::Nx2ReadBudget::NowNs()
@@ -441,6 +451,8 @@ struct GPU::Impl {
             AsyncReadback::NoteRead();
         }
         VideoCommon::Nx2ReadBudget::AddSince(budget_ns, true);
+        Slow::AddWait(Slow::Counter::ReadFlushes, Slow::Counter::ReadFlushNs,
+                      Slow::Counter::ReadFlushMaxNs, slow_ns);
         if (stats) [[unlikely]] {
             const u64 wait_us = Common::Nx2Reactive::MicrosecondsSince(flush_ns);
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::SyncFlushes, 1);

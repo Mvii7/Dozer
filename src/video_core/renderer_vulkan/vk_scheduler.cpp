@@ -98,6 +98,8 @@ void Scheduler::Finish(VkSemaphore signal_semaphore, VkSemaphore wait_semaphore)
 }
 
 void Scheduler::WaitWorker() {
+    namespace Slow = Common::Nx2SlowFrame;
+    const s64 slow_start = Slow::Enabled() ? Slow::NowNs() : 0;
     DispatchWork();
 
     // Ensure the queue is drained.
@@ -112,6 +114,8 @@ void Scheduler::WaitWorker() {
 
     // Now wait for execution to finish.
     std::scoped_lock el{execution_mutex};
+    Slow::AddWait(Slow::Counter::WorkerWaits, Slow::Counter::WorkerWaitNs,
+                  Slow::Counter::WorkerWaitMaxNs, slow_start);
 }
 
 void Scheduler::DispatchWork() {

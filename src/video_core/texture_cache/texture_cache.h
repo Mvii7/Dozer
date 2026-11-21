@@ -19,6 +19,7 @@
 #include <boost/container/small_vector.hpp>
 
 #include "common/alignment.h"
+#include "common/nx2_zero_check.h"
 #include "common/nx2_reactive.h"
 #include "common/settings.h"
 #include "common/slot_vector.h"
@@ -35,8 +36,10 @@
 #include "video_core/nx2.h"
 #include "video_core/nx2_gpu_pages.h"
 #include "video_core/nx2_profile.h"
+#include "common/nx2_slow_frame.h"
 #include "video_core/nx2_stages.h"
 #include "video_core/nx2_mode_diag.h"
+#include "video_core/texture_cache/formatter.h"
 #include "video_core/textures/decoders.h"
 
 namespace VideoCommon {
@@ -1815,6 +1818,7 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
         // Only upload modified images
         return;
     }
+    Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::UploadNs};
     image.first_gpu_write_frame = 0;
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::TextureUpload};
 
@@ -1879,9 +1883,14 @@ void TextureCache<P>::RefreshContents(Image& image, ImageId image_id) {
     }
     ++images_uploaded;
     uploaded_bytes += image.guest_size_bytes;
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::UploadBytes, image.guest_size_bytes);
     largest_upload = (std::max<u64>)(largest_upload, image.guest_size_bytes);
     if (!UploadInChunks(image)) {
+        const s64 staging_start =
+            Common::Nx2SlowFrame::Enabled() ? Common::Nx2SlowFrame::NowNs() : 0;
         auto staging = runtime.UploadStagingBuffer(MapSizeBytes(image));
+        Common::Nx2SlowFrame::AddSince(Common::Nx2SlowFrame::Counter::UploadStagingNs,
+                                       staging_start);
         UploadImageContents(image, staging);
         runtime.InsertUploadMemoryBarrier();
     }
@@ -2004,6 +2013,8 @@ void TextureCache<P>::UploadLayers(Image& image, std::span<const u32> layers) {
             image.UploadMemory(staging, copies);
             ++images_uploaded;
             uploaded_bytes += u64{image.info.layer_stride} * layers.size();
+            Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::UploadBytes,
+                                      u64{image.info.layer_stride} * layers.size());
             ++layer_uploads;
             return;
         }
@@ -2025,6 +2036,7 @@ void TextureCache<P>::UploadLayers(Image& image, std::span<const u32> layers) {
         runtime.AccelerateImageUploadLayers(image, staging, uploads, layers);
         ++images_uploaded;
         uploaded_bytes += tail * layers.size();
+        Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::UploadBytes, tail * layers.size());
         ++layer_uploads;
     }
 }
@@ -2061,17 +2073,52 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
         return;
     }
 
+    namespace Slow = Common::Nx2SlowFrame;
+    s64 slow_start = Slow::Enabled() ? Slow::NowNs() : 0;
+    const auto slow_phase = [&slow_start](Slow::Counter counter) {
+        if (slow_start != 0) {
+            const s64 now = Slow::NowNs();
+            Slow::Add(counter, static_cast<u64>(now - slow_start));
+            slow_start = now;
+        }
+    };
+    if (False(image.flags & ImageFlagBits::Converted) && ZeroUploadEnabled()) {
+        const bool zero = gpu_memory->IsZeroUnsafe(gpu_addr, image.guest_size_bytes);
+        slow_phase(Slow::Counter::UploadZeroScanNs);
+        if (zero) {
+            // Zeros unswizzle to zeros (most new render targets): only the layout is needed.
+            const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, {}, {});
+            if (ZeroUploadMode() == 2) [[unlikely]] {
+                CheckZeroUpload(image, mapped_span, copies);
+            }
+            if (!copies.empty()) {
+                std::memset(mapped_span.data(), 0,
+                            copies.back().buffer_offset + copies.back().buffer_size);
+            }
+            slow_phase(Slow::Counter::UploadFillNs);
+            Slow::Add(Slow::Counter::ZeroUploadBytes, image.guest_size_bytes);
+            image.UploadMemory(staging, copies);
+            slow_phase(Slow::Counter::UploadRecordNs);
+            return;
+        }
+    }
+    Common::Nx2SlowFrame::AddCpuUnswizzle(static_cast<u32>(image.info.format),
+                                          image.guest_size_bytes);
     Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
         *gpu_memory, gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
+    slow_phase(Slow::Counter::UploadReadNs);
     if (True(image.flags & ImageFlagBits::Converted)) {
         unswizzle_data_buffer.resize_destructive(image.unswizzled_size_bytes);
         auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, unswizzle_data_buffer);
         ConvertImage(unswizzle_data_buffer, image.info, mapped_span, copies);
+        slow_phase(Slow::Counter::UploadUnswizzleNs);
         image.UploadMemory(staging, copies);
     } else {
         const auto copies = UnswizzleImage(*gpu_memory, gpu_addr, image.info, swizzle_data, mapped_span);
+        slow_phase(Slow::Counter::UploadUnswizzleNs);
         image.UploadMemory(staging, copies);
     }
+    slow_phase(Slow::Counter::UploadRecordNs);
 }
 
 template <class P>
@@ -2614,7 +2661,10 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
             }
         }
     }
-    const ImageId new_image_id = slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    const ImageId new_image_id = [&] {
+        Common::Nx2SlowFrame::Timer slow_timer{Common::Nx2SlowFrame::Counter::ImageCreateNs};
+        return slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
+    }();
     Image& new_image = slot_images[new_image_id];
 
     new_image.allocation_tick = frame_tick;
@@ -2629,6 +2679,7 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
         ++shape.first;
         shape.second = gpu_addr;
         ++images_created;
+        Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::ImagesCreated, 1);
     }
 
     if (!gpu_memory->IsContinuousRange(new_image.gpu_addr, new_image.guest_size_bytes) &&
@@ -3610,6 +3661,7 @@ template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     ImageBase& image = slot_images[image_id];
     ++images_deleted;
+    Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::ImagesDeleted, 1);
     if (image.nx2_read_latched && track_read_latches) [[unlikely]] {
         read_latches.Remove(image_id);
     }
@@ -3917,6 +3969,72 @@ void TextureCache<P>::SynchronizeAliases(ImageId image_id) {
         }
         ScaleUp(aliased_image);
         CopyImage(image_id, aliased->id, aliased->copies);
+    }
+}
+
+template <class P>
+int TextureCache<P>::ZeroUploadMode() {
+    static const int mode = [] {
+        const char* value = std::getenv("EDEN_NX2_ZERO_UPLOAD");
+        if (value == nullptr) {
+            return 1;
+        }
+        return value[0] == '1' || value[0] == '2' ? value[0] - '0' : 0;
+    }();
+    return mode;
+}
+
+template <class P>
+bool TextureCache<P>::ZeroUploadEnabled() {
+    return ZeroUploadMode() != 0;
+}
+
+template <class P>
+void TextureCache<P>::CheckZeroUpload(Image& image, std::span<u8> mapped_span,
+                                      std::span<const BufferImageCopy> copies) {
+    // The unswizzle the zero path skips, run as without it (same time spent), its result
+    // compared with the zeros and the layout uploaded instead.
+    static u64 checked = 0;
+    static u64 differed = 0;
+    Tegra::Memory::GpuGuestMemory<u8, Tegra::Memory::GuestMemoryFlags::UnsafeRead> swizzle_data(
+        *gpu_memory, image.gpu_addr, image.guest_size_bytes, &swizzle_data_buffer);
+    const auto unswizzled =
+        UnswizzleImage(*gpu_memory, image.gpu_addr, image.info, swizzle_data, mapped_span);
+    const auto same = [](const BufferImageCopy& a, const BufferImageCopy& b) {
+        return a.buffer_offset == b.buffer_offset && a.buffer_size == b.buffer_size &&
+               a.buffer_row_length == b.buffer_row_length &&
+               a.buffer_image_height == b.buffer_image_height &&
+               a.image_subresource.base_level == b.image_subresource.base_level &&
+               a.image_subresource.base_layer == b.image_subresource.base_layer &&
+               a.image_subresource.num_layers == b.image_subresource.num_layers &&
+               a.image_offset.x == b.image_offset.x && a.image_offset.y == b.image_offset.y &&
+               a.image_offset.z == b.image_offset.z &&
+               a.image_extent.width == b.image_extent.width &&
+               a.image_extent.height == b.image_extent.height &&
+               a.image_extent.depth == b.image_extent.depth;
+    };
+    bool same_layout = unswizzled.size() == copies.size();
+    for (size_t i = 0; same_layout && i < copies.size(); ++i) {
+        same_layout = same(unswizzled[i], copies[i]);
+    }
+    const size_t size =
+        unswizzled.empty() ? 0 : unswizzled.back().buffer_offset + unswizzled.back().buffer_size;
+    const bool zero = Common::IsAllZero(mapped_span.data(), size);
+    ++checked;
+    if (!same_layout || !zero) {
+        if (++differed <= 64) {
+            LOG_WARNING(HW_GPU,
+                        "EDEN_NX2_ZERO_UPLOAD=2: {} {}x{}x{} at {:#x} ({} bytes, {} levels, {} "
+                        "layers) differs: layout {}, unswizzled data {} ({} of {} checked differ)",
+                        image.info.format, image.info.size.width, image.info.size.height,
+                        image.info.size.depth, image.gpu_addr, image.guest_size_bytes,
+                        image.info.resources.levels, image.info.resources.layers,
+                        same_layout ? "same" : "differs", zero ? "zero" : "not zero", differed,
+                        checked);
+        }
+    } else if ((checked & (checked - 1)) == 0) {
+        LOG_INFO(HW_GPU, "EDEN_NX2_ZERO_UPLOAD=2: {} images checked, {} differed", checked,
+                 differed);
     }
 }
 
