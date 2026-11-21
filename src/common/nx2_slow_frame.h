@@ -37,6 +37,7 @@ enum class Counter : size_t {
     FsReadBytes,
     FsReadNs,
     FsThrottleNs,
+    FastmemRecompiles,
     Count,
 };
 
