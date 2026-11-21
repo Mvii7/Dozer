@@ -12,10 +12,12 @@ and `=0` brings back the 2.0.0 code path.
   1 ms). Reset each 1/60 s, one wait a little longer than 1 ms left every later read of that
   frame without its data; when that happened every frame, Donkey Kong Bananza's terrain detail
   flickered (seen after entering new areas). Steady heavy reading is limited as before.
-- Texture uploads (`EDEN_NX2_ZERO_UPLOAD=1`, experiment, off): an image whose guest memory is
-  all zeros is uploaded as zeros without the CPU unswizzle. Donkey Kong Bananza's spikes on
-  entering new areas unswizzled 230-317 MB on the CPU, nearly all of it new render targets over
-  all-zero memory; with this on, terrain detail started flickering after such an area change.
+- Texture uploads (`EDEN_NX2_ZERO_UPLOAD=0` turns it off): an image whose guest memory is all
+  zeros is uploaded as zeros without the CPU unswizzle. Donkey Kong Bananza's spikes on entering
+  new areas unswizzled 230-317 MB on the CPU, nearly all of it new render targets over all-zero
+  memory; their uploads took 78-97 ms, now 24-55 ms (most of it checking the memory for zeros).
+  It needs the read trap budget's carry-over: with it on and the budget reset every 1/60 s,
+  terrain detail flickered after entering new areas.
 - `EDEN_NX2_FIRST_USE=1` (diagnostic): what new images, uploaded from guest memory when they
   are created, are first used for, and how much of that memory was all zeros. Donkey Kong
   Bananza's spikes entering new areas unswizzle 250-317 MB of mostly render target formats on
