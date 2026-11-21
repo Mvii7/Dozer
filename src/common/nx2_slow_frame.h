@@ -13,13 +13,16 @@
 
 /// EDEN_NX2_SLOW_FRAME_MS=<ms>: one "nx2 slow frame:" line for each present that came more than
 /// <ms> after the previous one, with what happened in between (images, uploads, pipelines, waits
-/// for the back, read flushes). Unset or 0: no counter is touched; each hook is a load and a branch.
+/// for the back, read flushes, game file reads, CPU JIT compiles). Unset or 0: no counter is
+/// touched; each hook is a load and a branch.
 namespace Common::Nx2SlowFrame {
 
 enum class Counter : size_t {
     ImagesCreated,
+    ImageCreateNs,
     ImagesDeleted,
     UploadBytes,
+    UploadNs,
     Pipelines,
     LowerNs,
     DriverNs,
@@ -29,8 +32,21 @@ enum class Counter : size_t {
     ReadFlushes,
     ReadFlushNs,
     ReadFlushMaxNs,
+    FsReads,
+    FsReadBytes,
+    FsReadNs,
+    FsThrottleNs,
     Count,
 };
+
+/// The CPU JIT's compiles since the last call (blocks, ns, full cache clears), set by the CPU
+/// backend; null without one.
+struct JitCounts {
+    u64 blocks;
+    u64 ns;
+    u64 clears;
+};
+inline JitCounts (*g_take_jit)() = nullptr;
 
 inline std::array<std::atomic<u64>, static_cast<size_t>(Counter::Count)> g_counters{};
 
@@ -81,6 +97,24 @@ inline void AddWait(Counter count, Counter total, Counter longest, s64 start_ns)
     g_counters[static_cast<size_t>(total)].fetch_add(ns, std::memory_order_relaxed);
     Max(longest, ns);
 }
+
+/// Adds the time from its construction to its destruction.
+class Timer {
+public:
+    explicit Timer(Counter counter_) : counter{counter_}, start{Enabled() ? NowNs() : 0} {}
+    ~Timer() {
+        if (start != 0) {
+            g_counters[static_cast<size_t>(counter)].fetch_add(static_cast<u64>(NowNs() - start),
+                                                               std::memory_order_relaxed);
+        }
+    }
+    Timer(const Timer&) = delete;
+    Timer& operator=(const Timer&) = delete;
+
+private:
+    Counter counter;
+    s64 start;
+};
 
 /// The counters since the last present, cleared.
 [[nodiscard]] inline std::array<u64, static_cast<size_t>(Counter::Count)> Take() {

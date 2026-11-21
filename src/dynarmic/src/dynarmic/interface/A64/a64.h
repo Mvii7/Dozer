@@ -9,6 +9,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -20,6 +21,15 @@
 
 namespace Dynarmic {
 namespace A64 {
+
+/// Blocks compiled, their time in ns and full code cache clears, by every JIT (Eden's
+/// EDEN_NX2_SLOW_FRAME_MS reads and clears them).
+struct CompileStats {
+    std::atomic<std::uint64_t> blocks{};
+    std::atomic<std::uint64_t> ns{};
+    std::atomic<std::uint64_t> clears{};
+};
+inline CompileStats compile_stats;
 
 class Jit final {
 public:

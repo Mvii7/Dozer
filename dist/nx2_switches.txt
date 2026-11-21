@@ -290,9 +290,13 @@
 #EDEN_NX2_MODE_PACE21_DOWN_HOLD=37
 # SLOW_FRAME_MS=<ms> (diagnostic, off unless set): one "nx2 slow frame:" log line for each
 # present more than <ms> after the previous one, with what happened in between: images created
-# and deleted, MB uploaded, pipelines built and their lowering and driver time, waits for the
-# split's back and read trap flushes.
+# and deleted and their time, MB uploaded and its time, pipelines built and their lowering and
+# driver time, waits for the split's back, read trap flushes, the game's file reads and the
+# time IStorage reads were held to EDEN_NX2_FS_READ_MBPS, and the CPU JIT's compiles.
 #EDEN_NX2_SLOW_FRAME_MS=100
+# FS_READ_MBPS=<MB/s>: the rate game data (IStorage) reads are held to, 40 unless set; =0 no
+# limit (each read is charged at most 64 KiB).
+#EDEN_NX2_FS_READ_MBPS=0
 
 # --- Donkey Kong Bananza dynamic frame rate (game-specific; core/loader/nx2_dk_dynamic_fps.h) ---
 # DK_DYN=1: while Bananza's main module loads, patch its frame rate controller in memory (a

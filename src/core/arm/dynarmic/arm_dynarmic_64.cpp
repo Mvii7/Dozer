@@ -14,15 +14,31 @@
 #include <immintrin.h>
 #endif
 #include "common/nx2_reactive.h"
+#include "common/nx2_slow_frame.h"
 #include "common/settings.h"
 #include "core/arm/dynarmic/arm_dynarmic.h"
 #include "core/arm/dynarmic/arm_dynarmic_64.h"
 #include "core/arm/dynarmic/dynarmic_exclusive_monitor.h"
 #include "core/core_timing.h"
 #include "core/hle/kernel/k_process.h"
+#include "dynarmic/interface/A64/a64.h"
 #include "dynarmic/interface/A64/config.h"
 
 namespace Core {
+
+namespace {
+// EDEN_NX2_SLOW_FRAME_MS: the JIT's compiles for the slow frame line.
+const bool slow_frame_jit_hook = [] {
+    Common::Nx2SlowFrame::g_take_jit = [] {
+        auto& stats = Dynarmic::A64::compile_stats;
+        return Common::Nx2SlowFrame::JitCounts{
+            stats.blocks.exchange(0, std::memory_order_relaxed),
+            stats.ns.exchange(0, std::memory_order_relaxed),
+            stats.clears.exchange(0, std::memory_order_relaxed)};
+    };
+    return true;
+}();
+} // namespace
 
 using namespace Common::Literals;
 
