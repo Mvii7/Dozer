@@ -186,8 +186,8 @@ program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
 it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
 **Foliage** (Off, Low, Medium, High: none (`DK_FOLIAGE_OFF=1`), 10% of the foliage and 30% of
-the thorns drawn up to 200 units (`DK_FOLIAGE_DENSITY=10`, `DK_FOLIAGE_THORN_DENSITY=30`,
-`DK_FOLIAGE_DISTANCE=200`), 50% and 60% up to 400, High the game's own),
+the thorns drawn up to 200 units (`DK_FOLIAGE_DENSITY=10`, `DK_FOLIAGE_THORN_DENSITY=50`,
+`DK_FOLIAGE_DISTANCE=200`), 50% and 75% up to 400, High the game's own),
 **Reflection updates**
 (Very low, Low, Medium, High: the reflection cube map captured every 240, 32, 16 or 8 frames,
 High the game's own; `DK_CUBEMAP_INTERVAL=240` / `32` / `16`) and
@@ -286,7 +286,7 @@ error. Take the launchers from the release zip: they need Windows line endings (
   and only prints a note when an existing one has it on. Read traps stay
   on: the launcher clears `EDEN_NX2_READ_TRAPS`, and unset means on. For Bananza, low foliage,
   very low reflection updates and medium shadows (`DK_FOLIAGE_DENSITY=10`,
-  `DK_FOLIAGE_THORN_DENSITY=30`, `DK_FOLIAGE_DISTANCE=200`, `DK_CUBEMAP_INTERVAL=240`,
+  `DK_FOLIAGE_THORN_DENSITY=50`, `DK_FOLIAGE_DISTANCE=200`, `DK_CUBEMAP_INTERVAL=240`,
   `DK_SHADOW_CASCADES=2`).
 - **`start-quality.bat`** - the same as `start-performance.bat`, with Bananza as the game makes
   it: foliage, reflections and very high shadows (those three lines cleared).
@@ -380,10 +380,10 @@ the same way (foliage off wins over both):
   take the code's default of 100, which a distance under 100 brings down too (in the code, only
   when nothing else there reads that value).
 
-`start-performance.bat` and `start-reactive-experimental.bat` set the Low level (10% kept, 30% of
+`start-performance.bat` and `start-reactive-experimental.bat` set the Low level (10% kept, 50% of
 the thorns, drawn up to 200 units); `start-quality.bat` and `start-safe.bat` leave the foliage as the game makes it. In
 the menu program it is the **Foliage** dropdown in Bananza's Properties > Tuning: Off, Low,
-Medium (50%, thorns 60%, 400 units) and High. The Performance and Experimental presets choose Low, Quality and
+Medium (50%, thorns 75%, 400 units) and High. The Performance and Experimental presets choose Low, Quality and
 Safe High. A game's Foliage off box from before the dropdown is read as Off when ticked, High
 when unticked. It applies when the game starts.
 

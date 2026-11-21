@@ -21,8 +21,8 @@ and `=0` brings back the 2.0.0 code path.
   are shorter. A list is for one build of the game (a game update starts a new one), and it
   keeps the newest blocks that fit in three quarters of a core's code cache.
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
-  (10% of the foliage and 30% of the thorns, thinned in patches, drawn up to 200 units), Medium
-  (50%, thorns 60%, 400 units) and High (the game's own). The thorns have their own density,
+  (10% of the foliage and 50% of the thorns, thinned in patches, drawn up to 200 units), Medium
+  (50%, thorns 75%, 400 units) and High (the game's own). The thorns have their own density,
   `EDEN_NX2_DK_FOLIAGE_THORN_DENSITY`, as they look odd as thin as grass can be. `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of
   time (its ProceduralPlacement files, as they are read) and the foliage placed while playing;
   `EDEN_NX2_DK_FOLIAGE_DISTANCE` brings every model's draw distance down to one line (under 100,

@@ -33,7 +33,7 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_DK_DYN", "1"},
     {"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"},
     {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"},
-    {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "30"},
+    {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "50"},
     {"EDEN_NX2_DK_SHADOW_CASCADES", "2"},
     {"EDEN_NX2_DK_CUBEMAP_INTERVAL", "240"},
     {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
@@ -745,11 +745,11 @@ TEST_CASE("Nx2PerfSettings: Bananza's foliage", "[core]") {
     switches.dk_foliage = FoliageLow;
     REQUIRE(foliage(switches) == std::vector<Var>{{"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"},
                                                   {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"},
-                                                  {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "30"}});
+                                                  {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "50"}});
     switches.dk_foliage = FoliageMedium;
     REQUIRE(foliage(switches) == std::vector<Var>{{"EDEN_NX2_DK_FOLIAGE_DENSITY", "50"},
                                                   {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "400"},
-                                                  {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "60"}});
+                                                  {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "75"}});
     switches.dk_foliage = FoliageHigh;
     REQUIRE(foliage(switches).empty());
     for (const Var& var : Wanted(Performance(), Game::Bananza)) {
