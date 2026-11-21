@@ -19,9 +19,10 @@
 // every later read of that 1/60 s without its data, and a game that reads the same data each
 // frame then drew from stale data every frame (Donkey Kong Bananza's terrain detail flickered).
 // Big scenes read little and stay exact; Donkey Kong Bananza's destruction reads ~2,400 times
-// per 10 s and waited 0.5-0.8 s for it. A download (no
-// copy back on its way) is skipped when what is left is less than downloads have been taking
-// (EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0: started anyway, and overshoots the budget).
+// per 10 s and waited 0.5-0.8 s for it. A download (no copy back on its way) is skipped when what
+// is left is less than downloads have been taking (EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0: started
+// anyway, and overshoots the budget). After a quiet stretch one wait may take the carried budget
+// (up to 4 ms with the default), and downloads are skipped less.
 namespace VideoCommon::Nx2ReadBudget {
 
 [[nodiscard]] inline u64 BudgetUs() noexcept {
