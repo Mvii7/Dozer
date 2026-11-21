@@ -128,8 +128,10 @@ public:
     }
 
     std::size_t Precompile(const u64* descriptors, std::size_t count) {
-        // Room for what the run compiles: a full cache is emptied at the next new block.
-        const std::size_t reserve = conf.code_cache_size / 4;
+        // Room for what the run compiles: a full cache is emptied at the next new block. A
+        // quarter of what is left now (the far code region, a quarter of the cache, runs out
+        // first).
+        const std::size_t reserve = block_of_code.SpaceRemaining() / 4;
         for (std::size_t i = 0; i < count; ++i) {
             if (block_of_code.SpaceRemaining() < reserve) {
                 return i;
