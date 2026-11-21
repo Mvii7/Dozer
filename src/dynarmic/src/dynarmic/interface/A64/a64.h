@@ -23,11 +23,17 @@ namespace Dynarmic {
 namespace A64 {
 
 /// Blocks compiled, their time in ns and full code cache clears, by every JIT (Eden's
-/// EDEN_NX2_SLOW_FRAME_MS reads and clears them).
+/// EDEN_NX2_SLOW_FRAME_MS reads and clears them). With `track`: of the blocks, those this JIT
+/// compiled before (`again`) and those another JIT compiled before (`other_jit`), and the
+/// ranges invalidated.
 struct CompileStats {
     std::atomic<std::uint64_t> blocks{};
     std::atomic<std::uint64_t> ns{};
     std::atomic<std::uint64_t> clears{};
+    std::atomic<bool> track{};
+    std::atomic<std::uint64_t> again{};
+    std::atomic<std::uint64_t> other_jit{};
+    std::atomic<std::uint64_t> ranges{};
 };
 inline CompileStats compile_stats;
 

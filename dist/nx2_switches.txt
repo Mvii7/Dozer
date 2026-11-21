@@ -292,7 +292,8 @@
 # present more than <ms> after the previous one, with what happened in between: images created
 # and deleted and their time, MB uploaded and its time, pipelines built and their lowering and
 # driver time, waits for the split's back, read trap flushes, the game's file reads and the
-# time IStorage reads were held to EDEN_NX2_FS_READ_MBPS, and the CPU JIT's compiles.
+# time IStorage reads were held to EDEN_NX2_FS_READ_MBPS, and the CPU JIT's compiles (how many
+# the same core or another core compiled before, and the code ranges invalidated).
 #EDEN_NX2_SLOW_FRAME_MS=100
 # FS_READ_MBPS=<MB/s>: the rate game data (IStorage) reads are held to, 40 unless set; =0 no
 # limit (each read is charged at most 64 KiB).

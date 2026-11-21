@@ -1713,7 +1713,8 @@ private:
                  "the CPU) | pipelines {} lower "
                  "{:.1f} ms driver {:.1f} ms | back drains {} {:.1f} ms (max {:.1f}) | read "
                  "flushes {} {:.1f} ms (max {:.1f}) | file reads {} {:.1f} MB {:.1f} ms (throttle "
-                 "{:.1f} ms) | jit {} blocks {:.1f} ms, {} cache clears",
+                 "{:.1f} ms) | jit {} blocks {:.1f} ms ({} compiled before on the same core, {} on "
+                 "another), {} cache clears, {} ranges invalidated",
                  static_cast<double>(frame_us) / 1e3, m_presents,
                  static_cast<double>(fence_us) / 1e3, static_cast<double>(composite_us) / 1e3,
                  get(Slow::Counter::ImagesCreated), ms(Slow::Counter::ImageCreateNs),
@@ -1728,7 +1729,8 @@ private:
                  ms(Slow::Counter::ReadFlushMaxNs), get(Slow::Counter::FsReads),
                  static_cast<double>(get(Slow::Counter::FsReadBytes)) / (1 << 20),
                  ms(Slow::Counter::FsReadNs), ms(Slow::Counter::FsThrottleNs), jit.blocks,
-                 static_cast<double>(jit.ns) / 1e6, jit.clears);
+                 static_cast<double>(jit.ns) / 1e6, jit.again, jit.other_jit, jit.clears,
+                 jit.ranges);
     }
 
     void DiagPresent(const u32* w, std::chrono::steady_clock::time_point entered,

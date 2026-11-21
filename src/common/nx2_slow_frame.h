@@ -46,6 +46,9 @@ struct JitCounts {
     u64 blocks;
     u64 ns;
     u64 clears;
+    u64 again;     ///< compiled before by the same JIT
+    u64 other_jit; ///< compiled before by another core's JIT
+    u64 ranges;    ///< ranges invalidated
 };
 inline JitCounts (*g_take_jit)() = nullptr;
 
