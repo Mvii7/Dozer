@@ -488,6 +488,10 @@ private:
     /// EDEN_NX2_ZERO_UPLOAD=1 (off by default): an image whose guest memory is all zeros is
     /// uploaded as zeros without the CPU unswizzle.
     [[nodiscard]] static bool ZeroUploadEnabled();
+    /// 0 off, 1 on, 2 on and checked: the unswizzle still runs and its result is compared.
+    [[nodiscard]] static int ZeroUploadMode();
+    void CheckZeroUpload(Image& image, std::span<u8> mapped_span,
+                         std::span<const BufferImageCopy> copies);
 
     /// Create a new image view from a guest descriptor
     [[nodiscard]] ImageViewId CreateImageView(const TICEntry& config);
