@@ -8,9 +8,9 @@
 
 #include <atomic>
 #include <list>
-#include <string>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "common/polyfill_thread.h"
@@ -100,8 +100,8 @@ private:
 
     // Named in the shutdown log when this manager's thread does not stop.
     std::vector<std::string> m_names{};
-    std::atomic<bool> m_busy{};
-    std::atomic<u32> m_busy_command{};
+    std::atomic<u32> m_busy{};         ///< Requests in progress (several threads may serve them)
+    std::atomic<u32> m_busy_command{}; ///< The last one's command
 };
 
 } // namespace Service

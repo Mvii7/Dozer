@@ -106,8 +106,10 @@ ServerManager::~ServerManager() {
             names += names.empty() ? name : ", " + name;
         }
         LOG_WARNING(Service, "Shutdown: the server of [{}] has not stopped after 2 s ({})", names,
-                    m_busy ? fmt::format("in command {}", m_busy_command.load())
-                           : std::string{"not in a request"});
+                    m_busy.load(std::memory_order_relaxed) != 0
+                        ? fmt::format("in command {}",
+                                      m_busy_command.load(std::memory_order_relaxed))
+                        : std::string{"not in a request"});
         m_stopped.Wait();
     }
     m_threads.clear();
@@ -390,11 +392,11 @@ Result ServerManager::CompleteSyncRequest(Session* session) {
 
     // Complete the request. We have exclusive access to this session.
     auto* server_session = static_cast<Kernel::KServerSession*>(session->GetNativeHandle());
-    m_busy_command = session->GetContext()->GetCommand();
-    m_busy = true;
+    m_busy_command.store(session->GetContext()->GetCommand(), std::memory_order_relaxed);
+    m_busy.fetch_add(1, std::memory_order_relaxed);
     service_res =
         session->GetManager()->CompleteSyncRequest(server_session, *session->GetContext());
-    m_busy = false;
+    m_busy.fetch_sub(1, std::memory_order_relaxed);
 
     // If we've been deferred, we're done.
     if (session->GetContext()->GetIsDeferred()) {
