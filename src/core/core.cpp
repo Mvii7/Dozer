@@ -218,7 +218,7 @@ void DumpThreads(Kernel::KernelCore& kernel) {
             context.r[2] <= 64 && memory.IsValidVirtualAddressRange(context.r[1], context.r[2] * 4)) {
             for (u64 i = 0; i < context.r[2] && i < 8; ++i) {
                 const Kernel::Handle handle = memory.Read32(context.r[1] + i * 4);
-                auto object = process->GetHandleTable().GetObject(kernel, handle);
+                auto object = process->GetHandleTable().GetObjectWithoutPseudoHandle(kernel, handle);
                 objects += fmt::format(" {:#x}:{}", handle,
                                        object.IsNull() ? "none" : object->GetTypeName());
             }
