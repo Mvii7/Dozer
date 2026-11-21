@@ -7,12 +7,20 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <string>
+#include <thread>
+#include <unordered_set>
+#include <vector>
 #if defined(_M_X64) || defined(__x86_64__)
 #include <immintrin.h>
 #endif
+#include "common/fs/path_util.h"
 #include "common/nx2_reactive.h"
 #include "common/nx2_slow_frame.h"
 #include "common/settings.h"
@@ -43,6 +51,153 @@ const bool slow_frame_jit_hook = [] {
     };
     return true;
 }();
+
+// EDEN_NX2_JIT_BLOCK_LIST=1: the blocks the JIT compiles are saved per title
+// (<cache>/nx2_jit/<title id>.bin, every 30 s and when emulation stops), and each core compiles
+// the saved ones before its first run, so code reached in an earlier session is not compiled in
+// the frame that first runs it, once by each core.
+namespace JitBlockList {
+
+constexpr u64 Magic = 0x31304C424A32584EULL; // "NX2JBL01"
+constexpr size_t MaxBlocks = 4'000'000;
+constexpr u64 PcMask = (u64{1} << 56) - 1;
+
+bool Enabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST");
+        return value != nullptr && value[0] == '1';
+    }();
+    return enabled;
+}
+
+struct State {
+    std::mutex mutex;
+    bool loaded = false;
+    std::filesystem::path path;
+    std::unordered_set<u64> known;
+    std::vector<u64> saved_list;
+    size_t saved_count = 0;
+    // The saved blocks in executable memory, the first time a core asks.
+    std::once_flag ready_once;
+    std::vector<u64> ready;
+    std::jthread saver; // last: stopped (and the list saved) before the rest goes
+};
+
+State& Get() {
+    static State state;
+    return state;
+}
+
+void Record(u64 descriptor) {
+    auto& state = Get();
+    std::scoped_lock lock{state.mutex};
+    if (state.known.size() < MaxBlocks) {
+        state.known.insert(descriptor);
+    }
+}
+
+void Save() {
+    auto& state = Get();
+    std::vector<u64> list;
+    std::filesystem::path path;
+    {
+        std::scoped_lock lock{state.mutex};
+        if (!state.loaded || state.known.size() == state.saved_count) {
+            return;
+        }
+        list.assign(state.known.begin(), state.known.end());
+        state.saved_count = list.size();
+        path = state.path;
+    }
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    auto temporary = path;
+    temporary += ".tmp";
+    {
+        std::ofstream file{temporary, std::ios::binary | std::ios::trunc};
+        const u64 header[2]{Magic, list.size()};
+        file.write(reinterpret_cast<const char*>(header), sizeof(header));
+        file.write(reinterpret_cast<const char*>(list.data()),
+                   static_cast<std::streamsize>(list.size() * sizeof(u64)));
+        if (!file) {
+            return;
+        }
+    }
+    std::filesystem::rename(temporary, path, error);
+}
+
+/// Loads the title's list once and starts recording; true when enabled.
+bool Load(u64 program_id) {
+    if (!Enabled()) {
+        return false;
+    }
+    auto& state = Get();
+    std::scoped_lock lock{state.mutex};
+    if (state.loaded) {
+        return true;
+    }
+    state.loaded = true;
+    state.path = Common::FS::GetEdenPath(Common::FS::EdenPath::CacheDir) / "nx2_jit" /
+                 fmt::format("{:016X}.bin", program_id);
+    std::ifstream file{state.path, std::ios::binary};
+    u64 header[2]{};
+    if (file.read(reinterpret_cast<char*>(header), sizeof(header)) && header[0] == Magic &&
+        header[1] <= MaxBlocks) {
+        state.saved_list.resize(header[1]);
+        if (!file.read(reinterpret_cast<char*>(state.saved_list.data()),
+                       static_cast<std::streamsize>(header[1] * sizeof(u64)))) {
+            state.saved_list.clear();
+        }
+    }
+    state.known.insert(state.saved_list.begin(), state.saved_list.end());
+    state.saved_count = state.known.size();
+    LOG_INFO(Core_ARM, "nx2 jit block list: {} blocks saved for {:016X} ({})",
+             state.saved_list.size(), program_id, Common::FS::PathToUTF8String(state.path));
+    Dynarmic::A64::on_block_compiled = Record;
+    state.saver = std::jthread([](std::stop_token stop) {
+        std::mutex wait_mutex;
+        std::condition_variable_any wake;
+        while (!stop.stop_requested()) {
+            std::unique_lock wait_lock{wait_mutex};
+            wake.wait_for(wait_lock, stop, std::chrono::seconds{30}, [] { return false; });
+            Save();
+        }
+    });
+    return true;
+}
+
+/// The saved blocks whose code is in executable memory of the process.
+const std::vector<u64>& Ready(Kernel::KProcess& process) {
+    auto& state = Get();
+    std::call_once(state.ready_once, [&] {
+        std::vector<u64> list = state.saved_list;
+        std::sort(list.begin(), list.end(),
+                  [](u64 a, u64 b) { return (a & PcMask) < (b & PcMask); });
+        u64 region_start = 0;
+        u64 region_end = 0;
+        bool executable = false;
+        for (const u64 descriptor : list) {
+            const u64 pc = descriptor & PcMask;
+            if (pc < region_start || pc >= region_end) {
+                Kernel::KMemoryInfo info{};
+                Kernel::Svc::PageInfo page_info{};
+                if (process.GetPageTable().QueryInfo(&info, &page_info, pc) != ResultSuccess) {
+                    region_start = region_end = 0;
+                    continue;
+                }
+                region_start = info.GetAddress();
+                region_end = info.GetEndAddress();
+                executable = True(info.GetPermission() & Kernel::KMemoryPermission::UserExecute);
+            }
+            if (executable && pc + sizeof(u32) <= region_end) {
+                state.ready.push_back(descriptor);
+            }
+        }
+    });
+    return state.ready;
+}
+
+} // namespace JitBlockList
 } // namespace
 
 using namespace Common::Literals;
@@ -485,6 +640,21 @@ void ArmDynarmic64::MakeJit(Common::PageTable* page_table, std::size_t address_s
 }
 
 HaltReason ArmDynarmic64::RunThread(Kernel::KThread* thread) {
+    if (!m_block_list_done) [[unlikely]] {
+        m_block_list_done = true;
+        Kernel::KProcess* const process = m_cb->m_process;
+        if (process != nullptr && process->IsApplication() &&
+            JitBlockList::Load(process->GetProgramId())) {
+            const auto start = std::chrono::steady_clock::now();
+            const auto& ready = JitBlockList::Ready(*process);
+            const size_t compiled = m_jit->Precompile(ready.data(), ready.size());
+            LOG_INFO(Core_ARM, "nx2 jit block list: core {} compiled {} of {} saved blocks in {} ms",
+                     m_core_index, compiled, ready.size(),
+                     std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now() - start)
+                         .count());
+        }
+    }
     m_jit->ClearExclusiveState();
     return TranslateHaltReason(m_jit->Run());
 }
@@ -528,7 +698,11 @@ ArmDynarmic64::ArmDynarmic64(System& system, bool uses_wall_clock, Kernel::KProc
     MakeJit(&page_table_impl, page_table.GetAddressSpaceWidth());
 }
 
-ArmDynarmic64::~ArmDynarmic64() = default;
+ArmDynarmic64::~ArmDynarmic64() {
+    if (m_block_list_done && JitBlockList::Enabled()) {
+        JitBlockList::Save();
+    }
+}
 
 void ArmDynarmic64::SetTpidrroEl0(u64 value) {
     m_cb->m_tpidrro_el0 = value;

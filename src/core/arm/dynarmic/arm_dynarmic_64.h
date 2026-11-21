@@ -114,6 +114,7 @@ private:
     std::size_t m_core_index{};
 
     std::optional<Dynarmic::A64::Jit> m_jit{};
+    bool m_block_list_done{}; ///< EDEN_NX2_JIT_BLOCK_LIST: the saved blocks compiled
 
     // SVC callback
     u32 m_svc{};
