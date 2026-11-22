@@ -248,6 +248,11 @@ public:
     /// Notify rasterizer that any caches of the specified region should be flushed to Switch memory
     [[nodiscard]] VideoCore::RasterizerDownloadArea OnCPURead(DAddr addr, u64 size);
 
+    /// EDEN_NX2_TRAP_CHECK: whether guest memory may be older than the GPU's data here, without
+    /// flushing: bit 0 the buffer cache holds newer bytes of the range, bit 1 its pages hold
+    /// GPU-written data (HoldsGpuWrittenData: images, queries, or buffer bytes elsewhere).
+    [[nodiscard]] u32 Nx2NewerDataHeld(DAddr addr, u64 size);
+
     /// Notify rasterizer that any caches of the specified region should be flushed to Switch memory
     void FlushRegion(DAddr addr, u64 size);
 

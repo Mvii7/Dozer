@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <set>
 #include <span>
 #include <thread>
 #include <type_traits>
@@ -77,6 +78,7 @@ struct Memory::Impl {
 
         std::scoped_lock lk{read_trap_mutex};
         read_traps.Clear();
+        trap_check_open.clear();
     }
 
     void MapMemoryRegion(Common::PageTable& page_table, Common::ProcessAddress base, u64 size,
@@ -91,6 +93,8 @@ struct Memory::Impl {
             trap_lock.lock();
             read_traps.Drop(GetInteger(base) >> YUZU_PAGEBITS,
                             (GetInteger(base) + size) >> YUZU_PAGEBITS);
+            TrapCheckDrop(GetInteger(base) >> YUZU_PAGEBITS,
+                          (GetInteger(base) + size) >> YUZU_PAGEBITS);
         }
         MapPages(page_table, base / YUZU_PAGESIZE, size / YUZU_PAGESIZE, target,
                  Common::PageType::Memory);
@@ -109,6 +113,8 @@ struct Memory::Impl {
             trap_lock.lock();
             read_traps.Drop(GetInteger(base) >> YUZU_PAGEBITS,
                             (GetInteger(base) + size) >> YUZU_PAGEBITS);
+            TrapCheckDrop(GetInteger(base) >> YUZU_PAGEBITS,
+                          (GetInteger(base) + size) >> YUZU_PAGEBITS);
         }
         MapPages(page_table, base / YUZU_PAGESIZE, size / YUZU_PAGESIZE, 0,
                  Common::PageType::Unmapped);
@@ -516,12 +522,18 @@ struct Memory::Impl {
             if (!cached) {
                 // Nothing is left to flush on pages the GPU no longer caches.
                 read_traps.Drop(page_begin, page_end);
+                TrapCheckDrop(page_begin, page_end);
             } else if (perm != Common::MemoryPermission{}) {
                 // Armed pages that were just cached again lose read permission again.
                 read_traps.ForEach(page_begin, page_end, [&](u64 page) {
                     host_buffer->Protect(page << YUZU_PAGEBITS, YUZU_PAGESIZE,
                                          Common::MemoryPermission{});
                 });
+                for (auto it = trap_check_open.lower_bound(page_begin);
+                     it != trap_check_open.end() && *it < page_end; ++it) {
+                    host_buffer->Protect(*it << YUZU_PAGEBITS, YUZU_PAGESIZE,
+                                         Common::MemoryPermission{});
+                }
             }
         }
 
@@ -597,6 +609,59 @@ struct Memory::Impl {
                Settings::values.cpu_backend.GetValue() != Settings::CpuBackend::Nce;
     }
 
+    /// EDEN_NX2_TRAP_CHECK=1 (diagnostic, slow): pages a read disarms stay unreadable, and each
+    /// later read of one before a GPU write arms it again (which read traps let through without
+    /// a flush) asks the GPU whether it holds newer data there: "Read trap check" lines name the
+    /// reads that would have found older data, which are flushed instead.
+    static bool TrapCheck() {
+        static const bool enabled = [] {
+            const char* value = std::getenv("EDEN_NX2_TRAP_CHECK");
+            return value != nullptr && value[0] == '1';
+        }();
+        return enabled;
+    }
+
+    /// The pages in [page_begin, page_end) are no longer the check's (read_trap_mutex held).
+    void TrapCheckDrop(u64 page_begin, u64 page_end) {
+        if (trap_check_open.empty()) [[likely]] {
+            return;
+        }
+        trap_check_open.erase(trap_check_open.lower_bound(page_begin),
+                              trap_check_open.lower_bound(page_end));
+    }
+
+    /// Whether a read of [vaddr, vaddr + size) touches a page the check keeps unreadable.
+    bool TrapCheckOpen(u64 vaddr, size_t size) {
+        std::scoped_lock lk{read_trap_mutex};
+        const u64 page_end = ((vaddr + size - 1) >> YUZU_PAGEBITS) + 1;
+        const auto it = trap_check_open.lower_bound(vaddr >> YUZU_PAGEBITS);
+        return it != trap_check_open.end() && *it < page_end;
+    }
+
+    /// A read read traps would have let through: logged when the GPU holds newer data there.
+    void TrapCheckRead(u64 vaddr, DAddr address, size_t size) {
+        const u64 reads = trap_check_reads.fetch_add(1, std::memory_order_relaxed) + 1;
+        const u32 held = system.GPU().Nx2NewerDataHeld(address, size);
+        if (held != 0) {
+            const u64 stale = trap_check_stale.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (stale <= 64 || (stale & (stale - 1)) == 0) {
+                LOG_WARNING(HW_Memory,
+                            "Read trap check: read of {:#x}+{:#x} (device {:#x}) would have found "
+                            "older data: {} ({} of {} such reads so far)",
+                            vaddr, size, address,
+                            (held & 1) != 0
+                                ? "the buffer cache holds newer bytes"
+                                : "its pages hold GPU-written data (an image, a query, or buffer "
+                                  "bytes elsewhere on the page)",
+                            stale, reads);
+            }
+        } else if ((reads & (reads - 1)) == 0 && reads >= 1024) {
+            LOG_INFO(HW_Memory, "Read trap check: {} reads read traps let through, {} of them "
+                                "would have found older data",
+                     reads, trap_check_stale.load(std::memory_order_relaxed));
+        }
+    }
+
     void RasterizerArmReadTraps(u64 vaddr, u64 size) {
         if (vaddr == 0 || size == 0 || !AddressSpaceContains(*current_page_table, vaddr, size) ||
             !ReadTrapsEnabled()) {
@@ -626,6 +691,9 @@ struct Memory::Impl {
                 generation = read_traps.NewGeneration();
             }
             read_traps.Arm(page, generation);
+            if (!trap_check_open.empty()) [[unlikely]] {
+                trap_check_open.erase(page);
+            }
             if (run_pages == 0) {
                 run_begin = page;
             }
@@ -653,9 +721,15 @@ struct Memory::Impl {
                 run_pages = 0;
             }
         };
+        const bool check = TrapCheck();
         read_traps.Disarm(vaddr >> YUZU_PAGEBITS, page_end, flushed_generation, [&](u64 page) {
             if (std::as_const(current_page_table->entries)[page].Type() !=
                 Common::PageType::RasterizerCachedMemory) {
+                return;
+            }
+            if (check) [[unlikely]] {
+                // Readable from here on without the check: kept unreadable to see its reads.
+                trap_check_open.insert(page);
                 return;
             }
             if (run_pages == 0 || page != run_begin + run_pages) {
@@ -902,8 +976,13 @@ struct Memory::Impl {
             rasterizer_read_epochs[core] = epoch;
             current_area = {};
         }
+        const bool check_open = TrapCheck() && TrapCheckOpen(v_address, size);
         gpu_device_memory->ApplyOpOnPointer(p, scratch_buffers[core], [&](DAddr address) {
             const DAddr end_address = address + size;
+            if (check_open) [[unlikely]] {
+                TrapCheckRead(v_address, address, size);
+                current_area = {};
+            }
             if (current_area.start_address <= address && end_address <= current_area.end_address)
                 [[likely]] {
                 return;
@@ -991,6 +1070,11 @@ struct Memory::Impl {
     std::array<u64, Core::Hardware::NUM_CPU_CORES> read_area_generations{};
     ReadTraps read_traps;
     std::mutex read_trap_mutex;
+    /// EDEN_NX2_TRAP_CHECK: pages a read would have disarmed and left readable, and no GPU write
+    /// armed again since. They stay unreadable, so their reads come here to be checked.
+    std::set<u64> trap_check_open;
+    std::atomic<u64> trap_check_reads{};
+    std::atomic<u64> trap_check_stale{};
     std::array<GPUDirtyState, Core::Hardware::NUM_CPU_CORES> rasterizer_write_areas{};
     std::array<Common::ScratchBuffer<u32>, Core::Hardware::NUM_CPU_CORES> scratch_buffers{};
     std::span<Core::GPUDirtyMemoryManager> gpu_dirty_managers;

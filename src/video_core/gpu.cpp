@@ -777,6 +777,18 @@ VideoCore::RasterizerDownloadArea GPU::OnCPURead(PAddr addr, u64 size) {
     return impl->OnCPURead(addr, size);
 }
 
+u32 GPU::Nx2NewerDataHeld(DAddr addr, u64 size) {
+    auto* const rasterizer = impl->renderer->ReadRasterizer();
+    u32 held = 0;
+    if (rasterizer->MustFlushRegion(addr, size, VideoCommon::CacheType::BufferCache)) {
+        held |= 1;
+    }
+    if (rasterizer->HoldsGpuWrittenData(addr, size)) {
+        held |= 2;
+    }
+    return held;
+}
+
 void GPU::FlushRegion(DAddr addr, u64 size) {
     impl->FlushRegion(addr, size);
 }
