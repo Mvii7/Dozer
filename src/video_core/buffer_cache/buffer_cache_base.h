@@ -1101,20 +1101,55 @@ private:
                                       Settings::values.use_reactive_flushing.GetValue()));
     }
 
+    /// EDEN_NX2_ARM_NEW_PAGES=1 (off unless set): a GPU write to a partly armed range arms only
+    /// its pages not armed yet, instead of the whole range again (after Eglantine's
+    /// ReadTrapTracker).
+    static bool ArmNewPagesOnly() {
+        static const bool enabled = [] {
+            const char* value = std::getenv("EDEN_NX2_ARM_NEW_PAGES");
+            return value != nullptr && value[0] == '1';
+        }();
+        return enabled;
+    }
+
     /// Traps the guest CPU's next read of these pages (ReadTrapsActive). Its flush notes the
     /// page as CPU-read, so later GPU writes there are copied back at fences instead.
     void ArmReadTraps(DAddr device_addr, u64 size) {
         const DAddr begin = Common::AlignDown(device_addr, Core::DEVICE_PAGESIZE);
         const DAddr end = Common::AlignUp(device_addr + size, Core::DEVICE_PAGESIZE);
         u64 armed_bytes = 0;
+        boost::container::small_vector<std::pair<DAddr, DAddr>, 8> gaps;
+        DAddr next = begin;
         read_trapped_ranges.ForEachInRange(begin, end - begin, [&](DAddr lower, DAddr upper) {
             armed_bytes += upper - lower;
+            if (lower > next) {
+                gaps.emplace_back(next, lower);
+            }
+            next = (std::max)(next, upper);
         });
         if (armed_bytes == end - begin) {
             return;
         }
+        if (next < end) {
+            gaps.emplace_back(next, end);
+        }
+        const bool stats = Common::Nx2Reactive::StatsEnabled();
+        const s64 start_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
         read_trapped_ranges.Add(begin, end - begin);
-        device_memory.ArmReadTraps(begin, end - begin);
+        if (ArmNewPagesOnly()) {
+            for (const auto& [gap_begin, gap_end] : gaps) {
+                device_memory.ArmReadTraps(gap_begin, gap_end - gap_begin);
+            }
+        } else {
+            device_memory.ArmReadTraps(begin, end - begin);
+        }
+        if (stats) [[unlikely]] {
+            namespace Reactive = Common::Nx2Reactive;
+            Reactive::Add(Reactive::Counter::ArmPagesNew,
+                          (end - begin - armed_bytes) / Core::DEVICE_PAGESIZE);
+            Reactive::Add(Reactive::Counter::ArmPagesArmed, armed_bytes / Core::DEVICE_PAGESIZE);
+            Reactive::Add(Reactive::Counter::ArmNs, static_cast<u64>(Reactive::NowNs() - start_ns));
+        }
     }
 
     /// Pages handed to ArmReadTraps and not read since (ForgetReadTraps): a GPU write to one of

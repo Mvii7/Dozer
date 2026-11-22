@@ -129,6 +129,9 @@ enum class Counter : u32 {
     PopCopies,              ///< Copies landed
     FlushAreaNoLock,        ///< GetFlushArea calls answered without a lock (FLUSH_AREA_NOLOCK)
     UntrappedReadsSkipped,  ///< Slow reads that skipped GetFlushArea (SKIP_UNTRAPPED_READS)
+    ArmPagesNew,            ///< Pages a GPU write armed that were not armed yet
+    ArmPagesArmed,          ///< Of the same writes, pages already armed (ARM_NEW_PAGES skips)
+    ArmNs,                  ///< Time in the core arming them (under the buffer cache's lock)
     Count,
 };
 
@@ -295,7 +298,7 @@ struct Window {
                        "barriers {} (light {}); fastmem read fallbacks {}, read faults kept {}; traps "
                        "disarmed at copy back {}; copy back waits {} ({} us, {} missed); coalesce limit {} ({} "
                        "reads of held back copies); copy back pops by part: read downloads {} us, "
-                       "{} copies {} us, disarm {} us ({} runs)",
+                       "{} copies {} us, disarm {} us ({} runs); arm pages new {} already armed {} ({} us)",
                        w.Get(C::Fences), w.Get(C::FencesSkipped), w.Get(C::FencesReal),
                        w.Get(C::FencesBufferCommit), w.Get(C::FencesTextureCommit),
                        w.Get(C::FencesBufferDeferred), w.Get(C::FenceExtraFlushes),
@@ -312,7 +315,8 @@ struct Window {
                        w.Get(C::CopyBackWaitMisses), w.Get(Gauge::CoalesceLimit),
                        w.Get(C::CoalesceDeferredReads), us(C::PopReadDownloadsNs),
                        w.Get(C::PopCopies), us(C::PopWriteNs), us(C::PopDisarmNs),
-                       w.Get(C::PopDisarmRuns));
+                       w.Get(C::PopDisarmRuns), w.Get(C::ArmPagesNew),
+                       w.Get(C::ArmPagesArmed), us(C::ArmNs));
 }
 
 [[nodiscard]] inline std::string FormatWindow(const Window& w) {

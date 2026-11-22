@@ -8,6 +8,9 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_ARM_NEW_PAGES=1` (off unless set): a GPU write to a partly armed range arms only
+  the pages that are not armed yet, instead of the whole range again (after Eglantine). The
+  reactive stats line counts the pages of both kinds and the time spent arming.
 - Read traps: a guest CPU read of pages the GPU never wrote and no image was ever on gets its
   clean flush area without the buffer and texture caches' locks (`EDEN_NX2_FLUSH_AREA_NOLOCK=0`
   turns it off; Switch 2 titles with read traps). The GPU thread holds the buffer cache's lock

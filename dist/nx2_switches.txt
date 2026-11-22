@@ -410,6 +410,11 @@
 # CPU-read, so its first GPU write is trapped and flushed at the read instead of copied back at
 # fences. The reactive stats line counts "flush area ... calls (n without a lock)".
 #EDEN_NX2_FLUSH_AREA_NOLOCK=0
+# ARM_NEW_PAGES=1 (off unless set): a GPU write to a range some of whose pages are still armed
+# arms only the pages that are not, instead of the whole range again (each page's protection
+# is changed under the buffer cache's lock). With REACTIVE_STATS the fence part of the line counts
+# "arm pages new N already armed M (us)": M is what the full re-arm repeats, or with this on skips.
+#EDEN_NX2_ARM_NEW_PAGES=1
 # MEMORY_QUERY_MS=<n> (unset: 50; 0: every call, Safe): the texture and buffer caches ask the
 # driver how much device memory is in use at most every n milliseconds and reuse the answer in
 # between. With NVIDIA's driver on Windows each query goes to the kernel driver and opens
