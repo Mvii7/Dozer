@@ -22,6 +22,10 @@ struct MaxwellDeviceMethods {
                                             size_t size) {
         interface->RasterizerDisarmReadTraps(address, size);
     }
+
+    static inline bool ReadTrapsEnabled(const Core::Memory::Memory* interface) {
+        return interface->ReadTrapsEnabled();
+    }
 };
 
 } // namespace Tegra

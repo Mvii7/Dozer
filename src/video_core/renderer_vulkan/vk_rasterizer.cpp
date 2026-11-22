@@ -2299,19 +2299,16 @@ bool RasterizerVulkan::HoldsGpuWrittenData(DAddr addr, u64 size) {
 /// EDEN_NX2_FLUSH_AREA_NOLOCK (on unless =0): with Switch 2 titles and read traps, a read of pages
 /// the GPU never wrote and no image was ever on gets its area from GetFlushArea without either
 /// cache's lock. The core keeps that area until a read trap is armed; the GPU's first write to
-/// such a page arms one, and the read after it flushes. Without read traps in the core (the
-/// conditions of Memory::Impl::ReadTrapsEnabled) nothing ends the area, and a clean read's
-/// NoteCpuRead is what has the page's later GPU writes copied back at fences, so those reads keep
-/// the lock. A trapped page is GPU-written: never here.
+/// such a page arms one, and the read after it flushes. Where the core arms no read traps
+/// (Memory::ReadTrapsEnabled) nothing ends the area, and a clean read's NoteCpuRead is what has
+/// the page's later GPU writes copied back at fences, so those reads keep the lock. A trapped
+/// page is GPU-written: never here.
 static bool FlushAreaNoLock() {
     static const bool enabled = [] {
-        const char* flag = std::getenv("EDEN_NX2_FLUSH_AREA_NOLOCK");
-        const char* traps = std::getenv("EDEN_NX2_READ_TRAPS");
-        return (flag == nullptr || flag[0] != '0') && (traps == nullptr || traps[0] != '0');
+        const char* value = std::getenv("EDEN_NX2_FLUSH_AREA_NOLOCK");
+        return value == nullptr || value[0] != '0';
     }();
-    return enabled && Tegra::g_nx2_ampere.load(std::memory_order_relaxed) &&
-           !Settings::values.use_reactive_flushing.GetValue() && Settings::IsFastmemEnabled() &&
-           Settings::values.cpu_backend.GetValue() != Settings::CpuBackend::Nce;
+    return enabled && Tegra::g_nx2_ampere.load(std::memory_order_relaxed);
 }
 
 bool RasterizerVulkan::MayHoldImages(DAddr addr, u64 size) const {
@@ -2331,8 +2328,9 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
     }
     const DAddr page_start = Common::AlignDown(addr, Core::DEVICE_PAGESIZE);
     const DAddr page_end = Common::AlignUp(addr + size, Core::DEVICE_PAGESIZE);
+    // The read's pages are one process's: the first one's core says whether it arms traps.
     if (FlushAreaNoLock() && !Tegra::Nx2MayBeGpuWritten(page_start, page_end - page_start) &&
-        !MayHoldImages(addr, size)) {
+        !MayHoldImages(addr, size) && device_memory.ReadTrapsEnabled(page_start)) {
         // The buffer cache would flush nothing here and the texture cache has no area to give.
         if (stats) {
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::FlushAreaNoLock, 1);

@@ -1346,6 +1346,10 @@ void Memory::RasterizerDisarmReadTraps(Common::ProcessAddress vaddr, u64 size) {
     impl->RasterizerDisarmReadTraps(GetInteger(vaddr), size);
 }
 
+bool Memory::ReadTrapsEnabled() const {
+    return impl->ReadTrapsEnabled();
+}
+
 void Memory::MarkRegionDebug(Common::ProcessAddress vaddr, u64 size, bool debug) {
     impl->MarkRegionDebug(GetInteger(vaddr), size, debug);
 }

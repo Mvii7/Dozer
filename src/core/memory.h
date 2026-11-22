@@ -491,6 +491,10 @@ public:
     /// memory, so a read needs no flush.
     void RasterizerDisarmReadTraps(Common::ProcessAddress vaddr, u64 size);
 
+    /// Whether RasterizerArmReadTraps arms traps in this process's memory (read traps on, its
+    /// fastmem arena in place, no reactive flushing, not NCE).
+    [[nodiscard]] bool ReadTrapsEnabled() const;
+
     /**
      * Marks each page within the specified address range as debug or non-debug.
      * Debug addresses are not accessible from fastmem pointers.
