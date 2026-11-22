@@ -226,6 +226,13 @@ void BufferCache<P>::MarkCpuWritten(DAddr device_addr, u64 size, bool engine_wri
         memory_tracker.MarkRegionAsWrittenTracked(device_addr, size);
     } else {
         memory_tracker.MarkRegionAsCpuModified(device_addr, size);
+        // Untracked pages stop being cached, which drops their read traps (Memory's
+        // RasterizerMarkRegionCached): the next GPU write must arm them again.
+        if (!read_trapped_ranges.Empty()) {
+            const DAddr begin = Common::AlignDown(device_addr, DEVICE_PAGESIZE);
+            read_trapped_ranges.Subtract(
+                begin, Common::AlignUp(device_addr + size, DEVICE_PAGESIZE) - begin);
+        }
     }
 }
 
