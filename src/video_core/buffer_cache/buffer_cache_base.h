@@ -595,6 +595,7 @@ public:
     /// arms them again, so a read after it flushes instead of finding data the fences have not
     /// copied back yet. EDEN_NX2_TRAP_REARM=0: they stay unarmed after their first read.
     void ForgetReadTraps(DAddr device_addr, u64 size) {
+        CheckTrapSetLock("ForgetReadTraps");
         if (Nx2Reactive::TrapRearm()) {
             read_trapped_ranges.Subtract(device_addr, size);
         }
@@ -1065,7 +1066,7 @@ private:
 
     /// Queues the parts of a GPU write to [addr, addr + size) that are copied back at the next
     /// fence.
-    void QueueDownload(DAddr addr, u64 size) {
+    void QueueDownload(DAddr addr, u64 size, const char* from = "QueueDownload") {
         if (AsyncBufferDownloads()) {
             uncommitted_gpu_modified_ranges.Add(addr, size);
             return;
@@ -1090,7 +1091,7 @@ private:
             });
         }
         if (ReadTrapsActive()) {
-            ArmReadTraps(addr, size);
+            ArmReadTraps(addr, size, from);
         }
     }
 
@@ -1103,19 +1104,65 @@ private:
 
     /// Traps the guest CPU's next read of these pages (ReadTrapsActive). Its flush notes the
     /// page as CPU-read, so later GPU writes there are copied back at fences instead.
-    void ArmReadTraps(DAddr device_addr, u64 size) {
+    void ArmReadTraps(DAddr device_addr, u64 size, const char* from) {
+        const bool check = TrapSetCheck();
+        if (check) [[unlikely]] {
+            CheckTrapSetLock(from);
+            if (size == 0 || device_addr + size < device_addr || size > (u64{4} << 30)) {
+                ReportTrapSet(TrapSetIssue::OddRange, from, device_addr, size, 0, 0);
+            }
+        }
         const DAddr begin = Common::AlignDown(device_addr, Core::DEVICE_PAGESIZE);
         const DAddr end = Common::AlignUp(device_addr + size, Core::DEVICE_PAGESIZE);
         u64 armed_bytes = 0;
+        bool outside = false;
+        DAddr outside_lower = 0;
+        DAddr outside_upper = 0;
         read_trapped_ranges.ForEachInRange(begin, end - begin, [&](DAddr lower, DAddr upper) {
+            // A piece outside the range asked for counts nothing (its size would wrap).
+            if (lower < begin || upper > end || upper <= lower) [[unlikely]] {
+                if (!outside) {
+                    outside = true;
+                    outside_lower = lower;
+                    outside_upper = upper;
+                }
+                return;
+            }
             armed_bytes += upper - lower;
         });
+        if (outside && check) [[unlikely]] {
+            ReportTrapSet(TrapSetIssue::PieceOutside, from, begin, end - begin, outside_lower,
+                          outside_upper);
+        }
         if (armed_bytes == end - begin) {
             return;
         }
         read_trapped_ranges.Add(begin, end - begin);
         device_memory.ArmReadTraps(begin, end - begin);
     }
+
+    /// EDEN_NX2_TRAP_SET_CHECK=1 (diagnostic): "Trap set check" lines name changes to
+    /// read_trapped_ranges made without this cache's lock, odd ranges given to ArmReadTraps, and
+    /// pieces of the set it returned outside the range asked for (the first 16 of each kind,
+    /// then at each power of two).
+    static bool TrapSetCheck() {
+        static const bool enabled = [] {
+            const char* value = std::getenv("EDEN_NX2_TRAP_SET_CHECK");
+            return value != nullptr && value[0] == '1';
+        }();
+        return enabled;
+    }
+
+    enum class TrapSetIssue : u32 { NoLock, OddRange, PieceOutside };
+
+    void CheckTrapSetLock(const char* where) {
+        if (TrapSetCheck() && !mutex.HeldByCurrentThread()) [[unlikely]] {
+            ReportTrapSet(TrapSetIssue::NoLock, where, 0, 0, 0, 0);
+        }
+    }
+
+    void ReportTrapSet(TrapSetIssue issue, const char* where, DAddr addr, u64 size, DAddr lower,
+                       DAddr upper);
 
     /// Pages handed to ArmReadTraps and not read since (ForgetReadTraps): a GPU write to one of
     /// them arms nothing new.
