@@ -16,12 +16,21 @@ and `=0` brings back the 2.0.0 code path.
 - Read traps: a guest CPU write to a buffer page drops its read trap (the page stops being cached);
   the buffer cache now forgets it too, so the next GPU write there arms it again. Before, the
   page stayed untrapped while the buffer cache counted it as trapped.
-- Read trap budget: off by default (`EDEN_NX2_READ_TRAP_BUDGET_US` stays as a test switch), and
-  the Tuning tab's box and its per-game entry are gone. A read that goes on finds older data:
-  Mario Kart World could hang in a cutscene with it on, never with it off, and Bananza lagged at
-  the first hit of a gold vein. With the read trap fixes it saved ~1% of Bananza's time.
 - Read traps: a slow-path read checks a lock-free filter of the trapped pages before taking the
-  read trap lock (Mario Kart World takes 5-10 million slow reads per 10 s).
+  read trap lock (Mario Kart World takes 5-10 million slow reads per 10 s). With the two fixes
+  above its races run as in 0.1.7 (~48-50 fps).
+- `EDEN_NX2_READ_TRAP_BUDGET_US=<us>` (test switch, off unless set): with read traps, reads of
+  GPU-written buffer memory wait for its data at most `<us>` in each 1/60 s (up to 4x that after
+  a quiet stretch), then go on with what memory holds. Not for play: a read that goes on finds
+  older data. Mario Kart World could hang in a cutscene with it at 1000, never without it, and
+  Bananza lagged at the first hit of a gold vein; with the read trap fixes it saved ~1% of
+  Bananza's time.
+- `EDEN_NX2_TRAP_CHECK=<1|2|3>` (diagnostic, slow): pages a read disarms stay unreadable, and each
+  later read of one before a GPU write arms it again asks whether the GPU holds newer data there.
+  "Read trap check" lines name those reads and say whether the newer data is the read's own
+  buffer bytes, other buffer bytes on its page, or an image or query there. `=1` flushes every
+  such read, `=2` none (reads behave as without the check), `=3` only those that may find older
+  data.
 - Vulkan: the device memory in use is asked of the driver at most every 50 ms instead of twice a
   frame (`EDEN_NX2_MEMORY_QUERY_MS`, `=0` every call, Safe), and the buffer cache no longer asks
   with Switch 2 titles, which collect by their buffers' own size. With NVIDIA's driver on Windows
@@ -31,18 +40,12 @@ and `=0` brings back the 2.0.0 code path.
   zeros is uploaded as zeros without the CPU unswizzle. Donkey Kong Bananza's spikes on entering
   new areas unswizzled 230-317 MB on the CPU, nearly all of it new render targets over all-zero
   memory; their uploads took 78-97 ms, now 24-55 ms (most of it checking the memory for zeros).
-  It needs the read trap budget's carry-over: with it on and the budget reset every 1/60 s,
-  terrain detail flickered after entering new areas.
 - `EDEN_NX2_SLOW_FRAME_MS=<ms>` (diagnostic, off unless set): one "nx2 slow frame:" log line
   for each frame longer than `<ms>`, with the images created and deleted, MB uploaded,
   pipelines built, waits for the split's back, read trap flushes, game file reads and CPU JIT
   compiles in it.
 - `EDEN_NX2_FS_READ_MBPS=<MB/s>`: the rate game data reads are held to (40 unless set, `=0` no
   limit).
-- Read trap budget: what a 1/60 s leaves unused carries over, up to 4 ms (with the default
-  1 ms). Reset each 1/60 s, one wait a little longer than 1 ms left every later read of that
-  frame without its data; when that happened every frame, Donkey Kong Bananza's terrain detail
-  flickered (seen after entering new areas). Steady heavy reading is limited as before.
 - GPU thread split: it now starts before the game creates its first Switch 2 GPU channel. When the
   channel came first, the split took it over unreliably: the boot hung (the game's first command
   list never ran) or the front ran macros it never saw uploaded and crashed. Donkey Kong Bananza
@@ -72,20 +75,7 @@ and `=0` brings back the 2.0.0 code path.
   (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
   fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World
   and Donkey Kong Bananza, and reads waited for copies back behind it. With it gone Bananza's
-  destruction waits 0.07-0.17 s per 10 s instead of 0.3-0.4 s, and far fewer reads run out of
-  the read trap budget. The reactive stats line splits the copy back pops by part.
-- Read trap budget (Tuning tab, on; `EDEN_NX2_READ_TRAP_BUDGET_US`, 1000 unless set, `=0` off,
-  off in Safe): with read traps, the guest CPU's reads of GPU-written buffer memory wait for its
-  data at most 1 ms in each 1/60 s, then go on with what memory holds, as with read traps off. A
-  download that would not fit in what is left is skipped (`EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0`
-  starts it anyway). Donkey Kong Bananza's destruction waited 0.5-0.8 s per 10 s for those reads,
-  Mario Kart World's races 1.1-2.3 s; with the budget 0.15-0.4 s and 0.6-1 s.
-- MME DMA reads drain the split's back again by default (`EDEN_NX2_DMA_READ_PEEK`, now `=1` to
-  go on without one). With `EDEN_NX2_ACQUIRE_SUSPEND` a channel the latch resumes may read
-  before the back ran the draws sent ahead of the release, and the peek let such reads go on:
-  rocks in Donkey Kong Bananza flickered. The front also no longer notes every write it sends
-  for the peek, which cost it more than the drains it saved. With `=1`, every acquire a latch
-  resumes drains first.
+  destruction waits 0.07-0.17 s per 10 s instead of 0.3-0.4 s. The reactive stats line splits the copy back pops by part.
 - Shader cache (Vulkan and OpenGL): a cache whose last record was cut off (the emulator crashed
   or was closed while appending a pipeline) keeps the records before it; before, the whole cache
   file was deleted and every pipeline was built again. A zero-filled tail no longer crashes the
@@ -168,12 +158,13 @@ and `=0` brings back the 2.0.0 code path.
   4 KiB page instead of a tree, so each change costs its pages instead of a tree walk (about 10%
   of the memory stage went to the tree). `EDEN_NX2_PAGE_RANGES=0` brings back the tree;
   start-safe.bat does.
-- Split GPU thread, with `EDEN_NX2_ACQUIRE_PEEK=1` (the Balanced, Performance and Experimental
-  presets, every game): an MME DMA read no longer drains the back when no write the front sent
-  and the back has not run reaches its words, no work but draws is queued and the buffer cache
-  holds no newer data. In Donkey Kong Bananza 76-84% of them go on without one.
-  `EDEN_NX2_DMA_READ_PEEK=0` drains as before, `=2` drains and logs the reads the drain changed
-  (none of 55,084 in Donkey Kong Bananza).
+- Split GPU thread, `EDEN_NX2_DMA_READ_PEEK=1` (with `EDEN_NX2_ACQUIRE_PEEK=1`; off by default):
+  an MME DMA read goes on without draining the back when no write the front sent and the back
+  has not run reaches its words, no work but draws is queued and the buffer cache holds no newer
+  data. In Donkey Kong Bananza 55-84% of them go on without one, but the front then notes the
+  methods that write memory or start work other than draws, which costs it about what the
+  drains save, and every acquire a latch resumes drains first; neither game ran faster with it.
+  `=2` drains and logs the reads the drain changed (none of 55,084 in Donkey Kong Bananza).
 
 ## Dozer 0.1.7 (`v0.1.7`)
 
