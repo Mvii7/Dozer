@@ -62,7 +62,6 @@ struct State {
     std::atomic<u64> waited_us{};
     std::atomic<u64> lenient{};
     std::atomic<u64> skipped{};
-    std::atomic<u64> owed{};
     std::atomic<s64> next_log_ns{};
     // Running average of a download's wait (1/8 weight to the newest).
     std::atomic<u64> download_avg_us{};
@@ -86,13 +85,12 @@ inline void MaybeLog(s64 now) {
     const u64 waited_us = g_state.waited_us.exchange(0, std::memory_order_relaxed);
     const u64 lenient = g_state.lenient.exchange(0, std::memory_order_relaxed);
     const u64 skipped = g_state.skipped.exchange(0, std::memory_order_relaxed);
-    const u64 owed = g_state.owed.exchange(0, std::memory_order_relaxed);
     LOG_INFO(HW_GPU,
              "Read trap budget {} us per 1/60 s (EDEN_NX2_READ_TRAP_BUDGET_US), last 10 s: {} "
              "waits for {} ms, {} reads went on without waiting ({} downloads skipped, a "
-             "download ~{} us), {} next reads of their pages waited in full",
+             "download ~{} us)",
              BudgetUs(), waited, waited_us / 1000, lenient, skipped,
-             g_state.download_avg_us.load(std::memory_order_relaxed), owed);
+             g_state.download_avg_us.load(std::memory_order_relaxed));
 }
 
 /// What is left of the budget (none with the budget off).
@@ -118,11 +116,6 @@ inline void MaybeLog(s64 now) {
     MaybeLog(now);
     const s64 credit = g_state.credit_us.load(std::memory_order_relaxed);
     return credit > 0 ? static_cast<u64>(credit) : 0;
-}
-
-/// The read after one that went on without its data waits for it in full (counted).
-inline void NoteOwed() {
-    g_state.owed.fetch_add(1, std::memory_order_relaxed);
 }
 
 /// A read went on without its data (counted).

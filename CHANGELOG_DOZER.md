@@ -16,11 +16,6 @@ and `=0` brings back the 2.0.0 code path.
 - Read traps: a guest CPU write to a buffer page drops its read trap (the page stops being cached);
   the buffer cache now forgets it too, so the next GPU write there arms it again. Before, the
   page stayed untrapped while the buffer cache counted it as trapped.
-- Read trap budget: a read that goes on without its data leaves its pages trapped, and the next
-  read of them waits for the data in full. A game polling a value got the same older one every
-  time: Mario Kart World could hang in a cutscene with the budget on.
-- Read traps: a slow-path read checks a lock-free filter of the trapped pages before taking the
-  read trap lock (Mario Kart World takes 5-10 million slow reads per 10 s).
 - Vulkan: the device memory in use is asked of the driver at most every 50 ms instead of twice a
   frame (`EDEN_NX2_MEMORY_QUERY_MS`, `=0` every call, Safe), and the buffer cache no longer asks
   with Switch 2 titles, which collect by their buffers' own size. With NVIDIA's driver on Windows
