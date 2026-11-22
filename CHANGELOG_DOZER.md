@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- GPU thread: a channel resumed by a release (acquire suspend, #82) now waits for the split's
+  back first (`EDEN_NX2_LATCH_RESUME_DRAIN=0` goes on at once, as before). The back may run the
+  release before the work sent ahead of it is done, and the front then read memory that work had
+  not written yet: Donkey Kong Bananza's rocks and foliage flickered now and then since #82
+  (#84 covered only MME DMA reads), and at once with `EDEN_NX2_DMA_READ_PEEK=1`.
 - Vulkan: the device memory in use is asked of the driver at most every 50 ms instead of twice a
   frame (`EDEN_NX2_MEMORY_QUERY_MS`, `=0` every call, Safe), and the buffer cache no longer asks
   with Switch 2 titles, which collect by their buffers' own size. With NVIDIA's driver on Windows

@@ -452,6 +452,18 @@ bool SuspendFirst() {
     return enabled;
 }
 
+// EDEN_NX2_LATCH_RESUME_DRAIN (on unless =0): a channel a latch resumes drains the back first. The
+// back may run the release before the work sent ahead of it is done (its stages), and the front
+// reads memory that work writes (MME DMA reads, and others): without the drain Donkey Kong
+// Bananza's rocks and foliage flickered, now and then since #82, at once with DMA_READ_PEEK=1.
+bool LatchResumeDrains() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_LATCH_RESUME_DRAIN");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
 // Whether the back writes a payload release to memory when it runs it: below High GPU accuracy,
 // with fences that run their operations at once (FenceManager::SignalFence).
 bool ReleasesLandAtOnce() {
@@ -744,11 +756,10 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         return true;
     }
     const auto resumed = [&](ResumeHow how) {
-        // A latch means the back ran the release, maybe before the draws sent ahead of it: with
-        // DMA_READ_PEEK=1 the channel's MME DMA reads would not wait for those (flickering rocks
-        // in Bananza).
+        // A latch means the back ran the release, maybe before the work sent ahead of it
+        // (LatchResumeDrains; with DMA_READ_PEEK=1 always).
         if ((how == ResumeHow::Latched || how == ResumeHow::PeekLatched) &&
-            VideoCommon::Nx2FrontDiag::ReadPeekMode() != 0) {
+            (LatchResumeDrains() || VideoCommon::Nx2FrontDiag::ReadPeekMode() != 0)) {
             DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerResume);
         }
         NoteResume(how, *pending_acquire, this);

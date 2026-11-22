@@ -149,6 +149,10 @@
 # the back is idle, once per 8 ms while it runs other work, at once when memory meets the word.
 # With GPU_PROFILE=1 the "Acquires without a drain" line counts them ("suspended without a drain").
 #EDEN_NX2_ACQUIRE_SUSPEND=0
+# LATCH_RESUME_DRAIN=0: a channel a release resumes (the latch, ACQUIRE_SUSPEND) goes on without
+# waiting for the back, as before. Default: it waits, since the back may run the release before
+# the work sent ahead of it is done; without it Donkey Kong Bananza's rocks and foliage flickered.
+#EDEN_NX2_LATCH_RESUME_DRAIN=0
 # HLE_INDIRECT=0: run NVN's indexed indirect draw macro as it is, reading its records on the
 # CPU (default: one host indirect draw from the GPU-written records).
 #EDEN_NX2_HLE_INDIRECT=0
