@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/alignment.h"
 #include "common/assert.h"
 #include "common/nx2_reactive.h"
 #include "common/nx2_slow_frame.h"
@@ -25,6 +26,7 @@
 #include "common/settings_enums.h"
 #include "core/core.h"
 #include "core/core_timing.h"
+#include "core/device_memory_manager.h"
 #include "core/frontend/emu_window.h"
 #include "core/gpu_dirty_memory_manager.h"
 #include "core/frontend/graphics_context.h"
@@ -785,6 +787,11 @@ u32 GPU::Nx2NewerDataHeld(DAddr addr, u64 size) {
     }
     if (rasterizer->HoldsGpuWrittenData(addr, size)) {
         held |= 2;
+        const DAddr page = Common::AlignDown(addr, Core::DEVICE_PAGESIZE);
+        const u64 span = Common::AlignUp(addr + size, Core::DEVICE_PAGESIZE) - page;
+        if (rasterizer->MustFlushRegion(page, span, VideoCommon::CacheType::BufferCache)) {
+            held |= 4;
+        }
     }
     return held;
 }

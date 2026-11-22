@@ -250,7 +250,8 @@ public:
 
     /// EDEN_NX2_TRAP_CHECK: whether guest memory may be older than the GPU's data here, without
     /// flushing: bit 0 the buffer cache holds newer bytes of the range, bit 1 its pages hold
-    /// GPU-written data (HoldsGpuWrittenData: images, queries, or buffer bytes elsewhere).
+    /// GPU-written data (HoldsGpuWrittenData: images, queries, or buffer bytes elsewhere), bit 2
+    /// the buffer cache holds newer bytes elsewhere on them.
     [[nodiscard]] u32 Nx2NewerDataHeld(DAddr addr, u64 size);
 
     /// Notify rasterizer that any caches of the specified region should be flushed to Switch memory

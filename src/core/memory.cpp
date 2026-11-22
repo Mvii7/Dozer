@@ -609,16 +609,24 @@ struct Memory::Impl {
                Settings::values.cpu_backend.GetValue() != Settings::CpuBackend::Nce;
     }
 
-    /// EDEN_NX2_TRAP_CHECK=1 (diagnostic, slow): pages a read disarms stay unreadable, and each
+    /// EDEN_NX2_TRAP_CHECK (diagnostic, slow): pages a read disarms stay unreadable, and each
     /// later read of one before a GPU write arms it again (which read traps let through without
     /// a flush) asks the GPU whether it holds newer data there: "Read trap check" lines name the
-    /// reads that would have found older data, which are flushed instead.
-    static bool TrapCheck() {
-        static const bool enabled = [] {
+    /// reads that would have found older data. =1: every such read is flushed as a trapped one;
+    /// =2: none is (they read what memory holds, as without the check); =3: only those that
+    /// would have found older data are.
+    static u32 TrapCheckMode() {
+        static const u32 mode = [] {
             const char* value = std::getenv("EDEN_NX2_TRAP_CHECK");
-            return value != nullptr && value[0] == '1';
+            return value != nullptr && value[0] >= '1' && value[0] <= '3'
+                       ? static_cast<u32>(value[0] - '0')
+                       : 0u;
         }();
-        return enabled;
+        return mode;
+    }
+
+    static bool TrapCheck() {
+        return TrapCheckMode() != 0;
     }
 
     /// The pages in [page_begin, page_end) are no longer the check's (read_trap_mutex held).
@@ -645,27 +653,41 @@ struct Memory::Impl {
     }
 
     /// A read read traps would have let through: logged when the GPU holds newer data there.
-    void TrapCheckRead(u64 vaddr, DAddr address, size_t size) {
+    /// Returns what Nx2NewerDataHeld found.
+    u32 TrapCheckRead(u64 vaddr, DAddr address, size_t size) {
         const u64 reads = trap_check_reads.fetch_add(1, std::memory_order_relaxed) + 1;
         const u32 held = system.GPU().Nx2NewerDataHeld(address, size);
         if (held != 0) {
+            const char* kind;
+            if ((held & 1) != 0) {
+                kind = "the buffer cache holds newer bytes of it";
+                trap_check_stale_bytes.fetch_add(1, std::memory_order_relaxed);
+            } else if ((held & 4) != 0) {
+                kind = "the buffer cache holds newer bytes elsewhere on its page";
+                trap_check_stale_page.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                kind = "its page holds an image or a query the GPU wrote";
+                trap_check_stale_other.fetch_add(1, std::memory_order_relaxed);
+            }
             const u64 stale = trap_check_stale.fetch_add(1, std::memory_order_relaxed) + 1;
             if (stale <= 64 || (stale & (stale - 1)) == 0) {
                 LOG_WARNING(HW_Memory,
-                            "Read trap check: read of {:#x}+{:#x} (device {:#x}) would have found "
-                            "older data: {} ({} of {} such reads so far)",
-                            vaddr, size, address,
-                            (held & 1) != 0
-                                ? "the buffer cache holds newer bytes"
-                                : "its pages hold GPU-written data (an image, a query, or buffer "
-                                  "bytes elsewhere on the page)",
-                            stale, reads);
+                            "Read trap check: read of {:#x}+{:#x} (device {:#x}) may find older "
+                            "data: {} ({} of {} such reads so far)",
+                            vaddr, size, address, kind, stale, reads);
             }
         } else if ((reads & (reads - 1)) == 0 && reads >= 1024) {
-            LOG_INFO(HW_Memory, "Read trap check: {} reads read traps let through, {} of them "
-                                "would have found older data",
-                     reads, trap_check_stale.load(std::memory_order_relaxed));
+            LOG_INFO(HW_Memory,
+                     "Read trap check (EDEN_NX2_TRAP_CHECK={}): {} reads read traps let through, "
+                     "{} of them may find older data: {} where the buffer cache holds newer "
+                     "bytes of them, {} elsewhere on their page, {} with an image or a query on "
+                     "their page",
+                     TrapCheckMode(), reads, trap_check_stale.load(std::memory_order_relaxed),
+                     trap_check_stale_bytes.load(std::memory_order_relaxed),
+                     trap_check_stale_page.load(std::memory_order_relaxed),
+                     trap_check_stale_other.load(std::memory_order_relaxed));
         }
+        return held;
     }
 
     void RasterizerArmReadTraps(u64 vaddr, u64 size) {
@@ -987,14 +1009,20 @@ struct Memory::Impl {
         // disarm the page while the buffer cache still counts it as armed, so later GPU writes
         // there would never trap again.
         const bool trapped = !read_traps.Empty() && ReadTrapArmed(v_address, size);
-        const bool check_open = TrapCheck() && TrapCheckOpen(v_address, size);
+        const u32 check = TrapCheckMode();
+        const bool check_open = check != 0 && TrapCheckOpen(v_address, size);
+        if (check_open && !trapped) [[unlikely]] {
+            u32 held = 0;
+            gpu_device_memory->ApplyOpOnPointer(p, scratch_buffers[core], [&](DAddr address) {
+                held |= TrapCheckRead(v_address, address, size);
+            });
+            if (check == 2 || (check == 3 && held == 0)) {
+                return;
+            }
+        }
         gpu_device_memory->ApplyOpOnPointer(p, scratch_buffers[core], [&](DAddr address) {
             const DAddr end_address = address + size;
-            if (check_open) [[unlikely]] {
-                TrapCheckRead(v_address, address, size);
-                current_area = {};
-            }
-            if (trapped) {
+            if (trapped || check_open) {
                 current_area = {};
             }
             if (current_area.start_address <= address && end_address <= current_area.end_address)
@@ -1089,6 +1117,9 @@ struct Memory::Impl {
     std::set<u64> trap_check_open;
     std::atomic<u64> trap_check_reads{};
     std::atomic<u64> trap_check_stale{};
+    std::atomic<u64> trap_check_stale_bytes{};
+    std::atomic<u64> trap_check_stale_page{};
+    std::atomic<u64> trap_check_stale_other{};
     std::array<GPUDirtyState, Core::Hardware::NUM_CPU_CORES> rasterizer_write_areas{};
     std::array<Common::ScratchBuffer<u32>, Core::Hardware::NUM_CPU_CORES> scratch_buffers{};
     std::span<Core::GPUDirtyMemoryManager> gpu_dirty_managers;

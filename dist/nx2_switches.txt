@@ -413,9 +413,11 @@
 #EDEN_NX2_TRAP_POP_DISARM=1
 # TRAP_CHECK=1 (diagnostic, slow): a page a read disarms stays unreadable until a GPU write arms
 # it again, and each read of it in between (one read traps let through without a flush) asks the
-# GPU whether it holds newer data there. "Read trap check" warnings name the reads that would
-# have found older data (they are flushed instead), and say whether the buffer cache held newer
-# bytes or the page held other GPU-written data (an image, a query).
+# GPU whether it holds newer data there. "Read trap check" warnings name the reads that may find
+# older data, and say whether the buffer cache holds newer bytes of them, elsewhere on their page,
+# or the page holds an image or a query; the summary lines count each kind. =1: those reads are
+# flushed as trapped ones; =2: none is, they read what memory holds as without the check (it shows
+# what reads were stale when something looks wrong); =3: only those that may find older data are.
 #EDEN_NX2_TRAP_CHECK=1
 # COPYBACK_WAIT=0: a read trap that finds GPU writes not in guest memory yet always sync flushes
 # (the CPU waits for the GPU thread to reach it and for a new download). Unset (on): when all of
