@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Read traps: a trapped read always flushes through the rasterizer. A read of an armed page that
+  fell inside an area cached from an earlier read (an image's) skipped it, so the page was
+  disarmed while the buffer cache still counted it as armed: later GPU writes there never trapped
+  again and the guest read old data (flickering rocks, foliage and thorns in Donkey Kong Bananza,
+  whose culling reads indirect draw arguments the GPU writes).
 - Vulkan: the device memory in use is asked of the driver at most every 50 ms instead of twice a
   frame (`EDEN_NX2_MEMORY_QUERY_MS`, `=0` every call, Safe), and the buffer cache no longer asks
   with Switch 2 titles, which collect by their buffers' own size. With NVIDIA's driver on Windows

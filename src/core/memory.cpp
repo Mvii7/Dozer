@@ -638,6 +638,12 @@ struct Memory::Impl {
         return it != trap_check_open.end() && *it < page_end;
     }
 
+    /// Whether a read of [vaddr, vaddr + size) touches an armed page.
+    bool ReadTrapArmed(u64 vaddr, size_t size) {
+        std::scoped_lock lk{read_trap_mutex};
+        return read_traps.Any(vaddr >> YUZU_PAGEBITS, ((vaddr + size - 1) >> YUZU_PAGEBITS) + 1);
+    }
+
     /// A read read traps would have let through: logged when the GPU holds newer data there.
     void TrapCheckRead(u64 vaddr, DAddr address, size_t size) {
         const u64 reads = trap_check_reads.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -976,11 +982,19 @@ struct Memory::Impl {
             rasterizer_read_epochs[core] = epoch;
             current_area = {};
         }
+        // A trapped read always reaches GetFlushArea: an area cached from another read (an
+        // image's, say) does not say this page's buffer data was flushed, and skipping it would
+        // disarm the page while the buffer cache still counts it as armed, so later GPU writes
+        // there would never trap again.
+        const bool trapped = !read_traps.Empty() && ReadTrapArmed(v_address, size);
         const bool check_open = TrapCheck() && TrapCheckOpen(v_address, size);
         gpu_device_memory->ApplyOpOnPointer(p, scratch_buffers[core], [&](DAddr address) {
             const DAddr end_address = address + size;
             if (check_open) [[unlikely]] {
                 TrapCheckRead(v_address, address, size);
+                current_area = {};
+            }
+            if (trapped) {
                 current_area = {};
             }
             if (current_area.start_address <= address && end_address <= current_area.end_address)
