@@ -1067,6 +1067,10 @@ private:
     /// Queues the parts of a GPU write to [addr, addr + size) that are copied back at the next
     /// fence.
     void QueueDownload(DAddr addr, u64 size, const char* from = "QueueDownload") {
+        if (size == 0) {
+            // A null written binding (MarkWrittenBuffer with 0+0, many per frame in Bananza).
+            return;
+        }
         if (AsyncBufferDownloads()) {
             uncommitted_gpu_modified_ranges.Add(addr, size);
             return;

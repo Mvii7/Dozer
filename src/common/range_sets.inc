@@ -157,6 +157,9 @@ struct RangeSet<AddressType>::RangeSetImpl {
     }
 
     void Subtract(AddressType base_address, size_t size) {
+        if (size == 0) {
+            return;
+        }
         AddressType end_address = base_address + static_cast<AddressType>(size);
         IntervalType interval{base_address, end_address};
         m_ranges_set.subtract(interval);
@@ -178,7 +181,10 @@ struct RangeSet<AddressType>::RangeSetImpl {
 
     template <typename Func>
     void ForEachInRange(AddressType base_addr, size_t size, Func&& func) const {
-        if (m_ranges_set.empty()) {
+        // An empty range must not reach the set's searches: boost::icl requires non-empty
+        // intervals there, and with an empty one they returned every range from the first one
+        // on, clipped to [start, end) into pieces that end before they start.
+        if (m_ranges_set.empty() || size == 0) {
             return;
         }
         const AddressType start_address = base_addr;
@@ -226,7 +232,8 @@ struct OverlapRangeSet<AddressType>::OverlapRangeSetImpl {
     template <bool has_on_delete, typename Func>
     void Subtract(AddressType base_address, size_t size, s32 amount,
                   [[maybe_unused]] Func&& on_delete) {
-        if (m_split_ranges_set.empty()) {
+        // An empty range must not reach the searches below (see RangeSet's ForEachInRange).
+        if (m_split_ranges_set.empty() || size == 0) {
             return;
         }
         AddressType end_address = base_address + static_cast<AddressType>(size);
@@ -268,7 +275,7 @@ struct OverlapRangeSet<AddressType>::OverlapRangeSetImpl {
 
     template <typename Func>
     void ForEachInRange(AddressType base_address, size_t size, Func&& func) const {
-        if (m_split_ranges_set.empty()) {
+        if (m_split_ranges_set.empty() || size == 0) {
             return;
         }
         const AddressType start_address = base_address;
