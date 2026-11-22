@@ -451,6 +451,16 @@ private:
     void CheckZeroUpload(Image& image, std::span<u8> mapped_span,
                          std::span<const BufferImageCopy> copies);
 
+    /// EDEN_NX2_CLEAR_SKIP_UPLOAD (on; =0 off): a render target created by a clear that writes
+    /// all of it is not uploaded from guest memory first.
+    [[nodiscard]] static bool ClearSkipUploadEnabled();
+    /// Whether the clear being recorded writes every texel of the target (color index, or
+    /// NUM_RT for depth-stencil) this view is bound to.
+    [[nodiscard]] bool ClearWritesWholeTarget(ImageViewId id, size_t target);
+    /// Images created (nothing overlapping) while a clear looks its targets up: their upload
+    /// waits for UpdateRenderTargets, which skips it for those the clear writes whole.
+    bool defer_creation_uploads = false;
+
     /// Create a new image view from a guest descriptor
     [[nodiscard]] ImageViewId CreateImageView(const TICEntry& config);
 

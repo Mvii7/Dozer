@@ -946,7 +946,38 @@ void TextureCache<P>::UpdateRenderTargets(bool is_clear) {
     }
 
     const VideoCommon::RenderTargets previous_render_targets = render_targets;
-    const bool rescaled = RescaleRenderTargets();
+    defer_creation_uploads = is_clear && ClearSkipUploadEnabled();
+    const bool rescaled = [&] {
+        Common::Nx2SlowFrame::Timer find_timer{Common::Nx2SlowFrame::Counter::RenderTargetFindNs};
+        return RescaleRenderTargets();
+    }();
+    if (defer_creation_uploads) {
+        defer_creation_uploads = false;
+        // Images this lookup created: the targets the clear writes whole are not uploaded (the
+        // invalidating PrepareImageView below drops the pending upload), the rest are now.
+        const auto settle = [&](ImageViewId view_id, size_t target) {
+            if (!view_id) {
+                return;
+            }
+            const ImageId image_id = slot_image_views[view_id].image_id;
+            Image& image = slot_images[image_id];
+            if (!image.nx2_upload_deferred) {
+                return;
+            }
+            image.nx2_upload_deferred = false;
+            if (ClearWritesWholeTarget(view_id, target)) {
+                Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::ClearSkippedUploads, 1);
+                Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::ClearSkippedUploadBytes,
+                                          image.guest_size_bytes);
+                return;
+            }
+            RefreshContents(image, image_id);
+        };
+        for (size_t index = 0; index < NUM_RT; ++index) {
+            settle(render_targets.color_buffer_ids[index], index);
+        }
+        settle(render_targets.depth_buffer_id, NUM_RT);
+    }
     if (is_rescaling != rescaled) {
         flags[Dirty::RescaleViewports] = true;
         flags[Dirty::RescaleScissors] = true;
@@ -2703,7 +2734,18 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
     }
 
     // TODO: Only upload what we need
-    RefreshContents(new_image, new_image_id);
+    if (defer_creation_uploads && join_copies_to_do.empty() && join_right_aliased_ids.empty() &&
+        join_left_aliased_ids.empty() && join_bad_overlap_ids.empty() &&
+        new_image.info.num_samples == 1 &&
+        False(new_image.flags & (ImageFlagBits::Sparse | ImageFlagBits::SparseLayers |
+                                 ImageFlagBits::Unbacked | ImageFlagBits::AsynchronousDecode |
+                                 ImageFlagBits::AcceleratedUpload)) &&
+        !UploadsByLayer(new_image)) {
+        // A clear's target: UpdateRenderTargets uploads it unless the clear writes all of it.
+        new_image.nx2_upload_deferred = true;
+    } else {
+        RefreshContents(new_image, new_image_id);
+    }
 
     if (can_rescale) {
         ScaleUp(new_image);
@@ -4283,6 +4325,41 @@ std::pair<FramebufferId, ImageViewId> TextureCache<P>::RenderTargetFromImage(
         .is_rescaled = is_rescaled,
     });
     return {framebuffer_id, view_id};
+}
+
+template <class P>
+bool TextureCache<P>::ClearSkipUploadEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_CLEAR_SKIP_UPLOAD");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+template <class P>
+bool TextureCache<P>::ClearWritesWholeTarget(ImageViewId id, size_t target) {
+    const auto& regs = maxwell3d->regs;
+    const auto& clear = regs.clear_surface;
+    const ImageViewBase& view = slot_image_views[id];
+    const ImageBase& image = slot_images[view.image_id];
+    if (target < NUM_RT) {
+        if (clear.RT != target || !clear.R || !clear.G || !clear.B || !clear.A) {
+            return false;
+        }
+    } else {
+        const bool has_stencil = GetFormatType(image.info.format) == SurfaceType::DepthStencil;
+        if (!clear.Z || (has_stencil && (!clear.S || regs.stencil_front_mask != 0xFF))) {
+            return false;
+        }
+    }
+    // One level and layer, the view all of it, inside the surface clip, and no scissor cutting
+    // into it (IsFullClear).
+    const auto& clip = regs.surface_clip;
+    return clear.layer == 0 && image.info.num_samples == 1 && view.range.base.level == 0 &&
+           view.range.base.layer == 0 && view.size.width == image.info.size.width &&
+           view.size.height == image.info.size.height && clip.x == 0 && clip.y == 0 &&
+           clip.width >= image.info.size.width && clip.height >= image.info.size.height &&
+           IsFullClear(id);
 }
 
 template <class P>

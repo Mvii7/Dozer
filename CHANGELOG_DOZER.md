@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Render targets (`EDEN_NX2_CLEAR_SKIP_UPLOAD=0` turns it off): one created for a clear that
+  writes all of it is no longer uploaded from guest memory first. In Donkey Kong Bananza's
+  frames entering new areas, new render targets cost 37-49 ms of uploads, and most of them are
+  first used by a full clear.
 - Vulkan: the device memory in use is asked of the driver at most every 50 ms instead of twice a
   frame (`EDEN_NX2_MEMORY_QUERY_MS`, `=0` every call, Safe), and the buffer cache no longer asks
   with Switch 2 titles, which collect by their buffers' own size. With NVIDIA's driver on Windows

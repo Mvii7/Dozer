@@ -58,6 +58,9 @@ enum class Counter : size_t {
     Clears,         ///< Clears recorded, including their render targets
     ClearNs,
     RenderTargetNs, ///< TextureCache::UpdateRenderTargets (draws and clears)
+    RenderTargetFindNs,      ///< Of it, the lookup (RescaleRenderTargets: images and views)
+    ClearSkippedUploads,     ///< EDEN_NX2_CLEAR_SKIP_UPLOAD: new targets a clear wrote whole
+    ClearSkippedUploadBytes, ///< And their guest bytes, not uploaded
     Framebuffers,   ///< Framebuffers created
     FramebufferNs,
     Count,
