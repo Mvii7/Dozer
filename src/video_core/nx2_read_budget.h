@@ -11,24 +11,25 @@
 #include "common/common_types.h"
 #include "common/logging.h"
 
-// EDEN_NX2_READ_TRAP_BUDGET_US=<n> (unset: 1000, 0: off). With read traps, the guest CPU's reads of
-// GPU-written buffer memory wait for its data (a copy back or a download) at most n microseconds
-// in each 1/60 s; past that, a read goes on with what memory holds, as with read traps off, and a
-// copy back already on its way still lands. What a 1/60 s leaves unused carries over, up to
-// CarrySlices budgets: with the budget reset each 1/60 s, one wait a little longer than it left
-// every later read of that 1/60 s without its data, and a game that reads the same data each
-// frame then drew from stale data every frame (Donkey Kong Bananza's terrain detail flickered).
-// Big scenes read little and stay exact; Donkey Kong Bananza's destruction reads ~2,400 times
-// per 10 s and waited 0.5-0.8 s for it. A download (no copy back on its way) is skipped when what
-// is left is less than downloads have been taking (EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0: started
-// anyway, and overshoots the budget). After a quiet stretch one wait may take the carried budget
-// (up to 4 ms with the default), and downloads are skipped less.
+// EDEN_NX2_READ_TRAP_BUDGET_US=<n> (unset or 0: off; a test switch). With read traps, the guest
+// CPU's reads of GPU-written buffer memory wait for its data (a copy back or a download) at most n
+// microseconds in each 1/60 s; past that, a read goes on with what memory holds, as with read traps
+// off, and a copy back already on its way still lands. What a 1/60 s leaves unused carries over, up
+// to CarrySlices budgets: with the budget reset each 1/60 s, one wait a little longer than it left
+// every later read of that 1/60 s without its data, and a game that reads the same data each frame
+// then drew from stale data every frame (Donkey Kong Bananza's terrain detail flickered). Big
+// scenes read little and stay exact; Donkey Kong Bananza's destruction reads ~2,400 times per 10 s
+// and waited 0.5-0.8 s for it. A download (no copy back on its way) is skipped when what is left is
+// less than downloads have been taking (EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0: started anyway, and
+// overshoots the budget). After a quiet stretch one wait may take the carried budget (up to 4n),
+// and downloads are skipped less. Off by default: a read that goes on finds older data, and with it
+// Mario Kart World could hang in a cutscene.
 namespace VideoCommon::Nx2ReadBudget {
 
 [[nodiscard]] inline u64 BudgetUs() noexcept {
     static const u64 budget = [] {
         const char* value = std::getenv("EDEN_NX2_READ_TRAP_BUDGET_US");
-        return value != nullptr ? std::strtoull(value, nullptr, 10) : u64{1000};
+        return value != nullptr ? std::strtoull(value, nullptr, 10) : u64{0};
     }();
     return budget;
 }

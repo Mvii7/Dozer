@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/alignment.h"
 #include "common/assert.h"
 #include "common/nx2_reactive.h"
 #include "common/nx2_slow_frame.h"
@@ -25,6 +26,7 @@
 #include "common/settings_enums.h"
 #include "core/core.h"
 #include "core/core_timing.h"
+#include "core/device_memory_manager.h"
 #include "core/frontend/emu_window.h"
 #include "core/gpu_dirty_memory_manager.h"
 #include "core/frontend/graphics_context.h"
@@ -775,6 +777,23 @@ void GPU::PushGPUEntries(s32 channel, Tegra::CommandList&& entries) {
 
 VideoCore::RasterizerDownloadArea GPU::OnCPURead(PAddr addr, u64 size) {
     return impl->OnCPURead(addr, size);
+}
+
+u32 GPU::Nx2NewerDataHeld(DAddr addr, u64 size) {
+    auto* const rasterizer = impl->renderer->ReadRasterizer();
+    u32 held = 0;
+    if (rasterizer->MustFlushRegion(addr, size, VideoCommon::CacheType::BufferCache)) {
+        held |= 1;
+    }
+    if (rasterizer->HoldsGpuWrittenData(addr, size)) {
+        held |= 2;
+        const DAddr page = Common::AlignDown(addr, Core::DEVICE_PAGESIZE);
+        const u64 span = Common::AlignUp(addr + size, Core::DEVICE_PAGESIZE) - page;
+        if (rasterizer->MustFlushRegion(page, span, VideoCommon::CacheType::BufferCache)) {
+            held |= 4;
+        }
+    }
+    return held;
 }
 
 void GPU::FlushRegion(DAddr addr, u64 size) {
