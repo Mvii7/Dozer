@@ -625,6 +625,18 @@ struct Memory::Impl {
         return mode;
     }
 
+    /// EDEN_NX2_SKIP_UNTRAPPED_READS=1 (off unless set): with read traps, a slow-path read that
+    /// touches no trapped page goes on with what memory holds, as a fastmem read of it does,
+    /// instead of asking GetFlushArea. A read of a trapped page still always flushes. Slow reads
+    /// of pages under GPU-written images then no longer download them.
+    static bool SkipUntrappedReads() {
+        static const bool enabled = [] {
+            const char* value = std::getenv("EDEN_NX2_SKIP_UNTRAPPED_READS");
+            return value != nullptr && value[0] == '1';
+        }();
+        return enabled;
+    }
+
     static bool TrapCheck() {
         return TrapCheckMode() != 0;
     }
@@ -982,8 +994,16 @@ struct Memory::Impl {
         constexpr size_t sys_core = Core::Hardware::NUM_CPU_CORES - 1;
         // Any other calls threads go to syscore (their id is past the cores: up to 255).
         const size_t core = Core::HostCoreSlot(system.GetCurrentHostThreadID());
-        if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
+        const bool stats = Common::Nx2Reactive::StatsEnabled();
+        if (stats) [[unlikely]] {
             Common::Nx2Reactive::CountSlowRead(core);
+        }
+        if (SkipUntrappedReads() && ReadTrapsEnabled() && TrapCheckMode() == 0 &&
+            (read_traps.Empty() || !ReadTrapArmed(v_address, size))) {
+            if (stats) {
+                Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::UntrappedReadsSkipped, 1);
+            }
+            return;
         }
         if (!gpu_device_memory) [[unlikely]] {
             gpu_device_memory = &system.Host1x().MemoryManager();

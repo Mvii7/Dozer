@@ -2296,6 +2296,24 @@ bool RasterizerVulkan::HoldsGpuWrittenData(DAddr addr, u64 size) {
     return false;
 }
 
+/// EDEN_NX2_FLUSH_AREA_NOLOCK (on unless =0): with Switch 2 titles and read traps, a read of pages
+/// the GPU never wrote and no image was ever on gets its area from GetFlushArea without either
+/// cache's lock. The core keeps that area until a read trap is armed; the GPU's first write to
+/// such a page arms one, and the read after it flushes. Without read traps in the core (the
+/// conditions of Memory::Impl::ReadTrapsEnabled) nothing ends the area, and a clean read's
+/// NoteCpuRead is what has the page's later GPU writes copied back at fences, so those reads keep
+/// the lock. A trapped page is GPU-written: never here.
+static bool FlushAreaNoLock() {
+    static const bool enabled = [] {
+        const char* flag = std::getenv("EDEN_NX2_FLUSH_AREA_NOLOCK");
+        const char* traps = std::getenv("EDEN_NX2_READ_TRAPS");
+        return (flag == nullptr || flag[0] != '0') && (traps == nullptr || traps[0] != '0');
+    }();
+    return enabled && Tegra::g_nx2_ampere.load(std::memory_order_relaxed) &&
+           !Settings::values.use_reactive_flushing.GetValue() && Settings::IsFastmemEnabled() &&
+           Settings::values.cpu_backend.GetValue() != Settings::CpuBackend::Nce;
+}
+
 bool RasterizerVulkan::MayHoldImages(DAddr addr, u64 size) const {
     // EDEN_NX2_TEX_PAGE_FILTER=0: the texture cache is always looked at under its lock.
     static const bool enabled = [] {
@@ -2313,6 +2331,15 @@ VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64
     }
     const DAddr page_start = Common::AlignDown(addr, Core::DEVICE_PAGESIZE);
     const DAddr page_end = Common::AlignUp(addr + size, Core::DEVICE_PAGESIZE);
+    if (FlushAreaNoLock() && !Tegra::Nx2MayBeGpuWritten(page_start, page_end - page_start) &&
+        !MayHoldImages(addr, size)) {
+        // The buffer cache would flush nothing here and the texture cache has no area to give.
+        if (stats) {
+            Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::FlushAreaNoLock, 1);
+        }
+        return VideoCommon::Nx2Reactive::CombineFlushArea(std::nullopt, page_start, page_end,
+                                                          false);
+    }
     // EDEN_NX2_FLUSH_FIRST_READ: newly noted pages the GPU wrote are flushed once (nx2_reactive_flush.h)
     bool flush_buffer = false;
     bool read_trap = false;

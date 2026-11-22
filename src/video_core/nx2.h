@@ -232,6 +232,27 @@ inline void Nx2ClearGpuWrittenPages() {
     return (g_nx2_gpu_written_pages[page / 64].load(std::memory_order_relaxed) >> (page % 64)) & 1;
 }
 
+/// False only when the GPU never wrote a page of [device_address, device_address + size) through
+/// the buffer cache (every range it records as GPU-written is marked under its lock); true past
+/// the bits.
+[[nodiscard]] inline bool Nx2MayBeGpuWritten(u64 device_address, u64 size) {
+    if (size == 0) {
+        return false;
+    }
+    const u64 first = device_address >> Nx2WrittenPageBits;
+    const u64 last = (device_address + size - 1) >> Nx2WrittenPageBits;
+    if (last < first || last >= g_nx2_gpu_written_pages.size() * 64) {
+        return true;
+    }
+    for (u64 page = first; page <= last; ++page) {
+        if ((g_nx2_gpu_written_pages[page / 64].load(std::memory_order_relaxed) >> (page % 64)) &
+            1) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Whether the GPU wrote the page within the last EDEN_NX2_WRITTEN_AGE to twice that many frames
 /// (ever, with the age 0).
 [[nodiscard]] inline bool Nx2RecentlyGpuWritten(u64 device_address) {

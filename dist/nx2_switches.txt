@@ -396,6 +396,20 @@
 # faults more than 1000 times in a second leaves fastmem anyway. Only with read traps on; the
 # reactive stats line shows "fastmem read fallbacks" and "read faults kept".
 #EDEN_NX2_TRAP_FASTMEM=0
+# SKIP_UNTRAPPED_READS=1 (off unless set): with read traps on, a slow-path read (an instruction
+# that left fastmem) that touches no trapped page goes on with what memory holds, as a fastmem
+# read of the same page does, instead of asking the caches for its flush area. A read of a
+# trapped page still always flushes. Slow reads of pages under GPU-written images then no longer
+# download them. The reactive stats line counts "untrapped reads skipped".
+#EDEN_NX2_SKIP_UNTRAPPED_READS=1
+# FLUSH_AREA_NOLOCK=0: a guest CPU read of GPU-cached memory always looks at the buffer cache
+# under its lock. Unset (on): with Switch 2 titles and read traps on, a read of pages the GPU
+# never wrote and no image was ever on gets its clean area without either cache's lock; the GPU
+# thread holds the buffer cache's through each draw (Mario Kart World: ~100k such reads per
+# 10 s, 0.9-1.6 s of them). Such a page is no longer noted as
+# CPU-read, so its first GPU write is trapped and flushed at the read instead of copied back at
+# fences. The reactive stats line counts "flush area ... calls (n without a lock)".
+#EDEN_NX2_FLUSH_AREA_NOLOCK=0
 # MEMORY_QUERY_MS=<n> (unset: 50; 0: every call, Safe): the texture and buffer caches ask the
 # driver how much device memory is in use at most every n milliseconds and reuse the answer in
 # between. With NVIDIA's driver on Windows each query goes to the kernel driver and opens

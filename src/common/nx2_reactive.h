@@ -127,6 +127,8 @@ enum class Counter : u32 {
     PopDisarmNs,            ///< Read traps disarmed (EDEN_NX2_TRAP_POP_DISARM)
     PopDisarmRuns,          ///< Runs of pages disarmed (one page protection change each)
     PopCopies,              ///< Copies landed
+    FlushAreaNoLock,        ///< GetFlushArea calls answered without a lock (FLUSH_AREA_NOLOCK)
+    UntrappedReadsSkipped,  ///< Slow reads that skipped GetFlushArea (SKIP_UNTRAPPED_READS)
     Count,
 };
 
@@ -332,14 +334,16 @@ struct Window {
     using G = Gauge;
     return fmt::format(
         "nx2 reactive: {:.1f} s, {} frames; slow reads {} (cores {}); cpu reads {}; sync flushes {} "
-        "wait {} us max {} us; flush area {} calls {} us, buffer lock {} us, texture lock {} us; "
+        "wait {} us max {} us; flush area {} calls ({} without a lock) {} us, buffer lock {} us, "
+        "texture lock {} us; untrapped reads skipped {}; "
         "rt downloads forced {} ({} KiB) latched {} ({} KiB); buffer copy back {} ({} KiB); read "
         "pages {}; staging {:.1f} MiB download {:.1f} MiB; fastmem fallbacks {} (total {}); first "
         "read flushes {}; latch age dropped {} pages {} images, latched images {}",
         w.seconds, w.Get(C::Frames), slow_reads, per_slot, w.Get(C::CpuReads),
         w.Get(C::SyncFlushes), w.Get(C::SyncFlushUs), w.Get(C::SyncFlushMaxUs),
-        w.Get(C::FlushAreaCalls), w.Get(C::FlushAreaUs), w.Get(C::BufferLockUs),
-        w.Get(C::TextureLockUs), w.Get(C::RtDownloadsForced), kib(w.Get(C::RtDownloadBytesForced)),
+        w.Get(C::FlushAreaCalls), w.Get(C::FlushAreaNoLock), w.Get(C::FlushAreaUs),
+        w.Get(C::BufferLockUs), w.Get(C::TextureLockUs), w.Get(C::UntrappedReadsSkipped),
+        w.Get(C::RtDownloadsForced), kib(w.Get(C::RtDownloadBytesForced)),
         w.Get(C::RtDownloadsLatched), kib(w.Get(C::RtDownloadBytesLatched)),
         w.Get(C::BufferDownloads), kib(w.Get(C::BufferDownloadBytes)), w.Get(G::ReadPages),
         mib(w.Get(G::StagingBytes)), mib(w.Get(G::StagingDownloadBytes)), w.fastmem_fallbacks,

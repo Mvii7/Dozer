@@ -8,6 +8,14 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Read traps: a guest CPU read of pages the GPU never wrote and no image was ever on gets its
+  clean flush area without the buffer and texture caches' locks (`EDEN_NX2_FLUSH_AREA_NOLOCK=0`
+  turns it off; Switch 2 titles with read traps). The GPU thread holds the buffer cache's lock
+  through each draw, and Mario Kart World spent 0.9-1.6 s per 10 s in about 100k such lookups.
+  After Lichii's #1479.
+- `EDEN_NX2_SKIP_UNTRAPPED_READS=1` (off unless set): with read traps, a slow-path read that
+  touches no trapped page skips the flush area lookup, as a fastmem read does. Trapped reads
+  still always flush.
 - Read traps: a trapped read always flushes through the rasterizer. A read of an armed page that
   fell inside an area cached from an earlier read (an image's) skipped it, so the page was
   disarmed while the buffer cache still counted it as armed: later GPU writes there never trapped
