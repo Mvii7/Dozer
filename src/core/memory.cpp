@@ -646,10 +646,16 @@ struct Memory::Impl {
         return it != trap_check_open.end() && *it < page_end;
     }
 
-    /// Whether a read of [vaddr, vaddr + size) touches an armed page.
+    /// Whether a read of [vaddr, vaddr + size) touches an armed page. Most slow reads touch none,
+    /// which the lock-free filter tells without the lock.
     bool ReadTrapArmed(u64 vaddr, size_t size) {
+        const u64 page_begin = vaddr >> YUZU_PAGEBITS;
+        const u64 page_end = ((vaddr + size - 1) >> YUZU_PAGEBITS) + 1;
+        if (!read_traps.MayAny(page_begin, page_end)) {
+            return false;
+        }
         std::scoped_lock lk{read_trap_mutex};
-        return read_traps.Any(vaddr >> YUZU_PAGEBITS, ((vaddr + size - 1) >> YUZU_PAGEBITS) + 1);
+        return read_traps.Any(page_begin, page_end);
     }
 
     /// A read read traps would have let through: logged when the GPU holds newer data there.

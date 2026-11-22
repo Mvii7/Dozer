@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <map>
 
@@ -32,7 +33,23 @@ public:
     void Arm(u64 page, u64 page_generation) {
         if (pages.insert_or_assign(page, page_generation).second) {
             count.fetch_add(1, std::memory_order_relaxed);
+            filter[page & FilterMask].fetch_add(1, std::memory_order_relaxed);
         }
+    }
+
+    /// Without the lock: false when no page in [page_begin, page_end) is armed; true when one may
+    /// be (Any tells under the lock). A page armed while this runs may be missed, as it would be
+    /// a moment earlier.
+    bool MayAny(u64 page_begin, u64 page_end) const {
+        if (page_end - page_begin > FilterMask) {
+            return true;
+        }
+        for (u64 page = page_begin; page != page_end; ++page) {
+            if (filter[page & FilterMask].load(std::memory_order_relaxed) != 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// Whether a page in [page_begin, page_end) is armed.
@@ -60,6 +77,7 @@ public:
                 continue;
             }
             func(it->first);
+            filter[it->first & FilterMask].fetch_sub(1, std::memory_order_relaxed);
             it = pages.erase(it);
             count.fetch_sub(1, std::memory_order_relaxed);
         }
@@ -75,11 +93,18 @@ public:
     void Clear() {
         pages.clear();
         count.store(0, std::memory_order_relaxed);
+        for (auto& slot : filter) {
+            slot.store(0, std::memory_order_relaxed);
+        }
         NewGeneration();
     }
 
 private:
+    static constexpr u64 FilterMask = (u64{1} << 15) - 1;
+
     std::map<u64, u64> pages;
+    /// Armed pages per slot (page & FilterMask), read without the lock.
+    std::array<std::atomic<u32>, FilterMask + 1> filter{};
     std::atomic<size_t> count{};
     std::atomic<u64> generation{};
 };
