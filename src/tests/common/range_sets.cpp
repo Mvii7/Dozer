@@ -14,7 +14,8 @@ namespace {
 
 std::vector<std::pair<u64, u64>> Pieces(const Common::RangeSet<u64>& set, u64 addr, u64 size) {
     std::vector<std::pair<u64, u64>> pieces;
-    set.ForEachInRange(addr, size, [&](u64 lower, u64 upper) { pieces.emplace_back(lower, upper); });
+    set.ForEachInRange(addr, size,
+                       [&](u64 lower, u64 upper) { pieces.emplace_back(lower, upper); });
     return pieces;
 }
 
