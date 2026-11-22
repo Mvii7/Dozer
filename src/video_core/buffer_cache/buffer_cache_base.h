@@ -600,6 +600,26 @@ public:
         }
     }
 
+    /// A read of these pages went on without their data (the read trap budget): they stay
+    /// trapped, and the next read of them waits for it in full (TakeOwedRead), so a game polling
+    /// a value is never given the same older one twice.
+    void NoteOwedRead(DAddr device_addr, u64 size) {
+        owed_read_ranges.Add(device_addr, size);
+    }
+
+    /// Whether a read of these pages is owed its data (NoteOwedRead); it is not owed it after.
+    bool TakeOwedRead(DAddr device_addr, u64 size) {
+        if (owed_read_ranges.Empty()) {
+            return false;
+        }
+        bool owed = false;
+        owed_read_ranges.ForEachInRange(device_addr, size, [&](DAddr, DAddr) { owed = true; });
+        if (owed) {
+            owed_read_ranges.Subtract(device_addr, size);
+        }
+        return owed;
+    }
+
     /// A read trap found GPU writes here not in guest memory yet. When all of them are in copies
     /// back already committed at a fence, waits for the fence thread to land them instead of a
     /// sync flush (EDEN_NX2_COPYBACK_WAIT=0: never). Returns whether none is left; `timed_out`:
@@ -1120,6 +1140,8 @@ private:
     /// Pages handed to ArmReadTraps and not read since (ForgetReadTraps): a GPU write to one of
     /// them arms nothing new.
     Common::RangeSet<DAddr> read_trapped_ranges;
+    /// Pages a read went on from without their data (NoteOwedRead).
+    Common::RangeSet<DAddr> owed_read_ranges;
 
     /// Whether every GPU write in this range is in a committed copy back (async_downloads).
     [[nodiscard]] bool CopyBackCovers(DAddr addr, u64 size) const;

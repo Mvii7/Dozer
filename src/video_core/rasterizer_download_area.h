@@ -17,6 +17,9 @@ struct RasterizerDownloadArea {
     bool preemtive;
     /// A read-trapped buffer flush is among it (EDEN_NX2_READ_TRAP_BUDGET_US counts its wait).
     bool read_trap = false;
+    /// The read went on without the buffer data the GPU holds (the read trap budget): its pages
+    /// stay trapped, and their next read waits for the data in full.
+    bool keep_trapped = false;
 };
 
 /// EDEN_NX2_ASYNC_READBACK: where a read's buffer bytes are: the tick its downloads were

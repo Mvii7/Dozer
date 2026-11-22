@@ -382,8 +382,10 @@
 # the budget). Scenes that read little stay exact; bursts (Bananza's destruction, Mario Kart
 # World's races) stop waiting. What a 1/60 s leaves unused carries over, up to 4 budgets, so one
 # wait a little over n does not leave the rest of that frame's reads without their data; after a
-# quiet stretch one wait (or download) may take up to 4n. A line every 10 s counts the waits and
-# the reads that went on.
+# quiet stretch one wait (or download) may take up to 4n. A read that goes on leaves its pages
+# trapped, and the next read of them waits for the data in full: a game polling a value never
+# gets the same older one twice (Mario Kart World could hang in a cutscene). A line every 10 s
+# counts the waits, the reads that went on, and the next reads that waited in full.
 #EDEN_NX2_READ_TRAP_BUDGET_US=0
 # READ_TRAP_BUDGET_PREDICT=0: with the budget, a download (no copy back on its way) starts
 # even when what is left is less than downloads have been taking, and overshoots the budget.

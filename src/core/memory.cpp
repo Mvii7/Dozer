@@ -1026,6 +1026,7 @@ struct Memory::Impl {
                 return;
             }
         }
+        bool keep_trapped = false;
         gpu_device_memory->ApplyOpOnPointer(p, scratch_buffers[core], [&](DAddr address) {
             const DAddr end_address = address + size;
             if (trapped || check_open) {
@@ -1036,7 +1037,12 @@ struct Memory::Impl {
                 return;
             }
             current_area = system.GPU().OnCPURead(address, size);
+            keep_trapped |= current_area.keep_trapped;
         });
+        if (keep_trapped) {
+            // It went on without the GPU's data (the read trap budget): the next read traps again.
+            return;
+        }
         // Only once every device alias is flushed (or inside an area flushed after this
         // generation's traps were armed): a disarmed page is read through fastmem without trapping.
         DisarmReadTraps(v_address, size, generation);
