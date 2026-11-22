@@ -378,13 +378,13 @@
 # READ_TRAP_BUDGET_US=<n> (test switch; unset or 0: off): with read traps, reads of GPU-written
 # buffer memory wait for its data at most n microseconds in each 1/60 s; past that a read goes on
 # with what memory holds, as with read traps off, and a copy back on its way still lands (one is
-# waited for at most what is left of the budget). Scenes that read little stay exact; bursts (Bananza's destruction, Mario Kart
-# World's races) stop waiting. What a 1/60 s leaves unused carries over, up to 4 budgets, so one
-# wait a little over n does not leave the rest of that frame's reads without their data; after a
-# quiet stretch one wait (or download) may take up to 4n. A line every 10 s counts the waits and
-# the reads that went on. Off by default: a read that goes on finds older data (Mario Kart World
-# could hang in a cutscene, Bananza lagged at the first hit of a vein), and with read traps fixed
-# it saved ~1% of Bananza's time.
+# waited for at most what is left of the budget). Scenes that read little stay exact; bursts
+# (Bananza's destruction, Mario Kart World's races) stop waiting. What a 1/60 s leaves unused
+# carries over, up to 4 budgets, so one wait a little over n does not leave the rest of that frame's
+# reads without their data; after a quiet stretch one wait (or download) may take up to 4n. A line
+# every 10 s counts the waits and the reads that went on. Off by default: a read that goes on finds
+# older data (Mario Kart World could hang in a cutscene, Bananza lagged at the first hit of a vein),
+# and with read traps fixed it saved ~1% of Bananza's time.
 #EDEN_NX2_READ_TRAP_BUDGET_US=1000
 # READ_TRAP_BUDGET_PREDICT=0: with the budget, a download (no copy back on its way) starts
 # even when what is left is less than downloads have been taking, and overshoots the budget.

@@ -75,7 +75,8 @@ and `=0` brings back the 2.0.0 code path.
   (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
   fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World
   and Donkey Kong Bananza, and reads waited for copies back behind it. With it gone Bananza's
-  destruction waits 0.07-0.17 s per 10 s instead of 0.3-0.4 s. The reactive stats line splits the copy back pops by part.
+  destruction waits 0.07-0.17 s per 10 s instead of 0.3-0.4 s. The reactive stats line splits
+  the copy back pops by part.
 - Shader cache (Vulkan and OpenGL): a cache whose last record was cut off (the emulator crashed
   or was closed while appending a pipeline) keeps the records before it; before, the whole cache
   file was deleted and every pipeline was built again. A zero-filled tail no longer crashes the
