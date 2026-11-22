@@ -8,6 +8,9 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_SSBO_MEMO_COMPUTE=1` (off unless set): compute dispatches reuse resolved storage
+  buffer bindings until a GPU mapping changes, as draws already do with `SSBO_MEMO`, instead of
+  resolving each one again. After Orchid #182.
 - `EDEN_NX2_ARM_NEW_PAGES=1` (off unless set): a GPU write to a partly armed range arms only
   the pages that are not armed yet, instead of the whole range again (after Eglantine). The
   reactive stats line counts the pages of both kinds and the time spent arming.

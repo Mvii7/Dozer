@@ -202,6 +202,10 @@
 #EDEN_NX2_UBO_KEEP=0
 #EDEN_NX2_SSBO_FAST=0
 #EDEN_NX2_SSBO_MEMO=0
+# SSBO_MEMO_COMPUTE=1 (off unless set; with SSBO_MEMO on): compute dispatches reuse resolved
+# storage buffer bindings until a GPU mapping changes, as draws do, instead of resolving each
+# again. The log's "Storage binding memo (compute)" line shows how many were reused.
+#EDEN_NX2_SSBO_MEMO_COMPUTE=1
 #EDEN_NX2_SYNC_SETS=0
 #EDEN_NX2_SYNC_SKIP=0
 #EDEN_NX2_SYNC_EXACT=0

@@ -845,9 +845,10 @@ private:
     [[nodiscard]] Binding StorageBufferBindingAt(GPUVAddr gpu_addr, u64 next_qword,
                                                  u32 cbuf_index, bool is_written) const;
 
-    /// StorageBufferBinding through storage_binding_memo (EDEN_NX2_SSBO_MEMO).
+    /// StorageBufferBinding through storage_binding_memo (EDEN_NX2_SSBO_MEMO), or for a compute
+    /// dispatch through compute_storage_binding_memo (EDEN_NX2_SSBO_MEMO_COMPUTE).
     [[nodiscard]] Binding MemoStorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
-                                                   bool is_written);
+                                                   bool is_written, bool compute = false);
 
     [[nodiscard]] TextureBufferBinding GetTextureBufferBinding(GPUVAddr gpu_addr, u32 size,
                                                                PixelFormat format);
@@ -1015,6 +1016,9 @@ private:
     };
     static constexpr size_t STORAGE_BINDING_MEMO_SIZE = 256;
     std::array<StorageBindingMemo, STORAGE_BINDING_MEMO_SIZE> storage_binding_memo{};
+    /// EDEN_NX2_SSBO_MEMO_COMPUTE: the same for compute dispatches, kept apart so they don't
+    /// evict the draws' entries.
+    std::array<StorageBindingMemo, STORAGE_BINDING_MEMO_SIZE> compute_storage_binding_memo{};
     /// EDEN_NX2_SSBO_FAST: GetMemoryLayoutSize answers (StorageBufferBindingAt).
     mutable LayoutRunMemo layout_runs;
 

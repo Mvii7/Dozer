@@ -1385,8 +1385,16 @@ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index,
 
     const auto& cbufs = launch_desc.const_buffer_config;
     const GPUVAddr ssbo_addr = cbufs[cbuf_index].Address() + cbuf_offset;
+    // EDEN_NX2_SSBO_MEMO_COMPUTE=1 (off unless set; needs SSBO_MEMO): compute dispatches reuse
+    // resolved bindings as draws do, instead of resolving each one again (after Orchid #182).
+    static const bool memo_compute = [] {
+        const char* value = std::getenv("EDEN_NX2_SSBO_MEMO_COMPUTE");
+        return value != nullptr && value[0] == '1';
+    }();
     channel_state->compute_storage_buffers[ssbo_index] =
-        StorageBufferBinding(ssbo_addr, cbuf_index, is_written);
+        g_nx2_ssbo_memo && memo_compute
+            ? MemoStorageBufferBinding(ssbo_addr, cbuf_index, is_written, true)
+            : StorageBufferBinding(ssbo_addr, cbuf_index, is_written);
 }
 
 template <class P>
@@ -3963,7 +3971,7 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
 
 template <class P>
 Binding BufferCache<P>::MemoStorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
-                                                 bool is_written) {
+                                                 bool is_written, bool compute) {
     // EDEN_NX2_SSBO_MEMO: each draw resolved every storage buffer again (~1.4% of the split back
     // on the wide view, mostly GetMemoryLayoutSize: a lock and a range map walk). The constant
     // buffer words are still read every time; only what they resolve to is remembered.
@@ -3975,17 +3983,18 @@ Binding BufferCache<P>::MemoStorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_in
     const size_t owner = gpu_memory->GetID();
     // Read before resolving: a page table change meanwhile leaves an entry no later call matches.
     const u64 map_epoch = gpu_memory->MappingEpoch();
-    StorageBindingMemo& memo =
-        storage_binding_memo[static_cast<size_t>((gpu_addr >> 8) ^ (gpu_addr >> 20)) &
-                             (STORAGE_BINDING_MEMO_SIZE - 1)];
-    static u64 bindings{};
-    static u64 reused{};
-    if ((++bindings & ((u64{1} << 22) - 1)) == 0) {
-        LOG_INFO(HW_GPU, "Storage binding memo: {} of {} bindings reused", reused, bindings);
+    auto& table = compute ? compute_storage_binding_memo : storage_binding_memo;
+    StorageBindingMemo& memo = table[static_cast<size_t>((gpu_addr >> 8) ^ (gpu_addr >> 20)) &
+                                     (STORAGE_BINDING_MEMO_SIZE - 1)];
+    static std::array<u64, 2> bindings{};
+    static std::array<u64, 2> reused{};
+    if ((++bindings[compute] & ((u64{1} << 22) - 1)) == 0) {
+        LOG_INFO(HW_GPU, "Storage binding memo ({}): {} of {} bindings reused",
+                 compute ? "compute" : "draws", reused[compute], bindings[compute]);
     }
     if (memo.gpu_addr == gpu_addr && memo.next_qword == next_qword &&
         memo.map_epoch == map_epoch && memo.owner == owner && memo.is_written == is_written) {
-        ++reused;
+        ++reused[compute];
         return memo.binding;
     }
     const Binding binding = StorageBufferBindingAt(gpu_addr, next_qword, cbuf_index, is_written);
