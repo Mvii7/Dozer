@@ -25,6 +25,7 @@ and `=0` brings back the 2.0.0 code path.
   interpolation and not AMD's FSR 3; the window filter "AMD FidelityFX Super Resolution 3" is
   now **FSR 1, softer sharpening** (it runs FSR 1's EASU and RCAS at 0.8x sharpness), and the
   plain FSR filter is **FSR 1**. From Lichii.
+
 ## Dozer 0.1.6 (`v0.1.6`)
 
 - Donkey Kong Bananza: a **Foliage off** box in its Properties > Tuning, under Dynamic frame rate
