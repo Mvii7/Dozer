@@ -371,8 +371,8 @@ struct GPU::Impl {
         gpu_thread.SubmitList(channel, std::move(entries), is_async);
     }
 
-    void RunInOrder(std::function<void()>&& func) {
-        gpu_thread.Run(std::move(func), is_async);
+    void RunInOrder(std::function<void()>&& func, bool front_waits) {
+        gpu_thread.Run(std::move(func), is_async, front_waits);
     }
 
     /// Notify rasterizer that any caches of the specified region should be flushed to Switch memory
@@ -800,8 +800,8 @@ void GPU::FlushRegion(DAddr addr, u64 size) {
     impl->FlushRegion(addr, size);
 }
 
-void GPU::RunInOrder(std::function<void()>&& func) {
-    impl->RunInOrder(std::move(func));
+void GPU::RunInOrder(std::function<void()>&& func, bool front_waits) {
+    impl->RunInOrder(std::move(func), front_waits);
 }
 
 void GPU::InvalidateRegion(DAddr addr, u64 size, bool preserve_gpu_writes) {

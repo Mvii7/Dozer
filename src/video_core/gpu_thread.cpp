@@ -157,6 +157,7 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                 auto* const rasterizer_ptr = renderer.ReadRasterizer();
                 namespace Diag = VideoCommon::Nx2FrontDiag;
                 const bool diag = Diag::Tracking();
+                bool drain = false;
                 if (auto* submit_list = std::get_if<SubmitListCommand>(&next.data)) {
                     Profile::Scope scope{Profile::Zone::Push};
                     // Held-back guest CPU writes first (see the single-thread path below).
@@ -173,6 +174,7 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                     }
                 } else if (auto* run = std::get_if<RunCommand>(&next.data)) {
                     // Unknown work: on A with the back stages parked (nx2_stages.h).
+                    drain = run->front_waits;
                     split.DeferFunctionTo<VideoCommon::DeferTarget::Join>(std::move(run->func));
                     if (diag) [[unlikely]] {
                         Diag::NoteWork(Diag::WorkKind::Run);
@@ -195,6 +197,12 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                     SignalCommand(*state_ptr, fence, block);
                 });
                 split.Publish();
+                if (drain) {
+                    // A GPU mapping change: the command lists after it may live in, or read
+                    // from, the memory it maps.
+                    VideoCommon::Nx2FrontDiag::CountDrain(
+                        split, VideoCommon::Nx2Profile::DrainSite::MappingChange);
+                }
                 continue;
             }
             if (auto* submit_list = std::get_if<SubmitListCommand>(&next.data)) {
@@ -241,8 +249,8 @@ void ThreadManager::TickGPU(bool is_async) {
     PushCommand(GPUTickCommand(), false, is_async);
 }
 
-void ThreadManager::Run(std::function<void()>&& func, bool is_async) {
-    PushCommand(RunCommand{std::move(func)}, false, is_async);
+void ThreadManager::Run(std::function<void()>&& func, bool is_async, bool front_waits) {
+    PushCommand(RunCommand{std::move(func), front_waits}, false, is_async);
 }
 
 void ThreadManager::StartSplit() {
