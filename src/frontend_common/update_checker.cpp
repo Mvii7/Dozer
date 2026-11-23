@@ -18,12 +18,20 @@ std::optional<Common::Net::Release> UpdateChecker::GetUpdate() {
     LOG_INFO(Frontend, "Received update {}", latest->title);
 
     // Builds carry their commit rather than a version number, so ask the host whether the latest
-    // release is ahead of this commit. Local or diverged builds are never offered an update.
+    // release is ahead of this commit.
     const auto status = Common::Net::GetCompareStatus(latest->tag, Common::g_scm_rev);
     LOG_INFO(Frontend, "Compare of {} against this build: {}", latest->tag,
              status.value_or("unknown"));
     if (status == "behind")
         return latest;
+
+    // A build from a release branch is not an ancestor of the next release, so the host calls it
+    // diverged. Offer the update if the release came out after this build was made.
+    if (status == "diverged") {
+        const u64 built = Common::Net::ParseIsoTimestamp(Common::g_build_date);
+        if (built != 0 && built < latest->published)
+            return latest;
+    }
 
     return std::nullopt;
 }
