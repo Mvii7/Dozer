@@ -1,12 +1,13 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "yuzu_cmd/nx2_sampler.h"
+#include "frontend_common/nx2_sampler.h"
 
 #ifdef _WIN32
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -316,6 +317,11 @@ void Run(std::vector<std::string> patterns, double start, double seconds, std::s
 void StartFromEnvironment() {
     const char* names = std::getenv("EDEN_NX2_SAMPLE");
     if (names == nullptr || *names == '\0') {
+        return;
+    }
+    // dozer.exe calls this at each game boot: sample the first one only.
+    static std::atomic<bool> started{};
+    if (started.exchange(true)) {
         return;
     }
     const char* out = std::getenv("EDEN_NX2_SAMPLE_OUT");

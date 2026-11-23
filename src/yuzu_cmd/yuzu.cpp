@@ -65,7 +65,7 @@
 #include "yuzu_cmd/emu_window/emu_window_sdl3_vk.h"
 #include "yuzu_cmd/nx2_auto_script.h"
 #include "frontend_common/nx2_osd.h"
-#include "yuzu_cmd/nx2_sampler.h"
+#include "frontend_common/nx2_sampler.h"
 
 #ifdef _WIN32
 // windows.h needs to be included before shellapi.h

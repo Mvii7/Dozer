@@ -120,6 +120,7 @@ static FileSys::VirtualFile VfsDirectoryCreateFileWrapper(const FileSys::Virtual
 }
 
 // Frontend //
+#include "frontend_common/nx2_sampler.h"
 #include "frontend_common/play_time_manager.h"
 
 #ifdef ENABLE_UPDATE_CHECKER
@@ -2038,6 +2039,9 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
     QtCommon::emu_thread = std::make_unique<EmuThread>();
     emit EmulationStarting();
     QtCommon::emu_thread->start();
+
+    // After Nx2PerfSession::Prepare, so a per-game EDEN_NX2_SAMPLE is seen.
+    Nx2Sampler::StartFromEnvironment();
 
     // The emulated clock as the OSD's speed fallback only single core, as in yuzu_cmd: multicore
     // it is the wall clock.

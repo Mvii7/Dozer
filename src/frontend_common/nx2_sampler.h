@@ -10,7 +10,8 @@ namespace Nx2Sampler {
 // EDEN_NX2_SAMPLE_START seconds (default 60) for EDEN_NX2_SAMPLE_SECONDS (default 30), each
 // thread is paused about 1000 times a second and its call stack recorded; the counts per
 // function (where the thread is, and everything on its stack) go to EDEN_NX2_SAMPLE_OUT
-// (default nx2_samples.txt).
+// (default nx2_samples.txt). dozer-cli starts the clock at launch, dozer.exe at the first game
+// boot.
 void StartFromEnvironment();
 
 } // namespace Nx2Sampler

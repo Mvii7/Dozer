@@ -17,7 +17,9 @@ add_library(frontend_common STATIC
     mod_manager.h mod_manager.cpp
     nx_archive.h nx_archive.cpp
     nx2_osd.cpp
-    nx2_osd.h)
+    nx2_osd.h
+    nx2_sampler.cpp
+    nx2_sampler.h)
 
 if (ENABLE_UPDATE_CHECKER)
     target_link_libraries(frontend_common PRIVATE httplib::httplib)

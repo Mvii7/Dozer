@@ -6,6 +6,11 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased (Dozer)
+
+- Sampling profiler (`EDEN_NX2_SAMPLE`) in dozer.exe too, not only dozer-cli: it starts at the
+  first game boot, after the game's Dozer settings are applied.
+
 ## Dozer 0.2.0 (`v0.2.0`)
 
 - Range sets: an empty range, or one whose end wraps, no longer reaches boost::icl's searches,

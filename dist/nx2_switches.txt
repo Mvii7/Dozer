@@ -519,6 +519,14 @@
 # RivaTuner Statistics Server's OSD every 0.5 s (dozer-cli and dozer.exe on Windows; RTSS must
 # be running).
 #EDEN_NX2_OSD=1
+# SAMPLE=<thread names> (diagnostic, Windows): a sampling profiler. Names are comma separated, a
+# trailing '*' matches a prefix (CPUCore_*,GPU*). SAMPLE_START seconds after the first game boot
+# (dozer.exe) or the launch (dozer-cli), default 60, for SAMPLE_SECONDS (default 30), each thread's
+# call stack is taken ~1000 times a second; the counts per function go to SAMPLE_OUT (default
+# nx2_samples.txt in the working folder). Game code (the JIT) is counted as "(jit)".
+#EDEN_NX2_SAMPLE=CPUCore_*
+#EDEN_NX2_SAMPLE_START=60
+#EDEN_NX2_SAMPLE_SECONDS=30
 
 # --- tensor upscaler stand-in (video_core/engines/kepler_compute.cpp) ---
 # UPSCALE_SCAN=0, UPSCALE_LEARN=0, UPSCALE_HEADER=0 turn off the scan for the upscaler's input
