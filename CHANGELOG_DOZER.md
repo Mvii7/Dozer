@@ -6,7 +6,7 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Unreleased (Dozer)
+## Dozer 0.2.0 (`v0.2.0`)
 
 - Range sets: an empty range, or one whose end wraps, no longer reaches boost::icl's searches,
   which need non-empty intervals. Asked about an empty range, they returned every stored range from the first on, cut
