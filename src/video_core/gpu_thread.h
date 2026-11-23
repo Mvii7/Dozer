@@ -80,6 +80,8 @@ struct GPUTickCommand final {};
 /// Command to run a function on the GPU thread after the commands queued before it
 struct RunCommand final {
     std::function<void()> func;
+    /// With the split on, the front parses no further command list until func ran.
+    bool front_waits{};
 };
 
 using CommandData =
@@ -132,7 +134,7 @@ public:
     void TickGPU(bool is_async);
 
     /// Runs func on the GPU thread once the commands queued before it have been processed.
-    void Run(std::function<void()>&& func, bool is_async);
+    void Run(std::function<void()>&& func, bool is_async, bool front_waits = false);
 
     /// Starts the GPU thread split if it may run and waits for it (a guest CPU thread, before
     /// the first Switch 2 channel exists).

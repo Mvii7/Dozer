@@ -71,6 +71,20 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
         namespace Profile = VideoCommon::Nx2Profile;
         auto& split = VideoCommon::GpuSplit::Get();
         const bool busy_clock = VideoCommon::Nx2BusyClock::Tracked();
+        // A GPU mapping change went to the back (RunCommand::front_waits): before the front parses
+        // another command list, which may live in or read from the mapped memory, the back runs it.
+        // Once for a burst of maps.
+        bool map_pending = false;
+        const auto wait_for_maps = [&] {
+            if (!map_pending) {
+                return;
+            }
+            map_pending = false;
+            if (split.Active()) {
+                VideoCommon::Nx2FrontDiag::CountDrain(
+                    split, VideoCommon::Nx2Profile::DrainSite::MappingChange);
+            }
+        };
         while (!stop_token.stop_requested()) {
             Profile::Report();
             if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
@@ -84,6 +98,7 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                 bool resumed = false;
                 {
                     Profile::Scope scope{Profile::Zone::ResumePending};
+                    wait_for_maps();
                     resumed = scheduler.ResumePending(system.GPU());
                 }
                 const bool popped = state.queue.TryPop(next);
@@ -121,6 +136,7 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                 // releases: poll them meanwhile.
                 {
                     Profile::Scope scope{Profile::Zone::ResumePending};
+                    wait_for_maps();
                     scheduler.ResumePending(system.GPU());
                 }
                 if (!state.queue.TryPop(next)) {
@@ -161,6 +177,7 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                     Profile::Scope scope{Profile::Zone::Push};
                     // Held-back guest CPU writes first (see the single-thread path below).
                     split.Defer([gpu = &system.GPU()] { gpu->InvalidateGPUCache(); });
+                    wait_for_maps();
                     scheduler.Push(system.GPU(), submit_list->channel, std::move(submit_list->entries));
                     // EDEN_NX2_PROBE_FRONT_US: a slower front, for how much its time costs.
                     if (const u32 probe_us = Diag::ProbeFrontUs(); probe_us != 0) [[unlikely]] {
@@ -173,6 +190,7 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                     }
                 } else if (auto* run = std::get_if<RunCommand>(&next.data)) {
                     // Unknown work: on A with the back stages parked (nx2_stages.h).
+                    map_pending |= run->front_waits;
                     split.DeferFunctionTo<VideoCommon::DeferTarget::Join>(std::move(run->func));
                     if (diag) [[unlikely]] {
                         Diag::NoteWork(Diag::WorkKind::Run);
@@ -241,8 +259,8 @@ void ThreadManager::TickGPU(bool is_async) {
     PushCommand(GPUTickCommand(), false, is_async);
 }
 
-void ThreadManager::Run(std::function<void()>&& func, bool is_async) {
-    PushCommand(RunCommand{std::move(func)}, false, is_async);
+void ThreadManager::Run(std::function<void()>&& func, bool is_async, bool front_waits) {
+    PushCommand(RunCommand{std::move(func), front_waits}, false, is_async);
 }
 
 void ThreadManager::StartSplit() {
