@@ -1084,9 +1084,9 @@ private:
                     if (IsEarlyPage(page)) {
                         continue;
                     }
-                    const DAddr from = (std::max)(start, page);
+                    const DAddr range_begin = (std::max)(start, page);
                     const DAddr to = (std::min)(end, page + Core::DEVICE_PAGESIZE);
-                    uncommitted_gpu_modified_ranges.Add(from, to - from);
+                    uncommitted_gpu_modified_ranges.Add(range_begin, to - range_begin);
                 }
             });
         } else {
