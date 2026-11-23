@@ -76,7 +76,7 @@ std::vector<Asset> Release::GetPlatformAssets() const {
     return found_assets;
 }
 
-static inline u64 ParseIsoTimestamp(const std::string& iso) {
+u64 ParseIsoTimestamp(const std::string& iso) {
     if (iso.empty())
         return 0;
 
