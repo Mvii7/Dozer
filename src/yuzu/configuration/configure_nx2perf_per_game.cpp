@@ -38,7 +38,6 @@ const Entry* EntryOf(std::size_t key) {
     using S = Perf::Switches;
     static const Entry entries[Perf::KeyCount] = {
         {&S::read_traps, Perf::Game::Other, QT_TR_NOOP("Read traps")},
-        {&S::read_trap_budget, Perf::Game::Other, QT_TR_NOOP("Read trap budget")},
         {&S::split_gpu_thread, Perf::Game::Other, QT_TR_NOOP("Split GPU thread")},
         {&S::acquire_peek, Perf::Game::Other, QT_TR_NOOP("Acquire peek")},
         {&S::jit_same, Perf::Game::Other, QT_TR_NOOP("Same-value filter in the macro JIT")},

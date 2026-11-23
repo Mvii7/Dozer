@@ -200,7 +200,7 @@ struct ThreadData {
     std::array<u64, static_cast<size_t>(Zone::Count)> exclusive_ticks{}; ///< See Ticks
     std::array<u64, static_cast<size_t>(Zone::Count)> count{};
     std::array<u64, 192> counters{}; ///< See Counter
-    std::array<std::array<u64, 3>, 9> drains{}; ///< See DrainSite: calls, waits, wait ticks
+    std::array<std::array<u64, 3>, 10> drains{}; ///< See DrainSite: calls, waits, wait ticks
     std::array<HistogramData, static_cast<size_t>(Histogram::Count)> histograms{};
     u64 child_ticks{}; ///< Time of the zones nested in the current one
     u64 window_start{};       ///< Now() when the window began
@@ -449,13 +449,14 @@ enum class DrainSite : u32 {
     PusherSync,        ///< DmaPusher: command lists with the sync bit (sync_memory_operations)
     PusherCommandList, ///< DmaPusher: command lists on GPU-written pages
     FrontCompute,      ///< KeplerCompute::Front (first use)
+    MappingChange,     ///< Switch 2 GPU maps (RunInOrder with front_waits)
     Count,
 };
 
 inline constexpr std::array<const char*, static_cast<size_t>(DrainSite::Count)> drain_site_names{
     "acquire resume", "semaphore acquire", "sem execute", "MME DMA read",
     "3D front other", "parameter blocks",  "sync lists",  "written lists",
-    "compute front",
+    "compute front",  "mapping change",
 };
 static_assert(static_cast<size_t>(DrainSite::Count) <=
               std::tuple_size_v<decltype(ThreadData::drains)>);

@@ -130,6 +130,16 @@ const bool g_range_skip_covered_adds = [] {
 }();
 }
 
+namespace RangeSetsDetail {
+/// Whether [base, base + size) is a non-empty interval. boost::icl's searches need one: given an
+/// empty range, or one whose end wraps past the address space, they returned every stored range
+/// from the first one on, clipped into pieces that end before they start.
+template <typename AddressType>
+[[nodiscard]] constexpr bool IsValidRange(AddressType base, size_t size) {
+    return static_cast<AddressType>(base + static_cast<AddressType>(size)) > base;
+}
+} // namespace RangeSetsDetail
+
 template <typename AddressType>
 struct RangeSet<AddressType>::RangeSetImpl {
     using IntervalSet = boost::icl::interval_set<
@@ -141,13 +151,16 @@ struct RangeSet<AddressType>::RangeSetImpl {
     ~RangeSetImpl() = default;
 
     void Add(AddressType base_address, size_t size) {
+        if (!RangeSetsDetail::IsValidRange(base_address, size)) {
+            return;
+        }
         AddressType end_address = base_address + static_cast<AddressType>(size);
         IntervalType interval{base_address, end_address};
         // EDEN_NX2_RANGE_SKIP: adding a range one stored range already covers leaves the set as
         // it is. The stored ranges are disjoint and joined, so the first one not entirely below
         // the range is the only one that can cover it. Each draw adds the ranges of its written
         // storage buffers again (~3.5% of the split back on the wide view in joins and frees).
-        if (g_range_skip_covered_adds && size != 0 && !m_ranges_set.empty()) {
+        if (g_range_skip_covered_adds && !m_ranges_set.empty()) {
             const auto it = m_ranges_set.lower_bound(interval);
             if (it != m_ranges_set.end() && boost::icl::contains(*it, interval)) {
                 return;
@@ -157,6 +170,9 @@ struct RangeSet<AddressType>::RangeSetImpl {
     }
 
     void Subtract(AddressType base_address, size_t size) {
+        if (!RangeSetsDetail::IsValidRange(base_address, size)) {
+            return;
+        }
         AddressType end_address = base_address + static_cast<AddressType>(size);
         IntervalType interval{base_address, end_address};
         m_ranges_set.subtract(interval);
@@ -178,7 +194,7 @@ struct RangeSet<AddressType>::RangeSetImpl {
 
     template <typename Func>
     void ForEachInRange(AddressType base_addr, size_t size, Func&& func) const {
-        if (m_ranges_set.empty()) {
+        if (m_ranges_set.empty() || !RangeSetsDetail::IsValidRange(base_addr, size)) {
             return;
         }
         const AddressType start_address = base_addr;
@@ -218,6 +234,9 @@ struct OverlapRangeSet<AddressType>::OverlapRangeSetImpl {
     ~OverlapRangeSetImpl() = default;
 
     void Add(AddressType base_address, size_t size) {
+        if (!RangeSetsDetail::IsValidRange(base_address, size)) {
+            return;
+        }
         AddressType end_address = base_address + static_cast<AddressType>(size);
         IntervalType interval{base_address, end_address};
         m_split_ranges_set += std::make_pair(interval, 1);
@@ -226,7 +245,7 @@ struct OverlapRangeSet<AddressType>::OverlapRangeSetImpl {
     template <bool has_on_delete, typename Func>
     void Subtract(AddressType base_address, size_t size, s32 amount,
                   [[maybe_unused]] Func&& on_delete) {
-        if (m_split_ranges_set.empty()) {
+        if (m_split_ranges_set.empty() || !RangeSetsDetail::IsValidRange(base_address, size)) {
             return;
         }
         AddressType end_address = base_address + static_cast<AddressType>(size);
@@ -268,7 +287,7 @@ struct OverlapRangeSet<AddressType>::OverlapRangeSetImpl {
 
     template <typename Func>
     void ForEachInRange(AddressType base_address, size_t size, Func&& func) const {
-        if (m_split_ranges_set.empty()) {
+        if (m_split_ranges_set.empty() || !RangeSetsDetail::IsValidRange(base_address, size)) {
             return;
         }
         const AddressType start_address = base_address;
@@ -345,7 +364,7 @@ bool RangeSet<AddressType>::Empty() const {
 template <typename AddressType>
 bool RangeSet<AddressType>::Intersects(AddressType base_address, size_t size) const {
     const auto& set = m_impl->m_ranges_set;
-    if (set.empty() || size == 0) {
+    if (set.empty() || !RangeSetsDetail::IsValidRange(base_address, size)) {
         return false;
     }
     const AddressType end_address = base_address + static_cast<AddressType>(size);
