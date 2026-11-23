@@ -50,6 +50,11 @@ public:
         return true;
     }
 
+    /// Whether the calling thread holds the lock (diagnostics).
+    [[nodiscard]] bool HeldByCurrentThread() const {
+        return owner.load(std::memory_order_relaxed) == std::this_thread::get_id();
+    }
+
     void unlock() {
         if (--depth != 0) {
             return;

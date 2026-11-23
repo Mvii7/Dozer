@@ -229,6 +229,7 @@ void BufferCache<P>::MarkCpuWritten(DAddr device_addr, u64 size, bool engine_wri
         // Untracked pages stop being cached, which drops their read traps (Memory's
         // RasterizerMarkRegionCached): the next GPU write must arm them again.
         if (!read_trapped_ranges.Empty()) {
+            CheckTrapSetLock("MarkCpuWritten");
             const DAddr begin = Common::AlignDown(device_addr, DEVICE_PAGESIZE);
             read_trapped_ranges.Subtract(
                 begin, Common::AlignUp(device_addr + size, DEVICE_PAGESIZE) - begin);
@@ -1030,7 +1031,7 @@ bool BufferCache<P>::DMACopy(GPUVAddr src_address, GPUVAddr dest_address, u64 am
         const DAddr diff = base_address - *cpu_src_address;
         const DAddr new_base_address = *cpu_dest_address + diff;
         tmp_intervals.push_back({new_base_address, size});
-        QueueDownload(new_base_address, size);
+        QueueDownload(new_base_address, size, "DMACopy");
     };
     gpu_modified_ranges.ForEachInRange(*cpu_src_address, amount, mirror);
     // This subtraction in this order is important for overlapping copies.
@@ -1614,10 +1615,47 @@ void BufferCache<P>::PopAsyncBuffers() {
 }
 
 template <class P>
+void BufferCache<P>::ReportTrapSet(TrapSetIssue issue, const char* where, DAddr addr, u64 size,
+                                  DAddr lower, DAddr upper) {
+    static std::array<std::atomic<u64>, 3> counts{};
+    const u64 n = counts[static_cast<size_t>(issue)].fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n > 16 && !std::has_single_bit(n)) {
+        return;
+    }
+    switch (issue) {
+    case TrapSetIssue::NoLock:
+        LOG_WARNING(HW_GPU, "Trap set check: {} changed the read trap set without the lock ({})",
+                    where, n);
+        break;
+    case TrapSetIssue::OddRange:
+        LOG_WARNING(HW_GPU, "Trap set check: {} armed {:#x}+{:#x} ({})", where, addr, size, n);
+        break;
+    case TrapSetIssue::PieceOutside: {
+        // The set's pieces near the range, read in order without ForEachInRange.
+        std::string nearby;
+        size_t pieces = 0;
+        read_trapped_ranges.ForEach([&](DAddr piece_lower, DAddr piece_upper) {
+            ++pieces;
+            if (piece_upper + 16_MiB >= addr && piece_lower <= addr + size + 16_MiB &&
+                nearby.size() < 600) {
+                nearby += fmt::format(" [{:#x},{:#x})", piece_lower, piece_upper);
+            }
+        });
+        LOG_WARNING(HW_GPU,
+                    "Trap set check: {}: asked for [{:#x},{:#x}), got [{:#x},{:#x}) ({}); {} "
+                    "pieces, near:{}",
+                    where, addr, addr + size, lower, upper, n, pieces, nearby);
+        break;
+    }
+    }
+}
+
+template <class P>
 void BufferCache<P>::DisarmCopiedReadTraps(DAddr addr, u64 size) {
     const DAddr begin = Common::AlignDown(addr, Core::DEVICE_PAGESIZE);
     const DAddr end = Common::AlignUp(addr + size, Core::DEVICE_PAGESIZE);
     boost::container::small_vector<std::pair<DAddr, DAddr>, 4> runs;
+    CheckTrapSetLock("DisarmCopiedReadTraps");
     read_trapped_ranges.ForEachInRange(begin, end - begin, [&](DAddr lower, DAddr upper) {
         for (DAddr page = lower; page < upper; page += Core::DEVICE_PAGESIZE) {
             // A GPU write since this copy was committed keeps its trap.
@@ -1770,6 +1808,7 @@ void BufferCache<P>::AgeCpuReads() {
     const u64 dropped = read_page_ages.Expire(frame_tick, read_latch_age, [this](DAddr page) {
         cpu_read_ranges.Subtract(page, DEVICE_PAGESIZE);
         // Neither copied back nor trapped any more: the next GPU write traps it again.
+        CheckTrapSetLock("AgeCpuReads");
         read_trapped_ranges.Subtract(page, DEVICE_PAGESIZE);
     });
     Common::Nx2Reactive::BumpReadAreaEpoch();
@@ -3145,7 +3184,7 @@ void BufferCache<P>::MarkWrittenBuffer(BufferId buffer_id, DAddr device_addr, u3
     }
     NoteReadBackWrite(device_addr, size);
     written_since_indirect = true;
-    QueueDownload(device_addr, size);
+    QueueDownload(device_addr, size, "MarkWrittenBuffer");
     if (Tegra::g_nx2_ampere.load(std::memory_order_relaxed)) {
         Tegra::Nx2MarkGpuWritten(device_addr, size);
     }
@@ -3878,6 +3917,7 @@ void BufferCache<P>::DeleteBuffer(BufferId buffer_id, bool do_not_mark) {
     if constexpr (requires { runtime.OnBufferDeleted(slot_buffers[buffer_id]); }) {
         runtime.OnBufferDeleted(slot_buffers[buffer_id]);
     }
+    CheckTrapSetLock("DeleteBuffer");
     read_trapped_ranges.Subtract(slot_buffers[buffer_id].CpuAddr(),
                                  slot_buffers[buffer_id].SizeBytes());
     bool dirty_index{false};

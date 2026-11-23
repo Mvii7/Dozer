@@ -8,6 +8,16 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Range sets: an empty range, or one whose end wraps, no longer reaches boost::icl's searches,
+  which need non-empty intervals. Asked about an empty range, they returned every stored range from the first on, cut
+  into pieces that end before they start. Donkey Kong Bananza hands the read trap set many empty
+  ranges a frame (null written storage buffers): the pieces made "armed" page counts impossible,
+  and arming only unarmed pages walked billions of pages. A written range of size 0 now queues
+  nothing.
+- `EDEN_NX2_TRAP_SET_CHECK=1` (diagnostic): logs changes to the set of armed read trap pages
+  made without the buffer cache's lock, odd ranges handed to it, and pieces of it returned outside
+  the range asked for. Such a piece no longer counts toward deciding that a range is already
+  armed.
 - Read traps: a trapped read always flushes through the rasterizer. A read of an armed page that
   fell inside an area cached from an earlier read (an image's) skipped it, so the page was
   disarmed while the buffer cache still counted it as armed: later GPU writes there never trapped

@@ -412,6 +412,11 @@
 # changes cost the fence thread more than those faults (Mario Kart World: ~0.2 s per 10 s, and
 # reads waited longer for the copies back behind them).
 #EDEN_NX2_TRAP_POP_DISARM=1
+# TRAP_SET_CHECK=1 (diagnostic): "Trap set check" log lines name changes to the buffer cache's
+# set of armed read trap pages made without its lock, odd ranges handed to it for arming (empty,
+# overflowing or over 4 GiB), and pieces of the set returned outside the range asked for, with
+# the set's pieces nearby. The first 16 of each kind, then at each power of two.
+#EDEN_NX2_TRAP_SET_CHECK=1
 # TRAP_CHECK=1 (diagnostic, slow): a page a read disarms stays unreadable until a GPU write arms
 # it again, and each read of it in between (one read traps let through without a flush) asks the
 # GPU whether it holds newer data there. "Read trap check" warnings name the reads that may find
