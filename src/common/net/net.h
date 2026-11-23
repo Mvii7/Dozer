@@ -46,9 +46,6 @@ struct Release {
     static std::vector<Release> ListFromJson(const std::string_view &json, const std::string &host, const std::string &repo);
 };
 
-// Parse an ISO 8601 UTC timestamp ("2026-01-02T03:04:05Z") to Unix seconds, 0 if invalid.
-u64 ParseIsoTimestamp(const std::string& iso);
-
 // Make a request via httplib, and return the response body if applicable.
 std::optional<std::string> MakeRequest(const std::string &url, const std::string &path);
 
