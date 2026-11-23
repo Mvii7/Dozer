@@ -149,6 +149,9 @@ public:
     /// Disarms the read traps of these pages: their GPU writes were copied back.
     void DisarmReadTraps(DAddr addr, size_t size);
 
+    /// Whether the process backing this page arms read traps (false for a page with no backing).
+    bool ReadTrapsEnabled(DAddr addr);
+
 private:
     /// Calls func(interface, vaddr, size) for each run of these pages contiguous in one
     /// process's address space.

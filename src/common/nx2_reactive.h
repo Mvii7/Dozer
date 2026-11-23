@@ -127,6 +127,8 @@ enum class Counter : u32 {
     PopDisarmNs,            ///< Read traps disarmed (EDEN_NX2_TRAP_POP_DISARM)
     PopDisarmRuns,          ///< Runs of pages disarmed (one page protection change each)
     PopCopies,              ///< Copies landed
+    ReadBatches,            ///< EDEN_NX2_READ_BATCH: read downloads that took the read pages too
+    ReadBatchRanges,        ///< The GPU-written ranges of read pages they took besides the read
     Count,
 };
 
@@ -293,7 +295,7 @@ struct Window {
                        "barriers {} (light {}); fastmem read fallbacks {}, read faults kept {}; traps "
                        "disarmed at copy back {}; copy back waits {} ({} us, {} missed); coalesce limit {} ({} "
                        "reads of held back copies); copy back pops by part: read downloads {} us, "
-                       "{} copies {} us, disarm {} us ({} runs)",
+                       "{} copies {} us, disarm {} us ({} runs); read batches {} ({} ranges)",
                        w.Get(C::Fences), w.Get(C::FencesSkipped), w.Get(C::FencesReal),
                        w.Get(C::FencesBufferCommit), w.Get(C::FencesTextureCommit),
                        w.Get(C::FencesBufferDeferred), w.Get(C::FenceExtraFlushes),
@@ -310,7 +312,8 @@ struct Window {
                        w.Get(C::CopyBackWaitMisses), w.Get(Gauge::CoalesceLimit),
                        w.Get(C::CoalesceDeferredReads), us(C::PopReadDownloadsNs),
                        w.Get(C::PopCopies), us(C::PopWriteNs), us(C::PopDisarmNs),
-                       w.Get(C::PopDisarmRuns));
+                       w.Get(C::PopDisarmRuns), w.Get(C::ReadBatches),
+                       w.Get(C::ReadBatchRanges));
 }
 
 [[nodiscard]] inline std::string FormatWindow(const Window& w) {

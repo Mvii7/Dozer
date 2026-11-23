@@ -1070,7 +1070,10 @@ private:
             uncommitted_gpu_modified_ranges.Add(addr, size);
             return;
         }
-        if (!read_back_pages.empty() && SkipEarlyCopyBack()) [[unlikely]] {
+        if (ReadBatchActive(addr)) {
+            // EDEN_NX2_READ_BATCH: no copy back; the next trapped read downloads these
+            // (DownloadMemoryForRead).
+        } else if (!read_back_pages.empty() && SkipEarlyCopyBack()) [[unlikely]] {
             // EDEN_NX2_EARLY_SKIP_COPYBACK: early downloads bring these pages, and a read they
             // miss downloads on demand (read traps, or reactive flushing's RX_READBACK).
             cpu_read_ranges.ForEachInRange(addr, size, [this](DAddr start, DAddr end) {
@@ -1092,6 +1095,13 @@ private:
         if (ReadTrapsActive()) {
             ArmReadTraps(addr, size);
         }
+    }
+
+    /// EDEN_NX2_READ_BATCH where the core arms read traps for this page: arming ends the cores'
+    /// cached read areas, so a read after a GPU write reaches GetFlushArea without a copy back.
+    /// Without fastmem (or under NCE) the core arms none, and the copy backs stay.
+    [[nodiscard]] bool ReadBatchActive(DAddr addr) {
+        return Nx2Reactive::ReadBatch() && ReadTrapsActive() && device_memory.ReadTrapsEnabled(addr);
     }
 
     [[nodiscard]] bool SkipEarlyCopyBack() const {

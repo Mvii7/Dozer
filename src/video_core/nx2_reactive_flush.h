@@ -484,6 +484,16 @@ enum class FitFeedback : u32 {
     return enabled;
 }
 
+/// EDEN_NX2_READ_BATCH=1 (off unless set; with read traps): GPU writes to pages the guest CPU
+/// read are no longer copied back at fences. A trapped read that must flush downloads the GPU
+/// writes in all of those pages with its own download, so the reads after it in the same burst
+/// find nothing left to flush (after Lichii #184, dc7d6c5).
+[[nodiscard]] inline bool ReadBatch() noexcept {
+    static const bool enabled =
+        Common::Nx2Reactive::ParseFlag(Common::Nx2Reactive::GetEnv("EDEN_NX2_READ_BATCH"));
+    return enabled;
+}
+
 /// EDEN_NX2_RX_NO_COPYBACK=1 (DIAGNOSTIC ONLY, breaks reactive flushing's point): guest CPU reads
 /// note no buffer page (NoteCpuRead), so nothing the GPU writes to buffers is copied back at
 /// fences; reads still trap and images still latch.

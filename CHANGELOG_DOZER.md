@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_READ_BATCH=1` (off unless set, read traps only): GPU writes to buffer pages the guest
+  CPU read are no longer copied back at fences; a trapped read that must flush downloads the GPU
+  writes in all of those pages in its own download. Mario Kart World spent 0.8-1 s per 10 s of
+  racing waiting for fence copy backs. After Lichii #184.
 - Read traps: a trapped read always flushes through the rasterizer. A read of an armed page that
   fell inside an area cached from an earlier read (an image's) skipped it, so the page was
   disarmed while the buffer cache still counted it as armed: later GPU writes there never trapped

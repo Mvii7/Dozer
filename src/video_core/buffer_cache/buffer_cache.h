@@ -380,8 +380,23 @@ std::optional<VideoCore::ReadPoint> BufferCache<P>::DownloadMemoryForRead(DAddr 
         WriteRunReadDownloads();
         // Early downloads still to record are of older writes: they go first.
         RecordEarlyDownloads();
-        const std::array own{std::pair<DAddr, u64>{device_addr, size}};
-        RecordReadDownload(own, false);
+        boost::container::small_vector<std::pair<DAddr, u64>, 16> ranges{{device_addr, size}};
+        if (ReadBatchActive(device_addr)) {
+            // EDEN_NX2_READ_BATCH: the GPU writes in every page the guest CPU read come with this
+            // read's download, which the fences no longer copy back.
+            cpu_read_ranges.ForEach([&](DAddr lower, DAddr upper) {
+                gpu_modified_ranges.ForEachInRange(
+                    lower, upper - lower,
+                    [&](DAddr start, DAddr end) { ranges.emplace_back(start, end - start); });
+            });
+            if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
+                Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::ReadBatches, 1);
+                Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::ReadBatchRanges,
+                                         ranges.size() - 1);
+            }
+        }
+        RecordReadDownload(std::span<const std::pair<DAddr, u64>>{ranges.data(), ranges.size()},
+                           false);
         std::optional<VideoCore::ReadPoint> point;
         for (const ReadDownload& download : read_downloads) {
             if (download.write_ranges.Intersects(device_addr, size)) {

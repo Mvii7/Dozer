@@ -723,6 +723,16 @@ void DeviceMemoryManager<Traits>::DisarmReadTraps(DAddr addr, size_t size) {
 }
 
 template <typename Traits>
+bool DeviceMemoryManager<Traits>::ReadTrapsEnabled(DAddr addr) {
+    const auto [asid, vaddr] = ExtractCPUBacking(addr >> Memory::YUZU_PAGEBITS);
+    if ((vaddr >> Memory::YUZU_PAGEBITS) == 0) {
+        return false;
+    }
+    auto* const inter = registered_processes[asid.id];
+    return inter != nullptr && DeviceMethods::ReadTrapsEnabled(inter);
+}
+
+template <typename Traits>
 template <typename Func>
 void DeviceMemoryManager<Traits>::ForEachCpuRun(DAddr addr, size_t size, Func&& func) {
     Memory::Memory* run_inter = nullptr;
