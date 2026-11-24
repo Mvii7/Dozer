@@ -45,6 +45,7 @@
 #include "video_core/renderer_vulkan/vk_descriptor_pool.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_state_tracker.h"
 #include "video_core/renderer_vulkan/vk_shader_reuse.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/renderer_vulkan/vk_update_descriptor.h"
@@ -376,7 +377,8 @@ void PruneUnreadGeometryOutputs(Shader::IR::Program& geometry, const Shader::IR:
 Shader::RuntimeInfo MakeRuntimeInfo(std::span<const Shader::IR::Program> programs,
                                     const ShaderTranslationKey& key,
                                     const Shader::IR::Program& program,
-                                    const Shader::IR::Program* previous_program) {
+                                    const Shader::IR::Program* previous_program, u32 merge_cbuf,
+                                    u32 merge_stride) {
     Shader::RuntimeInfo info;
     if (previous_program) {
         info.previous_stage_stores = previous_program->info.stores;
@@ -425,6 +427,11 @@ Shader::RuntimeInfo MakeRuntimeInfo(std::span<const Shader::IR::Program> program
     info.input_topology = key.input_topology;
     info.force_early_z = key.force_early_z;
     info.y_negate = key.y_negate;
+    if (merge_cbuf != 0xffffffffu && merge_stride != 0 &&
+        (program.info.constant_buffer_mask & (1u << merge_cbuf)) != 0) {
+        info.instance_cbuf_index = merge_cbuf;
+        info.instance_cbuf_stride = merge_stride;
+    }
     return info;
 }
 
@@ -1414,7 +1421,8 @@ std::shared_ptr<ReusableShaders> PipelineCache::BuildGraphicsShaders(
         const size_t stage_index{index - 1};
         infos[stage_index] = &program.info;
 
-        const auto runtime_info{MakeRuntimeInfo(programs, key, program, previous_stage)};
+        const auto runtime_info{
+            MakeRuntimeInfo(programs, key, program, previous_stage, merge_cbuf, merge_stride)};
         ConvertLegacyToGeneric(program, runtime_info);
         if (index == static_cast<size_t>(Maxwell::ShaderType::Geometry)) {
             PruneUnreadGeometryOutputs(
@@ -1583,6 +1591,58 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline() {
     SerializeGraphicsPipeline(graphics_key, std::move(environments.envs));
     QueueVulkanPipelineCacheFlush();
     return pipeline;
+}
+
+GraphicsPipeline* PipelineCache::InstanceMergedPipeline(u32 cbuf, u32 stride) {
+    for (const InstanceMerge& slot : instance_merges) {
+        if (slot.cbuf == cbuf && slot.stride == stride && slot.key == graphics_key) {
+            return slot.pipeline && slot.pipeline->HasPipeline() ? slot.pipeline.get() : nullptr;
+        }
+    }
+    merge_cbuf = cbuf;
+    merge_stride = stride;
+    SCOPE_EXIT {
+        merge_cbuf = 0xffffffffu;
+        merge_stride = 0;
+    };
+    GraphicsEnvironments environments;
+    GetGraphicsEnvironments(environments, graphics_key.unique_hashes);
+    main_pools.ReleaseContents();
+    const ShaderTranslationKey translation_key{MakeShaderTranslationKey(graphics_key, device)};
+    const std::shared_ptr<ReusableShaders> shaders{BuildGraphicsShaders(
+        main_pools, translation_key, environments.Span(), graphics_key.Hash())};
+    if (!shaders) {
+        instance_merges.push_back({graphics_key, cbuf, stride, nullptr});
+        return nullptr;
+    }
+    auto pipeline{std::make_unique<GraphicsPipeline>(
+        scheduler, buffer_cache, texture_cache, vulkan_pipeline_cache, &shader_notify, device,
+        descriptor_pool, guest_descriptor_queue, descriptor_buffer_ring, nullptr, nullptr,
+        render_pass_cache, graphics_key, shaders->modules, shaders->InfoPointers())};
+    GraphicsPipeline* const result{pipeline->HasPipeline() ? pipeline.get() : nullptr};
+    instance_merges.push_back({graphics_key, cbuf, stride, std::move(pipeline)});
+    return result;
+}
+
+bool PipelineCache::MatchesKey(const GraphicsPipelineCacheKey& saved) {
+    const GraphicsPipelineCacheKey previous{graphics_key};
+    if (!RefreshStages(graphics_key.unique_hashes)) {
+        graphics_key = previous;
+        maxwell3d->dirty.flags[VideoCommon::Dirty::Shaders] = true;
+        return false;
+    }
+    graphics_key.state.Refresh(*maxwell3d, dynamic_features);
+    if (graphics_key != saved) {
+        graphics_key = previous;
+        // RefreshStages and FixedPipelineState::Refresh clear these as they read them. The key
+        // was put back, so the next lookup has to read them again.
+        maxwell3d->dirty.flags[VideoCommon::Dirty::Shaders] = true;
+        maxwell3d->dirty.flags[Dirty::VertexInput] = true;
+        maxwell3d->dirty.flags[Dirty::ViewportSwizzles] = true;
+        maxwell3d->dirty.flags[Dirty::Blending] = true;
+        return false;
+    }
+    return true;
 }
 
 std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipelineFromReusedShaders() {

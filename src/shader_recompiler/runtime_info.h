@@ -114,6 +114,11 @@ struct RuntimeInfo {
 
     /// Dual source blending
     bool dual_source_blend{};
+
+    /// When not all-ones, loads of this constant buffer are indexed by the instance: word
+    /// `instance * (stride / element) + offset`. 0xffffffff leaves loads as they are.
+    u32 instance_cbuf_index{0xffffffffu};
+    u32 instance_cbuf_stride{};
 };
 
 } // namespace Shader

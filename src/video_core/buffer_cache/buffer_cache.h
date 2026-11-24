@@ -15,6 +15,7 @@
 #include <fmt/ranges.h>
 
 #include "common/nx2_reactive.h"
+#include "common/scope_exit.h"
 #include "common/nx2_sync_serial.h"
 #include "common/range_sets.inc"
 #include "video_core/buffer_cache/buffer_cache_base.h"
@@ -2187,6 +2188,12 @@ void BufferCache<P>::BindHostGraphicsUniformBuffers(size_t stage) {
 
 template <class P>
 void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 binding_index, bool needs_bind) {
+    if constexpr (!IS_OPENGL) {
+        const auto* const before = runtime.DescriptorCursor();
+        SCOPE_EXIT {
+            runtime.NoteUniformCapture(static_cast<u32>(stage), index, before);
+        };
+    }
     ++channel_state->uniform_cache_shots[0];
     Nx2UniformCensus::Add(Nx2UniformCensus::UniformBinds, 1);
     // EDEN_NX2_ROOT_TABLES (shader_recompiler/ir_opt/nx2_root.h; `loaded` is set only with it):

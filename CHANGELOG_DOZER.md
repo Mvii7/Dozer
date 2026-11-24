@@ -6,6 +6,17 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased
+
+- Constant buffers (`EDEN_NX2_BOUND_CB=0` is the old path): a buffer that is one continuous
+  device range is translated once and copied into. The caches hear the merged range at the next
+  draw, and the texture cache is left alone when that range holds no image. Each write used to
+  walk the page table and queue its own range.
+- Draw merge (`EDEN_NX2_DRAW_MERGE=0` is the old path): a run of indexed draws that share a
+  pipeline, geometry and fixed function state is one instanced draw. When the draws differ only
+  in one plain constant buffer of at most 256 bytes, that buffer is packed and the shaders read
+  it by instance index. A run that differs in nothing else is instanced as it stands.
+
 ## Dozer 0.2.1 (`v0.2.1`)
 
 - GPU thread split: a Switch 2 GPU map, and a new sparse region, is applied before the front
