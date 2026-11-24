@@ -41,6 +41,10 @@
 # first runs it, once by each core (x64 only). Boot takes a few seconds longer. A game update
 # starts a new list; the newest blocks that fit in 3/4 of a core's code cache are kept.
 #EDEN_NX2_JIT_BLOCK_LIST=0
+# JIT_IDLE_COMPILE (on with JIT_BLOCK_LIST; =0 off): a block one core compiles for the first time
+# is compiled by the other cores while they have nothing to run, instead of by each one in the
+# frame it first runs it (x64 only).
+#EDEN_NX2_JIT_IDLE_COMPILE=0
 
 # --- GPU thread shortcuts (on by default; =0 as before; added by Dozer) ---
 # =2 keeps them on and logs what they would get wrong: VERTEX_CLEAN, LIGHT_SYNC_SKIP,
