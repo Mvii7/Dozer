@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2019 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <chrono>
 #include <cstdlib>
 #include <memory>
 #include <mutex>
@@ -461,7 +462,29 @@ u64 Scheduler::SubmitExecution(VkSemaphore signal_semaphore, VkSemaphore wait_se
     });
     chunk->MarkSubmit();
     DispatchWork();
+    commands_submitted = commands_recorded;
+    last_flush = std::chrono::steady_clock::now();
     return signal_value;
+}
+
+bool Scheduler::IdleGpuAwaitsWork() {
+    // A finished GPU should not sit through the rest of a 128-draw batch. 100 us is long enough
+    // that this is not a submit on every draw.
+    if (state.renderpass != VK_NULL_HANDLE || deferred_clear.framebuffer != nullptr ||
+        commands_recorded == commands_submitted) {
+        return false;
+    }
+    static constexpr auto age = std::chrono::microseconds{100};
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_flush < age || now < next_idle_gpu_check) {
+        return false;
+    }
+    next_idle_gpu_check = now + age;
+    const u64 last_submitted = CurrentTick() - 1;
+    if (!IsFree(last_submitted)) {
+        master_semaphore->Refresh();
+    }
+    return IsFree(last_submitted);
 }
 
 void Scheduler::AllocateNewContext() {

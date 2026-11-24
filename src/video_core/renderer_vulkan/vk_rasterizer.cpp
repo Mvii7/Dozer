@@ -1924,7 +1924,7 @@ void RasterizerVulkan::DispatchCompute() {
     NoteLightWork();
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::Compute};
     VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::ComputeDispatches, 1);
-    FlushWork();
+    FlushWork(true);
     gpu_memory->FlushCaching();
 
     u64 native_key = 0;
@@ -3140,7 +3140,7 @@ void RasterizerVulkan::LoadDiskResources(u64 title_id, std::stop_token stop_load
     pipeline_cache.LoadDiskResources(title_id, stop_loading, callback);
 }
 
-void RasterizerVulkan::FlushWork() {
+void RasterizerVulkan::FlushWork(bool ends_pass) {
 #ifdef __ANDROID__
     static constexpr u32 DRAWS_TO_DISPATCH = 512;
     static constexpr u32 CHECK_MASK = 3;
@@ -3150,17 +3150,62 @@ void RasterizerVulkan::FlushWork() {
     static constexpr u32 DRAWS_TO_DISPATCH = 4096;
     static constexpr u32 CHECK_MASK = 31;
 #endif // __ANDROID__
-
     static_assert(DRAWS_TO_DISPATCH % (CHECK_MASK + 1) == 0);
-    if ((++draw_counter & CHECK_MASK) != CHECK_MASK) {
+
+    // Switch 2 submits every 512 draws, and from 256 at a pass boundary. 4096 left the host GPU
+    // idle through a heavy Mario Kart course. 128 submitted often enough to cost Donkey Kong
+    // Bananza 10-15% in a draw-heavy area: each submit ends the pass and the next draw binds
+    // again. =0 keeps 4096 (512 on Android). A number in between is that budget.
+    static const u32 native_budget = [] {
+        const char* const value = std::getenv("EDEN_NX2_SUBMIT_DRAWS");
+        if (value == nullptr || value[0] == '\0') {
+            return 512u;
+        }
+        if (value[0] == '0' && value[1] == '\0') {
+            return 0u;
+        }
+        char* end = nullptr;
+        const unsigned long parsed = std::strtoul(value, &end, 10);
+        if (end == value || *end != '\0' || parsed < 32 || parsed > DRAWS_TO_DISPATCH) {
+            return 512u;
+        }
+        return static_cast<u32>(parsed);
+    }();
+
+    const bool native =
+        native_budget != 0 && gpu_memory != nullptr && gpu_memory->UsesNativeTiling();
+    if (!native) {
+        if ((++draw_counter & CHECK_MASK) != CHECK_MASK) {
+            return;
+        }
+        if (draw_counter < DRAWS_TO_DISPATCH) {
+            scheduler.DispatchWork();
+            return;
+        }
+        scheduler.Flush();
+        draw_counter = 0;
         return;
     }
-    if (draw_counter < DRAWS_TO_DISPATCH) {
+
+    ++draw_counter;
+    const bool pass_boundary = ends_pass || scheduler.IsBetweenRenderPasses();
+    if (draw_counter >= native_budget ||
+        (draw_counter >= native_budget / 2 && pass_boundary)) {
+        draw_counter = 0;
+        scheduler.Flush();
+        return;
+    }
+    // The GPU has finished the previous submission and commands are waiting outside a pass.
+    // Not before half the budget: a draw-heavy scene keeps the GPU idle because each draw is
+    // cheap, and submitting then only adds rebinds.
+    if (draw_counter >= native_budget / 2 && scheduler.IdleGpuAwaitsWork()) {
+        draw_counter = 0;
+        scheduler.Flush();
+        return;
+    }
+    if ((draw_counter & CHECK_MASK) == CHECK_MASK) {
         scheduler.DispatchWork();
-        return;
     }
-    scheduler.Flush();
-    draw_counter = 0;
 }
 
 AccelerateDMA::AccelerateDMA(BufferCache& buffer_cache_, TextureCache& texture_cache_,
