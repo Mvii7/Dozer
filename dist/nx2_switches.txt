@@ -70,6 +70,10 @@
 # copied into, and the caches hear the merged range at the next draw. =0 walks the page table
 # and queues a range for every write, as before.
 #EDEN_NX2_BOUND_CB=0
+# DRAW_MERGE (on): runs of indexed draws with the same pipeline, geometry and fixed-function
+# state become one instanced draw. A run that differs only in one plain constant buffer of at
+# most 256 bytes packs that buffer and reads it by instance index. =0 draws each one.
+#EDEN_NX2_DRAW_MERGE=0
 #EDEN_NX2_TC_EXPECTED_MIB=21322
 #EDEN_NX2_TC_CRITICAL_MIB=22346
 

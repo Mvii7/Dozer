@@ -1572,6 +1572,9 @@ void EmitContext::DefineInputs(const IR::Program& program) {
             }
         }
     }
+    if (runtime_info.instance_cbuf_index != 0xffffffffu) {
+        instance_index = DefineInput(*this, U32[1], true, spv::BuiltIn::InstanceIndex);
+    }
     if (loads[IR::Attribute::InstanceId]) {
         if (profile.support_vertex_instance_id) {
             instance_id = DefineInput(*this, U32[1], true, spv::BuiltIn::InstanceId);

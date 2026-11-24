@@ -121,6 +121,17 @@ public:
     /// texture_cache_locked: the caller holds texture_cache.mutex.
     [[nodiscard]] GraphicsPipeline* CurrentGraphicsPipeline(bool texture_cache_locked = false);
 
+    /// A pipeline for graphics_key whose shaders index constant buffer `cbuf` by the instance.
+    /// Null when the shaders cannot be built. GPU thread only.
+    [[nodiscard]] GraphicsPipeline* InstanceMergedPipeline(u32 cbuf, u32 stride);
+
+    /// Refreshes the current graphics key and reports whether it is still `saved`.
+    [[nodiscard]] bool MatchesKey(const GraphicsPipelineCacheKey& saved);
+
+    [[nodiscard]] GraphicsPipeline* Current() const noexcept {
+        return current_pipeline;
+    }
+
     [[nodiscard]] ComputePipeline* CurrentComputePipeline(u64* native_key = nullptr);
 
     /// Gives native draws their per-frame wait budget again.
@@ -261,6 +272,15 @@ private:
 
     GraphicsPipelineCacheKey graphics_key{};
     GraphicsPipeline* current_pipeline{};
+    u32 merge_cbuf{0xffffffffu};
+    u32 merge_stride{};
+    struct InstanceMerge {
+        GraphicsPipelineCacheKey key;
+        u32 cbuf{};
+        u32 stride{};
+        std::unique_ptr<GraphicsPipeline> pipeline;
+    };
+    std::vector<InstanceMerge> instance_merges;
 
     ::Common::unordered_map<ComputePipelineCacheKey, std::unique_ptr<ComputePipeline>> compute_cache;
     ::Common::unordered_map<GraphicsPipelineCacheKey, std::unique_ptr<GraphicsPipeline>> graphics_cache;

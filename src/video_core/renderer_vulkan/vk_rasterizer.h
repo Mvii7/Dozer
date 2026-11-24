@@ -637,6 +637,49 @@ private:
     /// C: B's record owner hook replayed B's list in a join since C's last draw packet: that
     /// packet's binds may be in an older command buffer. Written by B with C parked.
     bool geometry_replayed_c{};
+
+    struct DrawMergeState {
+        bool armed{};
+        bool variant{};
+        GraphicsPipeline* pipeline{};
+        GraphicsPipeline* merged_pipeline{};
+        GraphicsPipelineCacheKey key{};
+        u32 count{};
+        u32 cbuf{0xffffffffu};
+        u32 stride{};
+        u32 base_instance{};
+        u32 num_vertices{};
+        u32 base_vertex{};
+        u32 first_index{};
+        bool is_indexed{};
+        Tegra::Engines::Maxwell3D::Regs::PrimitiveTopology topology{};
+        Tegra::Engines::Maxwell3D::Regs::IndexFormat index_format{};
+        GPUVAddr index_address{};
+        u32 index_first{};
+        u32 index_count{};
+        std::array<GPUVAddr, Tegra::Engines::Maxwell3D::Regs::NumVertexArrays> vertex_address{};
+        std::array<u32, Tegra::Engines::Maxwell3D::Regs::NumVertexArrays> vertex_stride{};
+        std::array<u8, Tegra::Engines::Maxwell3D::Regs::NumVertexArrays> vertex_enable{};
+        struct Cbuf {
+            bool used{};
+            bool packable{};
+            GPUVAddr address{};
+            u32 used_size{};
+            u32 buffer_size{};
+            u64 hash{};
+            std::array<u8, 256> bytes{};
+        };
+        std::array<Cbuf, Tegra::Engines::Maxwell3D::Regs::MaxConstBuffers> cbufs{};
+        std::vector<u8> pack;
+        std::vector<BufferCacheRuntime::CapturedUniform> captures;
+    };
+    DrawMergeState draw_merge;
+    bool draw_merge_from_light{};
+
+    [[nodiscard]] bool DrawMergeEnabled() const;
+    [[nodiscard]] bool ContinueDrawMerge(bool is_indexed, u32 instance_count);
+    void FinishDrawMerge();
+    [[nodiscard]] bool DeferDrawMerge(u32 instance_count);
 };
 
 } // namespace Vulkan

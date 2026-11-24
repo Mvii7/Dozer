@@ -1162,6 +1162,15 @@ void RasterizerVulkan::NoteLightPipeline(const GraphicsPipeline& pipeline, bool 
 template <typename Func>
 bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalidated,
                                     Func& draw_func) {
+    struct LightMergeFlag {
+        bool& flag;
+        explicit LightMergeFlag(bool& flag_) : flag{flag_} {
+            flag = true;
+        }
+        ~LightMergeFlag() {
+            flag = false;
+        }
+    } light_merge_flag{draw_merge_from_light};
     // The last draw (the anchor) was set up in full, or light after one: its pipeline, image
     // and buffer descriptors, push constants, render pass and dynamic state are still what the
     // command buffer holds, as nothing was recorded since (Scheduler::RecordCount; a submission
@@ -1413,15 +1422,369 @@ void TraceWindowTarget(const Tegra::Engines::Maxwell3D& maxwell3d, Tegra::Memory
 }
 } // Anonymous namespace
 
+bool RasterizerVulkan::DrawMergeEnabled() const {
+    static const bool enabled = [] {
+        const char* const value = std::getenv("EDEN_NX2_DRAW_MERGE");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+namespace {
+u64 DrawMergeHash(const u8* data, u32 size) {
+    u64 hash{14695981039346656037ull};
+    for (u32 index = 0; index < size; ++index) {
+        hash ^= data[index];
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+} // namespace
+
+bool RasterizerVulkan::DeferDrawMerge(u32 instance_count) {
+    if (!DrawMergeEnabled() || draw_merge_from_light || instance_count != 1) {
+        return false;
+    }
+    const auto& draw_state = maxwell3d->draw_manager.draw_state;
+    if (draw_state.draw_mode != Tegra::Engines::Maxwell3D::DrawManager::DrawMode::General ||
+        !draw_state.inline_index_draw_indexes.empty() || draw_state.base_instance != 0 ||
+        !draw_state.draw_indexed) {
+        return false;
+    }
+    GraphicsPipeline* const pipeline{pipeline_cache.Current()};
+    if (pipeline == nullptr || !pipeline->CanInstanceMerge()) {
+        return false;
+    }
+    const auto& regs = maxwell3d->regs;
+    for (size_t index = 0; index < Maxwell::NumVertexArrays; ++index) {
+        if (regs.vertex_streams[index].IsEnabled() && regs.vertex_streams[index].frequency != 0) {
+            return false;
+        }
+    }
+    DrawMergeState next{};
+    next.pipeline = pipeline;
+    next.key = pipeline->Key();
+    const DrawParams params{MakeDrawParams(draw_state, 1, true)};
+    next.count = 1;
+    next.base_instance = params.base_instance;
+    next.num_vertices = params.num_vertices;
+    next.base_vertex = params.base_vertex;
+    next.first_index = params.first_index;
+    next.is_indexed = true;
+    next.topology = draw_state.topology;
+    next.index_format = draw_state.index_buffer.format;
+    next.index_address = draw_state.index_buffer.StartAddress();
+    next.index_first = draw_state.index_buffer.first;
+    next.index_count = draw_state.index_buffer.count;
+    for (size_t index = 0; index < Maxwell::NumVertexArrays; ++index) {
+        const auto& stream = regs.vertex_streams[index];
+        next.vertex_enable[index] = stream.IsEnabled() ? 1 : 0;
+        if (stream.IsEnabled()) {
+            next.vertex_address[index] = stream.Address();
+            next.vertex_stride[index] = stream.stride;
+        }
+    }
+    for (u32 index = 0; index < Maxwell::MaxConstBuffers; ++index) {
+        const u32 used = pipeline->CbufUsedSize(index);
+        if (used == 0 || used > 65536) {
+            continue;
+        }
+        GPUVAddr address = 0;
+        u32 buffer_size = 0;
+        bool seen = false;
+        for (size_t stage = 0; stage < Maxwell::MaxShaderStage; ++stage) {
+            if ((pipeline->StageCbufMask(stage) & (1u << index)) == 0) {
+                continue;
+            }
+            const auto& buffer = maxwell3d->state.shader_stages[stage].const_buffers[index];
+            if (!buffer.enabled || buffer.address == 0 || buffer.size < used) {
+                return false;
+            }
+            if (!seen) {
+                address = buffer.address;
+                buffer_size = buffer.size;
+                seen = true;
+            } else if (buffer.address != address) {
+                return false;
+            } else if (buffer.size < buffer_size) {
+                buffer_size = buffer.size;
+            }
+        }
+        if (!seen) {
+            continue;
+        }
+        auto& slot = next.cbufs[index];
+        slot.used = true;
+        slot.address = address;
+        slot.used_size = used;
+        slot.buffer_size = buffer_size;
+        slot.packable = used <= 256 && pipeline->CanMergeCbuf(index);
+        if (slot.packable) {
+            gpu_memory->ReadBlockUnsafe(address, slot.bytes.data(), used);
+            slot.hash = DrawMergeHash(slot.bytes.data(), used);
+        } else {
+            std::vector<u8> data(used);
+            gpu_memory->ReadBlockUnsafe(address, data.data(), used);
+            slot.hash = DrawMergeHash(data.data(), used);
+        }
+    }
+    next.captures = std::move(draw_merge.captures);
+    next.armed = true;
+    draw_merge = std::move(next);
+    return true;
+}
+
+bool RasterizerVulkan::ContinueDrawMerge(bool is_indexed, u32 instance_count) {
+    if (!draw_merge.armed || !is_indexed || instance_count != 1 || draw_merge.pipeline == nullptr) {
+        return false;
+    }
+    const auto& draw_state = maxwell3d->draw_manager.draw_state;
+    if (draw_state.draw_mode != Tegra::Engines::Maxwell3D::DrawManager::DrawMode::General ||
+        !draw_state.inline_index_draw_indexes.empty() ||
+        draw_state.topology != draw_merge.topology ||
+        draw_state.base_instance != draw_merge.base_instance ||
+        draw_state.base_index != draw_merge.base_vertex ||
+        draw_state.index_buffer.format != draw_merge.index_format ||
+        draw_state.index_buffer.StartAddress() != draw_merge.index_address ||
+        draw_state.index_buffer.first != draw_merge.index_first ||
+        draw_state.index_buffer.count != draw_merge.index_count) {
+        return false;
+    }
+    const auto& regs = maxwell3d->regs;
+    for (size_t index = 0; index < Maxwell::NumVertexArrays; ++index) {
+        const auto& stream = regs.vertex_streams[index];
+        const bool enabled = stream.IsEnabled();
+        if (static_cast<bool>(draw_merge.vertex_enable[index]) != enabled) {
+            return false;
+        }
+        if (enabled && (stream.Address() != draw_merge.vertex_address[index] ||
+                        stream.stride != draw_merge.vertex_stride[index] ||
+                        stream.frequency != 0)) {
+            return false;
+        }
+    }
+    bool wrote_outside = false;
+    gpu_memory->ForAccumulatedWrites([&](GPUVAddr address, size_t size) {
+        if (wrote_outside || size == 0) {
+            return;
+        }
+        for (const auto& slot : draw_merge.cbufs) {
+            if (!slot.used) {
+                continue;
+            }
+            if (address < slot.address + slot.buffer_size && address + size > slot.address) {
+                return;
+            }
+        }
+        wrote_outside = true;
+    });
+    if (wrote_outside) {
+        return false;
+    }
+    int differing = 0;
+    u32 which = 0xffffffffu;
+    std::array<u8, 256> now{};
+    for (u32 index = 0; index < Maxwell::MaxConstBuffers; ++index) {
+        const auto& slot = draw_merge.cbufs[index];
+        if (!slot.used) {
+            continue;
+        }
+        for (size_t stage = 0; stage < Maxwell::MaxShaderStage; ++stage) {
+            if ((draw_merge.pipeline->StageCbufMask(stage) & (1u << index)) == 0) {
+                continue;
+            }
+            const auto& buffer = maxwell3d->state.shader_stages[stage].const_buffers[index];
+            if (!buffer.enabled || buffer.address != slot.address || buffer.size < slot.used_size) {
+                return false;
+            }
+        }
+        bool same;
+        if (slot.packable) {
+            gpu_memory->ReadBlockUnsafe(slot.address, now.data(), slot.used_size);
+            same = std::memcmp(now.data(), slot.bytes.data(), slot.used_size) == 0;
+        } else {
+            std::vector<u8> data(slot.used_size);
+            gpu_memory->ReadBlockUnsafe(slot.address, data.data(), slot.used_size);
+            same = DrawMergeHash(data.data(), slot.used_size) == slot.hash;
+        }
+        if (!same) {
+            if (!slot.packable) {
+                return false;
+            }
+            ++differing;
+            which = index;
+        }
+    }
+    if (differing > 1) {
+        return false;
+    }
+    if (!pipeline_cache.MatchesKey(draw_merge.key)) {
+        return false;
+    }
+    constexpr u32 max_instances = 128;
+    if (differing == 0) {
+        if (draw_merge.variant) {
+            if (draw_merge.count >= max_instances) {
+                return false;
+            }
+            const u32 offset = draw_merge.count * draw_merge.stride;
+            draw_merge.pack.resize(offset + draw_merge.stride, 0);
+            std::memcpy(draw_merge.pack.data() + offset, draw_merge.cbufs[draw_merge.cbuf].bytes.data(),
+                        draw_merge.cbufs[draw_merge.cbuf].used_size);
+            ++draw_merge.count;
+            return true;
+        }
+        if (draw_merge.count >= max_instances) {
+            return false;
+        }
+        ++draw_merge.count;
+        return true;
+    }
+    if (draw_merge.variant) {
+        if (which != draw_merge.cbuf || draw_merge.count >= max_instances) {
+            return false;
+        }
+        gpu_memory->ReadBlockUnsafe(draw_merge.cbufs[which].address, now.data(),
+                                    draw_merge.cbufs[which].used_size);
+        const u32 offset = draw_merge.count * draw_merge.stride;
+        draw_merge.pack.resize(offset + draw_merge.stride, 0);
+        std::memcpy(draw_merge.pack.data() + offset, now.data(), draw_merge.cbufs[which].used_size);
+        ++draw_merge.count;
+        return true;
+    }
+    if (draw_merge.count != 1 || !draw_merge.pipeline->CanMergeCbuf(which)) {
+        return false;
+    }
+    u32 stages_using = 0;
+    for (size_t stage = 0; stage < Maxwell::MaxShaderStage; ++stage) {
+        if ((draw_merge.pipeline->StageCbufMask(stage) & (1u << which)) != 0) {
+            ++stages_using;
+        }
+    }
+    u32 captured = 0;
+    for (const auto& cap : draw_merge.captures) {
+        if (cap.index == which) {
+            ++captured;
+        }
+    }
+    if (captured < stages_using) {
+        return false;
+    }
+    const u32 used = draw_merge.cbufs[which].used_size;
+    const u32 stride = (used + 15u) & ~15u;
+    if (stride == 0 || stride > 256) {
+        return false;
+    }
+    GraphicsPipeline* const merged{pipeline_cache.InstanceMergedPipeline(which, stride)};
+    if (merged == nullptr) {
+        return false;
+    }
+    gpu_memory->ReadBlockUnsafe(draw_merge.cbufs[which].address, now.data(), used);
+    draw_merge.variant = true;
+    draw_merge.cbuf = which;
+    draw_merge.stride = stride;
+    draw_merge.merged_pipeline = merged;
+    draw_merge.pack.assign(stride * 2, 0);
+    std::memcpy(draw_merge.pack.data(), draw_merge.cbufs[which].bytes.data(), used);
+    std::memcpy(draw_merge.pack.data() + stride, now.data(), used);
+    draw_merge.count = 2;
+    return true;
+}
+
+void RasterizerVulkan::FinishDrawMerge() {
+    if (!draw_merge.armed) {
+        return;
+    }
+    draw_merge.armed = false;
+    const u32 instances{std::max(draw_merge.count, 1u)};
+    const auto record_plain = [&](u32 instance_count) {
+        const u32 vertices{draw_merge.num_vertices};
+        const u32 first{draw_merge.first_index};
+        const u32 base{draw_merge.base_vertex};
+        const u32 base_instance{draw_merge.base_instance};
+        scheduler.Record([vertices, instance_count, first, base, base_instance](vk::CommandBuffer cmdbuf) {
+            cmdbuf.DrawIndexed(vertices, instance_count, first, base, base_instance);
+        });
+    };
+    if (!draw_merge.variant || instances < 2 || draw_merge.merged_pipeline == nullptr) {
+        record_plain(instances);
+        if (instances >= 2) {
+            static u32 logged{};
+            if (logged < 8) {
+                ++logged;
+                LOG_INFO(HW_GPU, "Draw merge: {} identical indexed draws in one instanced draw",
+                         instances);
+            }
+        }
+        return;
+    }
+    std::vector<DescriptorUpdateEntry> entries(draw_merge.pipeline->LastDescriptors().begin(),
+                                               draw_merge.pipeline->LastDescriptors().end());
+    const StagingBufferRef ref{staging_pool.Request(draw_merge.pack.size(), MemoryUsage::Upload)};
+    std::memcpy(ref.mapped_span.data(), draw_merge.pack.data(), draw_merge.pack.size());
+    DescriptorUpdateEntry replacement{};
+    if (draw_merge.pipeline->UsesDescriptorBuffer()) {
+        replacement = DescriptorAddress{
+            .address = ref.device_address == 0 ? 0 : ref.device_address + ref.offset,
+            .range = ref.device_address == 0 ? VK_WHOLE_SIZE : draw_merge.pack.size(),
+            .format = VK_FORMAT_UNDEFINED,
+        };
+    } else {
+        replacement = VkDescriptorBufferInfo{
+            .buffer = ref.buffer,
+            .offset = ref.offset,
+            .range = draw_merge.pack.size(),
+        };
+    }
+    u32 replaced = 0;
+    u32 needed = 0;
+    for (const auto& captured : draw_merge.captures) {
+        if (captured.index != draw_merge.cbuf) {
+            continue;
+        }
+        ++needed;
+        for (DescriptorUpdateEntry& entry : entries) {
+            if (std::memcmp(&entry, &captured.entry, sizeof(entry)) != 0) {
+                continue;
+            }
+            entry = replacement;
+            ++replaced;
+        }
+    }
+    if (replaced < needed ||
+        !draw_merge.merged_pipeline->DrawInstancedWithDescriptors(
+            entries, draw_merge.num_vertices, instances, draw_merge.first_index,
+            draw_merge.base_vertex)) {
+        record_plain(1);
+        static u32 logged{};
+        if (logged < 8) {
+            ++logged;
+            LOG_WARNING(HW_GPU, "Draw merge: kept one draw; the instanced bind was not available");
+        }
+        return;
+    }
+    static u32 logged{};
+    if (logged < 8) {
+        ++logged;
+        LOG_INFO(HW_GPU, "Draw merge: {} indexed draws, constant buffer {}, as one instanced draw",
+                 instances, draw_merge.cbuf);
+    }
+}
+
 void RasterizerVulkan::Draw(bool is_indexed, u32 instance_count) {
     VideoCommon::Nx2UniformCensus::NoteDraw();
     if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
         Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::Draws, 1);
     }
     if (SplitOnB()) [[unlikely]] {
+        FinishDrawMerge();
         DrawB(is_indexed, instance_count);
         return;
     }
+    if (ContinueDrawMerge(is_indexed, instance_count)) {
+        return;
+    }
+    FinishDrawMerge();
     if (split_draws) [[unlikely]] {
         ForceGeometryForJoin();
     }
@@ -1544,10 +1907,23 @@ void RasterizerVulkan::Draw(bool is_indexed, u32 instance_count) {
                      regs.blend.enable[0], seen.size());
         }
     }
+    const bool capture_uniforms{DrawMergeEnabled() && is_indexed && instance_count == 1};
+    if (capture_uniforms) {
+        draw_merge.captures.clear();
+        buffer_cache.runtime.ArmUniformCapture(&draw_merge.captures);
+    }
+    SCOPE_EXIT {
+        if (capture_uniforms) {
+            buffer_cache.runtime.ArmUniformCapture(nullptr);
+        }
+    };
     PrepareDraw(is_indexed, false, [this, is_indexed, instance_count] {
         const auto& draw_state = maxwell3d->draw_manager.draw_state;
         const u32 num_instances{instance_count};
         const DrawParams draw_params{MakeDrawParams(draw_state, num_instances, is_indexed)};
+        if (DeferDrawMerge(instance_count)) {
+            return;
+        }
 
         scheduler.Record([draw_params](vk::CommandBuffer cmdbuf) {
             if (draw_params.is_indexed) {
@@ -1577,6 +1953,7 @@ void RasterizerVulkan::Draw(bool is_indexed, u32 instance_count) {
 }
 
 void RasterizerVulkan::DrawIndirect() {
+    FinishDrawMerge();
     VideoCommon::Nx2UniformCensus::NoteDraw();
     if (Common::Nx2Reactive::StatsEnabled()) [[unlikely]] {
         Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::Draws, 1);
@@ -1666,6 +2043,7 @@ void RasterizerVulkan::DrawIndirect() {
 }
 
 void RasterizerVulkan::DrawTexture() {
+    FinishDrawMerge();
     if (SplitOnB()) [[unlikely]] {
         DrawTextureB();
         return;
@@ -1718,6 +2096,7 @@ void RasterizerVulkan::DrawTexture() {
 }
 
 void RasterizerVulkan::Clear(u32 layer_count) {
+    FinishDrawMerge();
     if (SplitOnB()) [[unlikely]] {
         ClearB(layer_count);
         return;
@@ -1921,6 +2300,7 @@ void RasterizerVulkan::ClearRecord(u32 layer_count) {
 }
 
 void RasterizerVulkan::DispatchCompute() {
+    FinishDrawMerge();
     NoteLightWork();
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::Compute};
     VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::ComputeDispatches, 1);
@@ -2062,6 +2442,7 @@ void RasterizerVulkan::ResetCounter(VideoCommon::QueryType type) {
 
 void RasterizerVulkan::Query(GPUVAddr gpu_addr, VideoCommon::QueryType type,
                              VideoCommon::QueryPropertiesFlags flags, u32 payload, u32 subreport) {
+    FinishDrawMerge();
     if (SplitOnB()) [[unlikely]] {
         // The query cache is C's (F3: the next WaitForIdle joins).
         NoteLightWork();
@@ -2714,6 +3095,7 @@ void RasterizerVulkan::FlushAndInvalidateRegion(DAddr addr, u64 size,
 }
 
 void RasterizerVulkan::WaitForIdle() {
+    FinishDrawMerge();
     if (SplitOnB()) [[unlikely]] {
         WaitForIdleB();
         return;
@@ -2841,6 +3223,7 @@ void RasterizerVulkan::TiledCacheBarrier() {
 }
 
 void RasterizerVulkan::FlushCommands() {
+    FinishDrawMerge();
     if (SplitOnB()) [[unlikely]] {
         // C's (its draw counter and the scheduler).
         NoteLightWork();
@@ -2856,6 +3239,7 @@ void RasterizerVulkan::FlushCommands() {
 }
 
 void RasterizerVulkan::TickFrame() {
+    FinishDrawMerge();
     if (split_draws) [[unlikely]] {
         if (SplitOnB()) {
             // Never split (F4 / F5): Composite's TickFrame runs on C inside a ParkB (GPU::TickWork)
@@ -3173,6 +3557,7 @@ void RasterizerVulkan::LoadDiskResources(u64 title_id, std::stop_token stop_load
 }
 
 void RasterizerVulkan::FlushWork() {
+    FinishDrawMerge();
 #ifdef __ANDROID__
     static constexpr u32 DRAWS_TO_DISPATCH = 512;
     static constexpr u32 CHECK_MASK = 3;

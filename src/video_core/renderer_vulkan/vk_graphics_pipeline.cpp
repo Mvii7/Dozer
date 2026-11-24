@@ -1905,6 +1905,142 @@ void GraphicsPipeline::CheckColorFeedbackLoop(std::span<const VideoCommon::Image
     }
 }
 
+namespace {
+bool CbufIsResource(const Shader::Info& info, u32 index) {
+    for (const auto& desc : info.storage_buffers_descriptors) {
+        if (desc.cbuf_index == index) {
+            return true;
+        }
+    }
+    for (const auto& desc : info.texture_buffer_descriptors) {
+        if (desc.cbuf_index == index ||
+            (desc.has_secondary && desc.secondary_cbuf_index == index)) {
+            return true;
+        }
+    }
+    for (const auto& desc : info.image_buffer_descriptors) {
+        if (desc.cbuf_index == index) {
+            return true;
+        }
+    }
+    for (const auto& desc : info.texture_descriptors) {
+        if (desc.cbuf_index == index ||
+            (desc.has_secondary && desc.secondary_cbuf_index == index)) {
+            return true;
+        }
+    }
+    for (const auto& desc : info.image_descriptors) {
+        if (desc.cbuf_index == index) {
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
+bool GraphicsPipeline::CanInstanceMerge() const {
+    if (key.unique_hashes[2] != 0 || key.unique_hashes[3] != 0 || key.unique_hashes[4] != 0) {
+        return false;
+    }
+    if (writes_memory || key.state.xfb_enabled != 0) {
+        return false;
+    }
+    for (const u32 divisor : key.state.binding_divisors) {
+        if (divisor != 0) {
+            return false;
+        }
+    }
+    for (const Shader::Info& info : stage_infos) {
+        if (info.loads[IR::Attribute::InstanceId] || info.uses_cbuf_indirect) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool GraphicsPipeline::CanMergeCbuf(u32 index) const {
+    if (index >= Shader::Info::MAX_CBUFS) {
+        return false;
+    }
+    bool used = false;
+    for (const Shader::Info& info : stage_infos) {
+        if ((info.constant_buffer_mask & (1u << index)) == 0) {
+            continue;
+        }
+        used = true;
+        if (CbufIsResource(info, index)) {
+            return false;
+        }
+    }
+    return used;
+}
+
+u32 GraphicsPipeline::CbufUsedSize(u32 index) const {
+    u32 used = 0;
+    if (index >= Shader::Info::MAX_CBUFS) {
+        return 0;
+    }
+    for (const Shader::Info& info : stage_infos) {
+        if ((info.constant_buffer_mask & (1u << index)) != 0) {
+            used = std::max(used, info.constant_buffer_used_sizes[index]);
+        }
+    }
+    return used;
+}
+
+bool GraphicsPipeline::HasPipeline() const noexcept {
+    return static_cast<bool>(pipeline);
+}
+
+bool GraphicsPipeline::DrawInstancedWithDescriptors(std::span<const DescriptorUpdateEntry> entries,
+                                                    u32 index_count, u32 instance_count,
+                                                    u32 first_index, u32 vertex_offset) {
+    if (!pipeline || entries.size() != num_descriptor_entries) {
+        return false;
+    }
+    std::vector<DescriptorUpdateEntry> payload(entries.begin(), entries.end());
+    VkDeviceSize descriptor_buffer_offset{};
+    u32 descriptor_buffer_chunk{};
+    if (descriptor_set_layout && uses_descriptor_buffer &&
+        !PrepareDescriptorBuffer(payload.data(), descriptor_buffer_offset, descriptor_buffer_chunk)) {
+        return false;
+    }
+    const bool bind_descriptor_buffer =
+        uses_descriptor_buffer && scheduler.UpdateDescriptorBufferChunk(descriptor_buffer_chunk);
+    scheduler.Record([this, payload = std::move(payload), descriptor_buffer_offset,
+                      descriptor_buffer_chunk, bind_descriptor_buffer, index_count, instance_count,
+                      first_index, vertex_offset](vk::CommandBuffer cmdbuf) {
+        if (!pipeline) {
+            return;
+        }
+        if (bind_descriptor_buffer) {
+            const VkDescriptorBufferBindingInfoEXT binding_info{
+                descriptor_buffer_ring.BindingInfo(descriptor_buffer_chunk)};
+            cmdbuf.BindDescriptorBuffersEXT(binding_info);
+        }
+        cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, *pipeline);
+        if (descriptor_set_layout) {
+            if (uses_descriptor_buffer) {
+                const u32 buffer_index{};
+                cmdbuf.SetDescriptorBufferOffsetsEXT(VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                     *pipeline_layout, 0, buffer_index,
+                                                     descriptor_buffer_offset);
+            } else if (uses_push_descriptor) {
+                cmdbuf.PushDescriptorSetWithTemplateKHR(*descriptor_update_template,
+                                                        *pipeline_layout, 0, payload.data());
+            } else {
+                const VkDescriptorSet descriptor_set{descriptor_allocator.Commit()};
+                device.GetLogical().UpdateDescriptorSet(descriptor_set, *descriptor_update_template,
+                                                        payload.data());
+                cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS, *pipeline_layout, 0,
+                                          descriptor_set, nullptr);
+            }
+        }
+        cmdbuf.DrawIndexed(index_count, instance_count, first_index, vertex_offset, 0);
+    });
+    return true;
+}
+
 bool GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
                                      const RenderAreaPushConstant& render_area) {
     const void* const descriptor_data{guest_descriptor_queue.UpdateData()};
@@ -2010,6 +2146,11 @@ bool GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
                                       descriptor_set, nullptr);
         }
     });
+    // Push descriptors do not keep a payload of their own. The draw-merge flush reads this copy.
+    if (uses_push_descriptor && num_descriptor_entries != 0) {
+        const auto* const entries{static_cast<const DescriptorUpdateEntry*>(descriptor_data)};
+        last_descriptor_payload.assign(entries, entries + num_descriptor_entries);
+    }
     return true;
 }
 

@@ -7,7 +7,9 @@
 #pragma once
 
 #include <atomic>
+#include <cstring>
 #include <limits>
+#include <vector>
 
 #include <boost/container/small_vector.hpp>
 
@@ -197,6 +199,31 @@ public:
     void BindTransformFeedbackBuffer(u32 index, VkBuffer buffer, u32 offset, u32 size);
 
     void BindTransformFeedbackBuffers(VideoCommon::HostBindings<Buffer>& bindings);
+
+    struct CapturedUniform {
+        u32 stage;
+        u32 index;
+        DescriptorUpdateEntry entry;
+    };
+
+    void ArmUniformCapture(std::vector<CapturedUniform>* out) noexcept {
+        uniform_capture = out;
+    }
+
+    [[nodiscard]] DescriptorUpdateEntry* DescriptorCursor() noexcept {
+        return descriptor_queue->Cursor();
+    }
+
+    void NoteUniformCapture(u32 stage, u32 index, const DescriptorUpdateEntry* before) {
+        if (uniform_capture == nullptr || descriptor_queue->Cursor() == before) {
+            return;
+        }
+        CapturedUniform cap;
+        cap.stage = stage;
+        cap.index = index;
+        std::memcpy(&cap.entry, descriptor_queue->Cursor() - 1, sizeof(cap.entry));
+        uniform_capture->push_back(cap);
+    }
 
     std::span<u8> BindMappedUniformBuffer([[maybe_unused]] size_t stage,
                                           [[maybe_unused]] u32 binding_index,
@@ -622,6 +649,7 @@ private:
     bool staged{};
     /// Where binds add descriptor entries: the guest queue, or DescriptorScratch in a packet
     UpdateDescriptorQueue* descriptor_queue{&guest_descriptor_queue};
+    std::vector<CapturedUniform>* uniform_capture{};
     std::unique_ptr<UpdateDescriptorQueue> descriptor_scratch;
     std::unique_ptr<StageStagingBufferPool> stage_pool;
     std::unique_ptr<Nx2Record::ChunkArena> record_arena;

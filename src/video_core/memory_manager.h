@@ -204,6 +204,12 @@ public:
         accumulator.Add(gpu_addr, size);
     }
 
+    /// Ranges left for the next FlushCaching (GPU addresses).
+    template <typename F>
+    void ForAccumulatedWrites(F&& f) const {
+        accumulator.ForEach(std::forward<F>(f));
+    }
+
     /// EDEN_NX2_LIGHT_DRAW: writes left for FlushCaching so far (WriteBlockCached,
     /// AccumulateInvalidation).
     [[nodiscard]] u64 CachedWrites() const noexcept {
