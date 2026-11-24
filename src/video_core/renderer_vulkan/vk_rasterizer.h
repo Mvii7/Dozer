@@ -450,7 +450,8 @@ private:
     void CheckSplitSetup(GraphicsPipeline& pipeline, std::span<const u32> handles, bool is_indexed,
                          bool light, bool followed, const SplitCheckBase& base);
 
-    void FlushWork();
+    /// `ends_pass`: this call is a compute dispatch, which closes the graphics pass.
+    void FlushWork(bool ends_pass = false);
 
     /// EDEN_NX2_RESET_BATCH: AccelerateInlineToMemory for each run (address, size), in order,
     /// a run's bytes being the first `size` of `data`. Called with the buffer and texture

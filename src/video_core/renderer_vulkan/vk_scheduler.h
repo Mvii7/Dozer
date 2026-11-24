@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
@@ -98,6 +99,15 @@ public:
         return state.renderpass != VK_NULL_HANDLE;
     }
 
+    /// No render pass and no deferred clear waiting to open the next one.
+    bool IsBetweenRenderPasses() const {
+        return state.renderpass == VK_NULL_HANDLE && deferred_clear.framebuffer == nullptr;
+    }
+
+    /// The last submit is old enough, the GPU has completed it, and commands are waiting
+    /// outside a render pass. The recording thread asks before a draw or a dispatch.
+    bool IdleGpuAwaitsWork();
+
     /// Update the pipeline to the current execution context.
     bool UpdateGraphicsPipeline(GraphicsPipeline* pipeline);
 
@@ -130,6 +140,7 @@ public:
             VideoCommon::GpuSplit::CheckOwner("Scheduler::Record");
         }
         ++record_count;
+        ++commands_recorded;
         if (chunk->Record(command)) {
             return;
         }
@@ -401,7 +412,11 @@ private:
 
     std::unique_ptr<CommandChunk> chunk;
     u64 record_count{}; ///< See RecordCount
+    u64 commands_recorded{};  ///< Record calls
+    u64 commands_submitted{}; ///< commands_recorded at the last SubmitExecution
     u64 render_pass_begins{}; ///< See RenderPassBegins
+    std::chrono::steady_clock::time_point last_flush{std::chrono::steady_clock::now()};
+    std::chrono::steady_clock::time_point next_idle_gpu_check{};
     std::function<void()> on_submit;
 
     State state;
