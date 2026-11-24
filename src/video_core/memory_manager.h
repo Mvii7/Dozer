@@ -134,6 +134,12 @@ public:
     void MarkUntracked(GPUVAddr gpu_addr, std::size_t size) const;
     void WriteBlockCached(GPUVAddr gpu_dest_addr, const void* src_buffer, std::size_t size);
 
+    /// EDEN_NX2_BOUND_CB (on; =0 writes through WriteBlockCached): one translation of a constant
+    /// buffer that is one device range, then a copy. The caches hear the merged range at the next
+    /// FlushCaching. False: the caller writes the old way.
+    bool WriteBoundConstantData(GPUVAddr gpu_addr, u32 buffer_size, u32 offset, const void* data,
+                                std::size_t bytes);
+
     /**
      * Checks if a gpu region can be simply read with a pointer.
      */
@@ -327,6 +333,15 @@ private:
 
     const size_t unique_identifier;
     VideoCommon::InvalidationAccumulator accumulator;
+    /// EDEN_NX2_BOUND_CB: the constant buffer WriteBoundConstantData last translated.
+    struct BoundConstantBuffer {
+        GPUVAddr address{};
+        u32 size{};
+        u64 epoch{};
+        DAddr device{};
+        bool valid{};
+    } bound_constant_buffer;
+    boost::container::small_vector<std::pair<DAddr, std::size_t>, 8> constant_buffer_writes;
     u64 cached_writes{};
 
     /// See NoteSkippedWrite.

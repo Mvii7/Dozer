@@ -8,6 +8,8 @@
 #include <array>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
+#include <span>
 
 #include "common/alignment.h"
 #include "common/assert.h"
@@ -793,6 +795,84 @@ void MemoryManager::WriteBlockUnsafe(GPUVAddr gpu_dest_addr, const void* src_buf
     WriteBlockImpl(gpu_dest_addr, src_buffer, size, VideoCommon::CacheType::None, true);
 }
 
+bool MemoryManager::WriteBoundConstantData(GPUVAddr gpu_addr, u32 buffer_size, u32 offset,
+                                           const void* data, std::size_t bytes) {
+    // One translation of the bound buffer, then a copy. The per-word path walks the page table
+    // and queues a range for every write; a draw then merges them. =0 is that path.
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_BOUND_CB");
+        return value == nullptr || value[0] != '0';
+    }();
+    if (!enabled || bytes == 0 || static_cast<std::size_t>(offset) > buffer_size ||
+        bytes > static_cast<std::size_t>(buffer_size) - offset) {
+        return false;
+    }
+    const GPUVAddr begin = gpu_addr + offset;
+    const u64 sparse_low = Tegra::g_nx2_sparse_low.load(std::memory_order_relaxed);
+    const u64 sparse_high = Tegra::g_nx2_sparse_high.load(std::memory_order_relaxed);
+    if (begin + bytes > sparse_low && begin < sparse_high) {
+        return false;
+    }
+    const u64 epoch = mapping_epoch.load(std::memory_order_acquire);
+    BoundConstantBuffer& bound = bound_constant_buffer;
+    if (!bound.valid || bound.address != gpu_addr || bound.size != buffer_size ||
+        bound.epoch != epoch) {
+        bound.valid = false;
+        bound.address = gpu_addr;
+        bound.size = buffer_size;
+        bound.epoch = epoch;
+        if (gpu_addr == 0 || buffer_size == 0 ||
+            (gpu_addr + buffer_size > sparse_low && gpu_addr < sparse_high) ||
+            !IsContinuousRange(gpu_addr, buffer_size)) {
+            return false;
+        }
+        const std::optional<DAddr> device = GpuToCpuAddress(gpu_addr);
+        if (!device) {
+            return false;
+        }
+        bound.device = *device;
+        bound.valid = true;
+    }
+    if (!bound.valid) {
+        return false;
+    }
+    const DAddr device = bound.device + offset;
+    const DAddr end = device + bytes;
+    for (DAddr address = device; address < end;) {
+        const std::size_t amount = (std::min<std::size_t>)(
+            end - address, Core::DEVICE_PAGESIZE - (address & Core::DEVICE_PAGEMASK));
+        if (memory.GetPointer<u8>(address) == nullptr) {
+            bound.valid = false;
+            return false;
+        }
+        address += amount;
+    }
+    WaitPendingWrites(begin, bytes);
+    FinishReadsBefore(begin, bytes);
+    const auto* src = static_cast<const u8*>(data);
+    for (DAddr address = device; address < end;) {
+        const std::size_t amount = (std::min<std::size_t>)(
+            end - address, Core::DEVICE_PAGESIZE - (address & Core::DEVICE_PAGEMASK));
+        std::memcpy(memory.GetPointer<u8>(address), src, amount);
+        address += amount;
+        src += amount;
+    }
+    ++cached_writes;
+    if (!constant_buffer_writes.empty()) {
+        auto& [last, last_size] = constant_buffer_writes.back();
+        if (device <= last + last_size && last <= end) {
+            const DAddr merged_end = (std::max)(last + last_size, end);
+            last = (std::min)(last, device);
+            last_size = merged_end - last;
+        } else {
+            constant_buffer_writes.emplace_back(device, bytes);
+        }
+    } else {
+        constant_buffer_writes.emplace_back(device, bytes);
+    }
+    return true;
+}
+
 void MemoryManager::WriteBlockCached(GPUVAddr gpu_dest_addr, const void* src_buffer, std::size_t size) {
     WaitPendingWrites(gpu_dest_addr, size);
     if (!WriteSmall(gpu_dest_addr, src_buffer, size)) {
@@ -1123,6 +1203,17 @@ bool MemoryManager::FlushCaching() {
         ReviewSkippedWrites();
     }
     Tegra::g_nx2_flushes.fetch_add(1, std::memory_order_relaxed);
+    // EDEN_NX2_BOUND_CB: ranges copied straight into a bound constant buffer, already device
+    // addresses. Empty on the old path.
+    const auto flush_bound = [this](bool invalidated) {
+        if (constant_buffer_writes.empty()) {
+            return invalidated;
+        }
+        rasterizer->InvalidateConstantBufferData(
+            std::span{constant_buffer_writes.data(), constant_buffer_writes.size()});
+        constant_buffer_writes.clear();
+        return true;
+    };
     // EDEN_NX2_INVAL_SKIP=0: every accumulated range translated page by page and handed to the
     // caches as collected.
     static const bool merge_ranges = [] {
@@ -1136,9 +1227,9 @@ bool MemoryManager::FlushCaching() {
         })) {
             rasterizer->InnerInvalidation(page_stash2);
             page_stash2.clear();
-            return true;
+            return flush_bound(true);
         }
-        return false;
+        return flush_bound(false);
     }
     // This runs before every draw (~5% of the GPU thread on title 1). The accumulator hands out
     // overlapping ranges (it rounds to 32 bytes from the unaligned start, so words written one by
@@ -1153,7 +1244,7 @@ bool MemoryManager::FlushCaching() {
                 ranges.emplace_back(addr, size);
             }
         })) {
-        return false;
+        return flush_bound(false);
     }
     const size_t collected = ranges.size();
     if (collected > 1) {
@@ -1211,7 +1302,7 @@ bool MemoryManager::FlushCaching() {
         rasterizer->InnerInvalidation(page_stash2);
         page_stash2.clear();
     }
-    return true;
+    return flush_bound(true);
 }
 
 const u8* MemoryManager::GetSpan(const GPUVAddr src_addr, const std::size_t size) const {
