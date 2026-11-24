@@ -148,6 +148,16 @@ public:
     /// the resulting instructions as a vector of their string representations.
     std::string Disassemble() const;
 
+    /// One compiled block: host code [host, host_end) starts at guest_pc (the block's first
+    /// instruction, not the one a sample landed in).
+    struct CompiledBlock {
+        std::uint64_t host;
+        std::uint64_t host_end;
+        std::uint64_t guest_pc;
+    };
+    /// Every live JIT's blocks. x64 fills it; other hosts leave it unchanged.
+    static void CopyCompiledBlocks(std::vector<CompiledBlock>& out);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;

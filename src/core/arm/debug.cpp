@@ -4,6 +4,11 @@
 // SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <mutex>
+
+#include <fmt/format.h>
+
 #include "common/demangle.h"
 #include "core/arm/debug.h"
 #include "core/arm/symbols.h"
@@ -12,6 +17,126 @@
 #include "core/memory.h"
 
 namespace Core {
+
+namespace {
+
+struct GuestProcess {
+    Kernel::KProcess* process;
+    int refs;
+};
+std::mutex guest_processes_mutex;
+std::vector<GuestProcess> guest_processes;
+
+} // namespace
+
+void RetainGuestProcess(Kernel::KProcess* process) {
+    if (process == nullptr) {
+        return;
+    }
+    std::scoped_lock lock{guest_processes_mutex};
+    for (GuestProcess& entry : guest_processes) {
+        if (entry.process == process) {
+            ++entry.refs;
+            return;
+        }
+    }
+    guest_processes.push_back({process, 1});
+}
+
+void ReleaseGuestProcess(Kernel::KProcess* process) {
+    std::scoped_lock lock{guest_processes_mutex};
+    const auto it = std::find_if(guest_processes.begin(), guest_processes.end(),
+                                 [&](const GuestProcess& entry) { return entry.process == process; });
+    if (it == guest_processes.end()) {
+        return;
+    }
+    if (--it->refs == 0) {
+        guest_processes.erase(it);
+    }
+}
+
+std::string NameGuestPc(u64 guest_pc) {
+    struct Symbol {
+        u64 start;
+        u64 end;
+        std::string name;
+    };
+    struct Module {
+        u64 base;
+        u64 end;
+        std::string name;
+        std::vector<Symbol> symbols;
+    };
+    // Read once, at the sample's report: the modules do not move during a run.
+    static std::vector<Module> modules;
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        std::vector<Kernel::KProcess*> processes;
+        {
+            std::scoped_lock lock{guest_processes_mutex};
+            processes.reserve(guest_processes.size());
+            for (const GuestProcess& entry : guest_processes) {
+                processes.push_back(entry.process);
+            }
+        }
+        for (Kernel::KProcess* process : processes) {
+            const bool is_64 = process->Is64Bit();
+            for (const auto& [base, name] : FindModules(process)) {
+                Module module;
+                module.base = base;
+                module.end = GetInteger(GetModuleEnd(process, base)) + 1;
+                module.name = name;
+                const Symbols::Symbols symbols = Symbols::GetSymbols(base, process->GetMemory(), is_64);
+                module.symbols.reserve(symbols.size());
+                for (const auto& [symbol, range] : symbols) {
+                    if (range.second == 0) {
+                        continue;
+                    }
+                    std::string text = Common::DemangleSymbol(symbol);
+                    if (text.size() > 160) {
+                        text.resize(160);
+                    }
+                    std::replace(text.begin(), text.end(), ';', ',');
+                    std::replace(text.begin(), text.end(), '\n', ' ');
+                    module.symbols.push_back(Symbol{range.first, range.first + range.second, std::move(text)});
+                }
+                std::sort(module.symbols.begin(), module.symbols.end(),
+                          [](const Symbol& a, const Symbol& b) { return a.start < b.start; });
+                modules.push_back(std::move(module));
+            }
+        }
+        std::sort(modules.begin(), modules.end(),
+                  [](const Module& a, const Module& b) { return a.base < b.base; });
+    }
+    const auto module_at = std::upper_bound(modules.begin(), modules.end(), guest_pc,
+                                            [](u64 pc, const Module& module) { return pc < module.base; });
+    if (module_at == modules.begin()) {
+        return {};
+    }
+    const Module& module = *std::prev(module_at);
+    if (guest_pc < module.base || guest_pc >= module.end) {
+        return {};
+    }
+    const u64 offset = guest_pc - module.base;
+    const auto symbol_at = std::upper_bound(module.symbols.begin(), module.symbols.end(), offset,
+                                            [](u64 off, const Symbol& symbol) { return off < symbol.start; });
+    const Symbol* symbol = nullptr;
+    for (auto it = symbol_at; it != module.symbols.begin();) {
+        --it;
+        if (offset < it->end) {
+            symbol = &*it;
+            break;
+        }
+        if (symbol_at - it > 32) {
+            break;
+        }
+    }
+    if (symbol == nullptr) {
+        return fmt::format("{}+{:#x}", module.name, offset);
+    }
+    return fmt::format("{}+{:#x} {}", module.name, offset, symbol->name);
+}
 
 namespace {
 

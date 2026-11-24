@@ -9,6 +9,7 @@
 #include "dynarmic/backend/x64/emit_x64.h"
 
 #include <iterator>
+#include <mutex>
 
 #include "common/assert.h"
 #include <boost/variant/detail/apply_visitor_binary.hpp>
@@ -49,11 +50,25 @@ EmitX64::EmitX64(BlockOfCode& code)
 EmitX64::~EmitX64() = default;
 
 std::optional<EmitX64::BlockDescriptor> EmitX64::GetBasicBlock(IR::LocationDescriptor descriptor) const {
+    std::shared_lock lock{block_descriptors_mutex};
     const auto iter = block_descriptors.find(descriptor);
     if (iter == block_descriptors.end()) {
         return std::nullopt;
     }
     return iter->second;
+}
+
+void EmitX64::CopyBlockRanges(std::vector<BlockRange>& out) const {
+    std::shared_lock lock{block_descriptors_mutex};
+    out.reserve(out.size() + block_descriptors.size());
+    for (const auto& [descriptor, block] : block_descriptors) {
+        const auto* const entry = reinterpret_cast<const u8*>(block.entrypoint);
+        if (entry == nullptr || block.size == 0) {
+            continue;
+        }
+        out.push_back(BlockRange{reinterpret_cast<u64>(entry), reinterpret_cast<u64>(entry) + block.size,
+                                 descriptor.Value()});
+    }
 }
 
 void EmitX64::EmitInvalid(EmitContext&, IR::Inst* inst) {
@@ -109,10 +124,14 @@ void EmitX64::EmitCallHostFunction(EmitContext& ctx, IR::Inst* inst) {
 void EmitX64::PushRSBHelper(Xbyak::Reg64 loc_desc_reg, Xbyak::Reg64 index_reg, IR::LocationDescriptor target) {
     using namespace Xbyak::util;
 
-    const auto iter = block_descriptors.find(target);
-    CodePtr target_code_ptr = iter != block_descriptors.end()
-                                ? iter->second.entrypoint
-                                : code.GetReturnFromRunCodeAddress();
+    CodePtr target_code_ptr = code.GetReturnFromRunCodeAddress();
+    {
+        std::shared_lock lock{block_descriptors_mutex};
+        const auto iter = block_descriptors.find(target);
+        if (iter != block_descriptors.end()) {
+            target_code_ptr = iter->second.entrypoint;
+        }
+    }
 
     code.mov(index_reg.cvt32(), dword[code.ABI_JIT_PTR + code.GetJitStateInfo().offsetof_rsb_ptr]);
     code.mov(loc_desc_reg, target.Value());
@@ -378,9 +397,9 @@ EmitX64::BlockDescriptor EmitX64::RegisterBlock(const IR::LocationDescriptor& de
     if (PerfMapEnabled()) {
         PerfMapRegister(entrypoint, code.getCurr(), LocationDescriptorToFriendlyName(descriptor));
     }
-    Patch(descriptor, entrypoint);
-
     BlockDescriptor block_desc{entrypoint, size};
+    std::unique_lock lock{block_descriptors_mutex};
+    Patch(descriptor, entrypoint);
     block_descriptors.insert({IR::LocationDescriptor{descriptor.Value()}, block_desc});
     return block_desc;
 }
@@ -443,6 +462,7 @@ void EmitX64::Unpatch(const IR::LocationDescriptor& target_desc) {
 }
 
 void EmitX64::ClearCache() {
+    std::unique_lock lock{block_descriptors_mutex};
     block_descriptors.clear();
     patch_information.clear();
 
@@ -450,6 +470,7 @@ void EmitX64::ClearCache() {
 }
 
 void EmitX64::InvalidateBasicBlocks(const ::Common::unordered_set<IR::LocationDescriptor>& locations) {
+    std::unique_lock lock{block_descriptors_mutex};
     code.EnableWriting();
     for (const auto& descriptor : locations) {
         if (auto const it = block_descriptors.find(descriptor); it != block_descriptors.end()) {

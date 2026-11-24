@@ -11,7 +11,9 @@ namespace Nx2Sampler {
 // thread is paused about 1000 times a second and its call stack recorded; the counts per
 // function (where the thread is, and everything on its stack) go to EDEN_NX2_SAMPLE_OUT
 // (default nx2_samples.txt). dozer-cli starts the clock at launch, dozer.exe at the first game
-// boot.
+// boot. A sample inside translated code is named by the guest block it belongs to
+// (module+offset and, when the module has one, the symbol). That address is the block's first
+// instruction.
 void StartFromEnvironment();
 
 } // namespace Nx2Sampler

@@ -523,7 +523,9 @@
 # trailing '*' matches a prefix (CPUCore_*,GPU*). SAMPLE_START seconds after the first game boot
 # (dozer.exe) or the launch (dozer-cli), default 60, for SAMPLE_SECONDS (default 30), each thread's
 # call stack is taken ~1000 times a second; the counts per function go to SAMPLE_OUT (default
-# nx2_samples.txt in the working folder). Game code (the JIT) is counted as "(jit)".
+# nx2_samples.txt in the working folder). Game code (the JIT) is named by the guest block it
+# belongs to (module+offset and the symbol), the block's first instruction; "(jit)" is host
+# code in the JIT that is not a block.
 #EDEN_NX2_SAMPLE=CPUCore_*
 #EDEN_NX2_SAMPLE_START=60
 #EDEN_NX2_SAMPLE_SECONDS=30

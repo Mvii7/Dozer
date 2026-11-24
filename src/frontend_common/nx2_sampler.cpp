@@ -26,6 +26,9 @@
 #include <tlhelp32.h>
 #include <dbghelp.h>
 
+#include "common/common_types.h"
+#include "core/arm/debug.h"
+
 namespace Nx2Sampler {
 namespace {
 
@@ -153,6 +156,17 @@ struct Symbolizer {
     using SymFromAddrFn = BOOL(WINAPI*)(HANDLE, DWORD64, PDWORD64, PSYMBOL_INFO);
 
     Symbolizer() {
+        std::vector<Core::JitGuestBlock> blocks;
+        Core::CopyJitGuestBlocks(blocks);
+        jit.reserve(blocks.size());
+        for (const Core::JitGuestBlock& block : blocks) {
+            if (block.host < block.host_end) {
+                jit.push_back(block);
+            }
+        }
+        std::sort(jit.begin(), jit.end(), [](const Core::JitGuestBlock& a, const Core::JitGuestBlock& b) {
+            return a.host < b.host;
+        });
         const HMODULE dbghelp = LoadLibraryA("dbghelp.dll");
         if (dbghelp == nullptr) {
             return;
@@ -196,14 +210,48 @@ struct Symbolizer {
             GetModuleFileNameA(module, path, sizeof(path));
             const char* base = std::strrchr(path, '\\');
             it->second = std::string{base != nullptr ? base + 1 : path} + "!?";
+        } else if (const std::string guest = GuestName(address); !guest.empty()) {
+            it->second = guest;
+            ++jit_named;
         } else {
             it->second = "(jit)";
+            ++jit_unnamed;
         }
         return it->second;
     }
 
+    // The block whose host code contains `address`: its guest PC is the block's first instruction.
+    std::string GuestName(DWORD64 address) {
+        const auto it = std::upper_bound(jit.begin(), jit.end(), address,
+                                         [](DWORD64 addr, const Core::JitGuestBlock& block) {
+                                             return addr < block.host;
+                                         });
+        if (it == jit.begin()) {
+            return {};
+        }
+        const Core::JitGuestBlock& block = *std::prev(it);
+        if (address < block.host || address >= block.host_end) {
+            return {};
+        }
+        const auto [cached, is_new] = guest_names.try_emplace(block.guest_pc);
+        if (is_new) {
+            cached->second = Core::NameGuestPc(block.guest_pc);
+            if (cached->second.empty()) {
+                char text[32];
+                std::snprintf(text, sizeof text, "guest:%llx",
+                              static_cast<unsigned long long>(block.guest_pc));
+                cached->second = text;
+            }
+        }
+        return cached->second;
+    }
+
     SymFromAddrFn from_address{};
     std::unordered_map<DWORD64, std::string> cache;
+    std::unordered_map<u64, std::string> guest_names;
+    std::vector<Core::JitGuestBlock> jit;
+    unsigned jit_named = 0;
+    unsigned jit_unnamed = 0;
 };
 
 void Report(const std::vector<Target>& targets, const std::vector<Sample>& samples,
@@ -213,6 +261,8 @@ void Report(const std::vector<Target>& targets, const std::vector<Sample>& sampl
     if (file == nullptr) {
         return;
     }
+    std::fprintf(file, "# jit frames are the guest block's first instruction "
+                       "(module+offset symbol). Counts are the last line.\n");
     for (unsigned thread = 0; thread < targets.size(); ++thread) {
         std::map<std::string, unsigned> self;
         std::map<std::string, unsigned> inclusive;
@@ -256,6 +306,10 @@ void Report(const std::vector<Target>& targets, const std::vector<Sample>& sampl
         print("inclusive (on the stack)", inclusive, 90);
         std::fprintf(file, "\n");
     }
+    std::fprintf(file,
+                 "# jit blocks %zu; distinct host addresses inside a block %u, outside one %u. "
+                 "A named frame is the block's first guest instruction.\n",
+                 symbolizer.jit.size(), symbolizer.jit_named, symbolizer.jit_unnamed);
     std::fclose(file);
 
     // <out>.folded: every distinct stack with its count, root first ("thread;a;b;c count").
