@@ -113,10 +113,11 @@
 #EDEN_NX2_BACK_STAGES_LIGHT=0
 # GEOMETRY_MIRROR=0: with cut c, B does not mirror vertex and index binds to C (default on).
 #EDEN_NX2_GEOMETRY_MIRROR=0
-# BACK_CPU: the split back on a physical core of its own (Windows CPU Sets). 0 off (default),
-# 1 pinned, 2 pinned and logged, 3 not pinned, logged. BACK_CORE / FRONT_CORE=<n> pick the
-# cores by Windows' CoreIndex (default: the second core of group 0 / the next one).
-#EDEN_NX2_BACK_CPU=1
+# BACK_CPU: the split back, and with the back stages the front, each on a physical core of
+# its own (Windows CPU Sets). On unless =0, so a guest core does not share that core. 2 pinned
+# and logged, 3 not pinned, logged. BACK_CORE / FRONT_CORE=<n> pick the cores by Windows'
+# CoreIndex (default: the second core of group 0 / the next one).
+#EDEN_NX2_BACK_CPU=0
 #EDEN_NX2_BACK_CORE=2
 #EDEN_NX2_FRONT_CORE=4
 # WRITE_BATCH=0: every macro write is a ring entry of its own (default: batched).

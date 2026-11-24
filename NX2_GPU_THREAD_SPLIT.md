@@ -330,9 +330,7 @@ Built; not measured yet.
 The back is the thread a frame waits on (~98% busy). On Windows nothing places it
 (`Common::SetCurrentThreadToPerformanceCores` acts on Android only), so the other logical
 processor of its core may run another busy thread of the process meanwhile (the front spinning
-in Drain, HostTiming, a guest CPU core), and the two share that core. `EDEN_NX2_BACK_CPU=1` (off
-by default until an A/B shows a gain; unset or `=0`: nothing is called): the back runs on one
-physical core (CPU Sets, both of its logical processors) and the process's other threads on the
+in Drain, HostTiming, a guest CPU core), and the two share that core. `EDEN_NX2_BACK_CPU` (on unless `=0`): the back runs on one physical core (CPU Sets, both of its logical processors) and the process's other threads on the
 other cores (the process's default CPU Sets, set back when the split stops; each new back thread
 pins itself again); `EDEN_NX2_BACK_CORE=<n>` picks the core by Windows' CoreIndex, as the log line
 names it (default: the second core of group 0). `=2` pins and logs where the back and the front

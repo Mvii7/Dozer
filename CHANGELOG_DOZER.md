@@ -15,6 +15,10 @@ and `=0` brings back the 2.0.0 code path.
   recording while the GPU sat idle. 128 did that overlap often enough to cost Donkey Kong
   Bananza 10-15% where a frame is mostly draws: each submit ends the pass and the next draw
   binds again.
+- GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): the split
+  back, and with the back stages the front, each take a physical core, and the other threads stay
+  off those cores. They were sharing a core with the game. Mario Kart World with the pack ahead
+  was spending the whole frame on the game thread while the GPU had already finished.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 
