@@ -6,6 +6,15 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Dozer 0.2.1 (`v0.2.1`)
+
+- GPU thread split: a Switch 2 GPU map, and a new sparse region, is applied before the front
+  parses the command lists submitted after it. Before, those lists could be read through the page
+  table while the map, or an unmap queued ahead of it, had not run, so the uploaded data stayed
+  wrong: terrain broken from a level load on until the level reloads (seen rarely in Donkey Kong
+  Bananza after quick level transitions). A burst of maps waits once, before the next command
+  list, and that wait counts in the GPU profile as "mapping change".
+
 ## Dozer 0.2.0 (`v0.2.0`)
 
 - Range sets: an empty range, or one whose end wraps, no longer reaches boost::icl's searches,

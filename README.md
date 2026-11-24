@@ -21,7 +21,7 @@ Dozer runs on its own: unzip it into a new, empty folder (see "Install"). It shi
 - **`dozer-cli.exe`**, the program without menus (SDL), with launchers (`start-*.bat`) that start
   it with the same settings.
 
-- This is a preview release (0.2.0). The program does not show the version number: the commit is
+- This is a preview release (0.2.1). The program does not show the version number: the commit is
   in the window title and the log.
 - Source: https://github.com/Mvii7/Dozer (GPLv3, see "License").
 - Changes: `CHANGELOG_DOZER.md`. Every switch: `dist/nx2_switches.txt`. Building from source:
