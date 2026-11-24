@@ -2485,6 +2485,38 @@ void RasterizerVulkan::InnerInvalidation(std::span<const std::pair<DAddr, std::s
     }
 }
 
+void RasterizerVulkan::InvalidateConstantBufferData(
+    std::span<const std::pair<DAddr, std::size_t>> sequences) {
+    if (SplitOnB()) [[unlikely]] {
+        InnerInvalidation(sequences);
+        return;
+    }
+    // Uniform words rarely land on an image. The page filter answers that without the texture
+    // cache lock, which InnerInvalidation takes for every range.
+    bool on_image = false;
+    for (const auto& [addr, size] : sequences) {
+        if (MayHoldImages(addr, size)) {
+            on_image = true;
+            break;
+        }
+    }
+    if (on_image) {
+        std::scoped_lock lock{texture_cache.mutex};
+        for (const auto& [addr, size] : sequences) {
+            texture_cache.WriteMemory(addr, size);
+        }
+    }
+    {
+        CheckBufferLockOffB("RasterizerVulkan::InvalidateConstantBufferData");
+        std::scoped_lock lock{buffer_cache.mutex};
+        buffer_cache.WriteMemoryRanges(sequences);
+    }
+    for (const auto& [addr, size] : sequences) {
+        query_cache.InvalidateRegion(addr, size);
+        pipeline_cache.InvalidateRegion(addr, size);
+    }
+}
+
 bool RasterizerVulkan::OnCPUWrite(DAddr addr, u64 size) {
     NoteLightWork();
     DEBUG_ASSERT(addr != 0 || size != 0);
