@@ -487,6 +487,17 @@ public:
 
     void BindHostGeometryBuffers(bool is_indexed);
 
+    /// Where the bound index range sits in its host buffer, after UpdateIndexBuffer. The range
+    /// is not uploaded: cpu_modified means a draw still has to synchronize it.
+    struct IndexPlace {
+        BufferId id{NULL_BUFFER_ID};
+        u32 offset{};
+        u32 size{};
+        bool cpu_modified{true};
+    };
+    [[nodiscard]] IndexPlace IndexPlaceOf();
+    void MarkIndexUsed(const IndexPlace& place);
+
     void BindHostStageBuffers(size_t stage);
 
     void BindHostComputeBuffers();

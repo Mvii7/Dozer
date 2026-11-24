@@ -1855,6 +1855,30 @@ bool BufferCache<P>::IsRegionCpuModified(DAddr addr, size_t size) {
 }
 
 template <class P>
+typename BufferCache<P>::IndexPlace BufferCache<P>::IndexPlaceOf() {
+    UpdateIndexBuffer();
+    IndexPlace place{};
+    const Binding& binding = channel_state->index_buffer;
+    place.id = binding.buffer_id;
+    if (place.id == NULL_BUFFER_ID || binding.size == 0) {
+        return place;
+    }
+    Buffer& buffer = slot_buffers[binding.buffer_id];
+    place.offset = buffer.Offset(binding.device_addr);
+    place.size = binding.size;
+    place.cpu_modified = memory_tracker.IsRegionCpuModified(binding.device_addr, binding.size);
+    return place;
+}
+
+template <class P>
+void BufferCache<P>::MarkIndexUsed(const IndexPlace& place) {
+    if (place.id == NULL_BUFFER_ID || place.size == 0) {
+        return;
+    }
+    slot_buffers[place.id].MarkUsage(place.offset, place.size);
+}
+
+template <class P>
 void BufferCache<P>::BindHostIndexBuffer() {
     Buffer& buffer = slot_buffers[channel_state->index_buffer.buffer_id];
     TouchBuffer(buffer, channel_state->index_buffer.buffer_id);
