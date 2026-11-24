@@ -84,6 +84,12 @@ public:
     /// for space); backends other than x64 compile none and return 0.
     std::size_t Precompile(const std::uint64_t* descriptors, std::size_t count);
 
+    /// Compiles the block at this location descriptor now (if not compiled yet) unless less than
+    /// a sixteenth of the code cache (a quarter of its far code region) is left. Call it while
+    /// the JIT is not running. Returns false when it stopped for space; backends other than x64
+    /// compile none and return false.
+    bool PrecompileOne(std::uint64_t descriptor);
+
     /**
      * Clears a halt reason from flags.
      * Warning: Only use this if you're sure this won't introduce races.

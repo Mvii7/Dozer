@@ -6,6 +6,15 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased (Dozer)
+
+- CPU JIT idle compile (x64, with the block list; `EDEN_NX2_JIT_IDLE_COMPILE=0` turns it off): a
+  block one core compiles for the first time is queued for the other cores, and each compiles
+  its queue while it has nothing to run, stopping as soon as it has work. Code reached for the
+  first time (no saved list yet, or a new part of a stage) was compiled in game once by each
+  core that ran it, up to 6 times; now mostly once. Every 30 s the log says how many blocks idle
+  cores compiled.
+
 ## Dozer 0.2.0 (`v0.2.0`)
 
 - Range sets: an empty range, or one whose end wraps, no longer reaches boost::icl's searches,
