@@ -130,10 +130,6 @@ public:
         *(payload_cursor++) = texel_buffer;
     }
 
-    [[nodiscard]] DescriptorUpdateEntry* Cursor() noexcept {
-        return payload_cursor;
-    }
-
     void AddTexelBuffer(VkBufferView texel_buffer, VkDeviceAddress base_address,
                         VkDeviceSize offset, VkDeviceSize size, VkFormat format) {
         if (!use_descriptor_buffer) {

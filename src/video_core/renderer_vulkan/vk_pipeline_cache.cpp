@@ -33,7 +33,6 @@
 #include "shader_recompiler/ir_opt/passes.h"
 #include "shader_recompiler/ir_opt/nx2_root.h"
 #include "shader_recompiler/program_header.h"
-#include "video_core/dirty_flags.h"
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/memory_manager.h"
@@ -46,6 +45,7 @@
 #include "video_core/renderer_vulkan/vk_descriptor_pool.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_state_tracker.h"
 #include "video_core/renderer_vulkan/vk_shader_reuse.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/renderer_vulkan/vk_update_descriptor.h"
@@ -1637,9 +1637,9 @@ bool PipelineCache::MatchesKey(const GraphicsPipelineCacheKey& saved) {
         // RefreshStages and FixedPipelineState::Refresh clear these as they read them. The key
         // was put back, so the next lookup has to read them again.
         maxwell3d->dirty.flags[VideoCommon::Dirty::Shaders] = true;
-        maxwell3d->dirty.flags[VideoCommon::Dirty::VertexInput] = true;
-        maxwell3d->dirty.flags[VideoCommon::Dirty::ViewportSwizzles] = true;
-        maxwell3d->dirty.flags[VideoCommon::Dirty::Blending] = true;
+        maxwell3d->dirty.flags[Dirty::VertexInput] = true;
+        maxwell3d->dirty.flags[Dirty::ViewportSwizzles] = true;
+        maxwell3d->dirty.flags[Dirty::Blending] = true;
         return false;
     }
     return true;

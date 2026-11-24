@@ -1951,7 +1951,7 @@ bool GraphicsPipeline::CanInstanceMerge() const {
         }
     }
     for (const Shader::Info& info : stage_infos) {
-        if (info.loads[IR::Attribute::InstanceId] || info.uses_cbuf_indirect) {
+        if (info.loads[Shader::IR::Attribute::InstanceId] || info.uses_cbuf_indirect) {
             return false;
         }
     }

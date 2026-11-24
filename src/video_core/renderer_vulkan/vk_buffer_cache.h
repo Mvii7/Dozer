@@ -210,7 +210,7 @@ public:
         uniform_capture = out;
     }
 
-    [[nodiscard]] DescriptorUpdateEntry* DescriptorCursor() noexcept {
+    [[nodiscard]] const DescriptorUpdateEntry* DescriptorCursor() noexcept {
         return descriptor_queue->Cursor();
     }
 
