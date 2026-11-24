@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased
 
+- Constant buffers (`EDEN_NX2_BOUND_CB=0` is the old path): a buffer that is one continuous
+  device range is translated once and copied into. The caches hear the merged range at the next
+  draw, and the texture cache is left alone when that range holds no image. Each write used to
+  walk the page table and queue its own range.
 - Vulkan, Switch 2: recorded draws are submitted every 512, and from 256 at a render-pass
   boundary (`EDEN_NX2_SUBMIT_DRAWS`, `=0` keeps every 4096 draws, 512 on Android). Once 256
   draws are waiting and the host GPU has already finished the previous submission, what is
