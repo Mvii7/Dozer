@@ -272,6 +272,10 @@ public:
         return Common::DisassembleX64(p, p + size);
     }
 
+    void CopyBlockRanges(std::vector<EmitX64::BlockRange>& out) const {
+        emitter.CopyBlockRanges(out);
+    }
+
 private:
     static CodePtr GetCurrentBlockThunk(void* thisptr) {
         Jit::Impl* this_ = static_cast<Jit::Impl*>(thisptr);
@@ -390,7 +394,7 @@ void Jit::CopyCompiledBlocks(std::vector<Jit::CompiledBlock>& out) {
     std::scoped_lock lock{compiled_any_mutex};
     for (const Jit* jit : live_jit_list) {
         std::vector<EmitX64::BlockRange> ranges;
-        jit->impl->emitter.CopyBlockRanges(ranges);
+        jit->impl->CopyBlockRanges(ranges);
         for (const EmitX64::BlockRange& range : ranges) {
             const u64 pc = LocationDescriptor{IR::LocationDescriptor{range.descriptor}}.PC();
             out.push_back(CompiledBlock{range.host, range.host_end, pc});
