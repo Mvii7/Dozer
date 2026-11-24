@@ -66,6 +66,10 @@
 #EDEN_NX2_VRAM_LIMIT_MIB=8192
 #EDEN_NX2_GPU_PROFILE=0
 #EDEN_NX2_FRAMES_AHEAD=2
+# BOUND_CB (on): a constant buffer that is one continuous device range is translated once and
+# copied into, and the caches hear the merged range at the next draw. =0 walks the page table
+# and queues a range for every write, as before.
+#EDEN_NX2_BOUND_CB=0
 #EDEN_NX2_TC_EXPECTED_MIB=21322
 #EDEN_NX2_TC_CRITICAL_MIB=22346
 
