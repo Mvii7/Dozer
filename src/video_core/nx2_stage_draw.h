@@ -294,6 +294,19 @@ public:
         geometry.push_back(slot);
     }
 
+    /// The copied slot `slot`. `move` replaces its offset (an index bind rebased lower).
+    void RetargetBind(u8 slot, u64 offset, u64 size, bool move) noexcept {
+        for (GeometrySlot& entry : geometry) {
+            if (entry.slot != slot) {
+                continue;
+            }
+            if (move) {
+                entry.offset = offset;
+            }
+            entry.size = size;
+        }
+    }
+
     /// The geometry part as `slots` (instead of AddGeometry): read by WriteTo, so valid until
     /// then (B's runtime keeps PacketGeometry until its next BeginRecords).
     void SetGeometry(std::span<const GeometrySlot> slots) noexcept {

@@ -1469,6 +1469,18 @@ void RasterizerVulkan::FlushIndexBatch() {
             packed.data(), VideoCommon::Nx2Stages::PackDrawArgs(index_batch.params, packed.data()));
     }
     // The draw was built before anything queued since. Invalidations from later draws follow it.
+    if (count >= 2) {
+        constexpr u64 whole = VK_WHOLE_SIZE;
+        if (index_batch.rebased) {
+            stage_writer.RetargetBind(32, index_batch.bind_offset, whole, true);
+        }
+        if (index_batch.widen_vertex) {
+            for (u32 mask = index_batch.vertex_enabled; mask != 0; mask &= mask - 1) {
+                const u32 index = static_cast<u32>(std::countr_zero(mask));
+                stage_writer.RetargetBind(static_cast<u8>(index), 0, whole, false);
+            }
+        }
+    }
     CommitStageDraw();
     FlushStageCWork();
 }
@@ -1476,32 +1488,93 @@ void RasterizerVulkan::FlushIndexBatch() {
 bool RasterizerVulkan::AppendIndexBatch(const Tegra::Engines::Maxwell3D& mb,
                                         const StageDrawParams& params) {
     using LightChange = Tegra::Engines::Maxwell3D::LightChange;
+    const auto note = [](const char* why) {
+        static u32 logged{};
+        if (logged < 8) {
+            ++logged;
+            LOG_INFO(HW_GPU, "Index batch skipped: {}", why);
+        }
+    };
     if (!index_batch.held || index_batch.count >= index_batch.commands.size()) {
         return false;
     }
-    // Vertex streams, constant buffers and state stay as the first draw bound them.
-    constexpr u32 allowed = LightChange::IndexBuffer | LightChange::DrawParams | LightChange::UniformSame;
+    // A vertex-stream write is allowed when the bound bases did not move (a limit rewrite).
+    // UniformSelect is the constant-buffer address registers; a draw does not read them.
+    constexpr u32 allowed = LightChange::IndexBuffer | LightChange::DrawParams |
+                            LightChange::UniformSame | LightChange::UniformSelect |
+                            LightChange::VertexStreams;
     if ((mb.light.changes & ~allowed) != 0 || mb.regs.zpass_pixel_count_enable != 0) {
+        note("state");
         return false;
+    }
+    const auto& streams = mb.regs.vertex_streams;
+    if ((mb.light.changes & LightChange::VertexStreams) != 0) {
+        u32 enabled = 0;
+        for (u32 index = 0; index < streams.size(); ++index) {
+            if (streams[index].IsEnabled()) {
+                enabled |= 1u << index;
+            }
+        }
+        if (enabled != index_batch.vertex_enabled) {
+            note("vertex buffer");
+            return false;
+        }
+        for (u32 mask = enabled; mask != 0; mask &= mask - 1) {
+            const u32 index = static_cast<u32>(std::countr_zero(mask));
+            if (streams[index].Address() != index_batch.vertex_address[index]) {
+                note("vertex buffer");
+                return false;
+            }
+        }
+        index_batch.widen_vertex = true;
     }
     const auto& index_buffer = mb.draw_manager.draw_state.index_buffer;
     if (static_cast<u32>(index_buffer.format) != index_batch.format || params.num_instances != 1) {
+        note("format");
         return false;
     }
     Nx2Record::CacheLock lock{buffer_cache.mutex};
     const BufferCache::IndexPlace place = buffer_cache.IndexPlaceOf();
-    if (place.cpu_modified || place.id != index_batch.id || place.offset < index_batch.bind_offset ||
-        index_batch.index_size == 0 || (place.offset - index_batch.bind_offset) % index_batch.index_size != 0) {
+    if (place.cpu_modified || place.id != index_batch.id || index_batch.index_size == 0) {
+        note(place.cpu_modified ? "index dirty" : "index buffer");
         return false;
     }
-    const u32 steps = (place.offset - index_batch.bind_offset) / index_batch.index_size;
-    if (steps > ~u32{0} - params.first_index) {
-        return false;
+    u32 first = params.first_index;
+    if (place.offset < index_batch.bind_offset) {
+        // The bind already recorded is above this range. Only the geometry mirror can move it.
+        if (!index_batch.geometry_mirrored) {
+            note("index address");
+            return false;
+        }
+        const u32 drop = index_batch.bind_offset - place.offset;
+        if (drop % index_batch.index_size != 0) {
+            note("index address");
+            return false;
+        }
+        const u32 steps = drop / index_batch.index_size;
+        for (u32 index = 0; index < index_batch.count; ++index) {
+            if (index_batch.commands[index].firstIndex > ~u32{0} - steps) {
+                note("index address");
+                return false;
+            }
+        }
+        for (u32 index = 0; index < index_batch.count; ++index) {
+            index_batch.commands[index].firstIndex += steps;
+        }
+        index_batch.bind_offset = place.offset;
+        index_batch.rebased = true;
+    } else {
+        const u32 rise = place.offset - index_batch.bind_offset;
+        if (rise % index_batch.index_size != 0 || rise / index_batch.index_size > ~u32{0} - first) {
+            note("index address");
+            return false;
+        }
+        first += rise / index_batch.index_size;
     }
     VkDrawIndexedIndirectCommand& command = index_batch.commands[index_batch.count];
     command.indexCount = params.num_vertices;
     command.instanceCount = params.num_instances;
-    command.firstIndex = steps + params.first_index;
+    command.firstIndex = first;
     command.vertexOffset = static_cast<s32>(params.base_vertex);
     command.firstInstance = params.base_instance;
     ++index_batch.count;
@@ -5707,6 +5780,19 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
                     index_batch.index_size = index_size;
                     index_batch.format = static_cast<u32>(format);
                     index_batch.count = 1;
+                    index_batch.rebased = false;
+                    index_batch.widen_vertex = false;
+                    index_batch.geometry_mirrored = buffer_cache_runtime.GeometryMirrored();
+                    index_batch.vertex_enabled = 0;
+                    index_batch.vertex_address.fill(0);
+                    const auto& streams = mb.regs.vertex_streams;
+                    for (u32 index = 0; index < streams.size(); ++index) {
+                        if (!streams[index].IsEnabled()) {
+                            continue;
+                        }
+                        index_batch.vertex_enabled |= 1u << index;
+                        index_batch.vertex_address[index] = streams[index].Address();
+                    }
                     index_batch.params = params;
                     VkDrawIndexedIndirectCommand& command = index_batch.commands[0];
                     command = {};
@@ -5716,6 +5802,14 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
                     command.vertexOffset = static_cast<s32>(params.base_vertex);
                     command.firstInstance = params.base_instance;
                     start_batch = true;
+                } else {
+                    static u32 logged{};
+                    if (logged < 8) {
+                        ++logged;
+                        LOG_INFO(HW_GPU, "Index batch not held: format {}, dirty {}, offset {:#x}",
+                                 static_cast<u32>(format), index_place.cpu_modified ? 1 : 0,
+                                 index_place.offset);
+                    }
                 }
             }
             if (!start_batch) {

@@ -688,11 +688,16 @@ private:
     /// cannot join it. The memory stage (EDEN_NX2_BACK_STAGES) is the path that runs it.
     struct IndexBatchState {
         bool held{};
+        bool rebased{};
+        bool widen_vertex{};
+        bool geometry_mirrored{};
         VideoCommon::BufferId id{};
         u32 bind_offset{};
         u32 index_size{};
         u32 format{};
         u32 count{};
+        u32 vertex_enabled{};
+        std::array<u64, 32> vertex_address{};
         std::array<VkDrawIndexedIndirectCommand, 32> commands{};
         StageDrawParams params{};
     };
