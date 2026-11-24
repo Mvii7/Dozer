@@ -27,24 +27,24 @@ namespace VideoCommon::Nx2BackCpu {
 // runs it on either logical processor of any core (SetCurrentThreadToPerformanceCores does nothing
 // there), and the other logical processor of that core may run another busy thread of the process
 // meanwhile (the front spinning in Drain, HostTiming, a guest CPU core): the two then share one
-// core's execution units. Unset or 0 (the default until an A/B shows a gain): as before, nothing
-// is called. 1: the back runs on one core (both of its logical processors, CPU Sets) and the
-// process's other threads are kept off that core (the process's default CPU Sets; threads of
-// other processes may still use it). EDEN_NX2_BACK_CORE=<n> picks the core by Windows' CoreIndex,
-// as the log line names it (default: the second core of processor group 0, away from core 0's
-// interrupts). 2: pinned, and where the back and the front run is logged (verify). 3: not pinned,
-// logged (where Windows puts them). Read at the first call (the back's StartBack or the front's
-// NoteFront), as the other split switches are, so a front end that sets it in main() is seen.
+// core's execution units. Unset (the default): the back runs on one core (both of its logical
+// processors, CPU Sets) and the process's other threads are kept off that core (the process's
+// default CPU Sets; threads of other processes may still use it). With the back stages the front
+// gets the next core the same way. =0 leaves every thread where Windows puts it. EDEN_NX2_BACK_CORE
+// and EDEN_NX2_FRONT_CORE pick the cores by Windows' CoreIndex, as the log line names them
+// (default: the second core of processor group 0, away from core 0's interrupts, then the next).
+// 2: pinned, and where the back and the front run is logged (verify). 3: not pinned, logged.
+// Read at the first call (the back's StartBack or the front's NoteFront), as the other split
+// switches are, so a front end that sets it in main() is seen.
 inline int Mode() {
     static std::atomic<s8> mode{-1};
     s8 value = mode.load(std::memory_order_relaxed);
     if (value < 0) [[unlikely]] {
         const char* env = std::getenv("EDEN_NX2_BACK_CPU");
-        value = static_cast<s8>(env == nullptr  ? 0
-                                : env[0] == '1' ? 1
-                                : env[0] == '2' ? 2
-                                : env[0] == '3' ? 3
-                                                : 0);
+        value = static_cast<s8>(env == nullptr || env[0] == '\0' || env[0] == '1' ? 1
+                                : env[0] == '2'                                    ? 2
+                                : env[0] == '3'                                    ? 3
+                                                                                   : 0);
         mode.store(value, std::memory_order_relaxed);
     }
     return value;
