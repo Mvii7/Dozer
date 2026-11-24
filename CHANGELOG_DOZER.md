@@ -9,7 +9,9 @@ and `=0` brings back the 2.0.0 code path.
 ## Unreleased (Dozer)
 
 - Sampling profiler (`EDEN_NX2_SAMPLE`) in dozer.exe too, not only dozer-cli: it starts at the
-  first game boot, after the game's Dozer settings are applied.
+  first game boot, after the game's Dozer settings are applied. A sample inside translated code
+  is named by the guest block it belongs to (module, offset, symbol). The address is the block's
+  first instruction.
 
 ## Dozer 0.2.0 (`v0.2.0`)
 

@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_set>
+#include <vector>
 
 #include <boost/icl/interval_set.hpp>
 #include "common/assert.h"
@@ -37,6 +38,7 @@ namespace {
 std::mutex compiled_any_mutex;
 std::unordered_set<u64> compiled_any; ///< Emptied when the last JIT is destroyed
 std::size_t live_jits = 0;            ///< Guarded by compiled_any_mutex
+std::vector<Jit*> live_jit_list;      ///< Guarded by compiled_any_mutex
 } // namespace
 
 static RunCodeCallbacks GenRunCodeCallbacks(A64::UserCallbacks* cb, CodePtr (*LookupBlock)(void* lookup_block_arg), void* arg, const A64::UserConfig& conf) {
@@ -270,6 +272,10 @@ public:
         return Common::DisassembleX64(p, p + size);
     }
 
+    void CopyBlockRanges(std::vector<EmitX64::BlockRange>& out) const {
+        emitter.CopyBlockRanges(out);
+    }
+
 private:
     static CodePtr GetCurrentBlockThunk(void* thisptr) {
         Jit::Impl* this_ = static_cast<Jit::Impl*>(thisptr);
@@ -372,13 +378,27 @@ private:
 Jit::Jit(UserConfig conf)
         : impl(std::make_unique<Jit::Impl>(this, conf)) {
     std::scoped_lock lock{compiled_any_mutex};
+    live_jit_list.push_back(this);
     ++live_jits;
 }
 
 Jit::~Jit() {
     std::scoped_lock lock{compiled_any_mutex};
+    std::erase(live_jit_list, this);
     if (--live_jits == 0) {
         compiled_any = {};
+    }
+}
+
+void Jit::CopyCompiledBlocks(std::vector<Jit::CompiledBlock>& out) {
+    std::scoped_lock lock{compiled_any_mutex};
+    for (const Jit* jit : live_jit_list) {
+        std::vector<EmitX64::BlockRange> ranges;
+        jit->impl->CopyBlockRanges(ranges);
+        for (const EmitX64::BlockRange& range : ranges) {
+            const u64 pc = LocationDescriptor{IR::LocationDescriptor{range.descriptor}}.PC();
+            out.push_back(CompiledBlock{range.host, range.host_end, pc});
+        }
     }
 }
 

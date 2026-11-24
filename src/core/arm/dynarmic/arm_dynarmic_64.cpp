@@ -24,6 +24,7 @@
 #include "common/nx2_reactive.h"
 #include "common/nx2_slow_frame.h"
 #include "common/settings.h"
+#include "core/arm/debug.h"
 #include "core/arm/dynarmic/arm_dynarmic.h"
 #include "core/arm/dynarmic/arm_dynarmic_64.h"
 #include "core/arm/dynarmic/dynarmic_exclusive_monitor.h"
@@ -767,11 +768,22 @@ ArmDynarmic64::ArmDynarmic64(System& system, bool uses_wall_clock, Kernel::KProc
     auto& page_table = process->GetPageTable().GetBasePageTable();
     auto& page_table_impl = page_table.GetImpl();
     MakeJit(&page_table_impl, page_table.GetAddressSpaceWidth());
+    RetainGuestProcess(process);
 }
 
 ArmDynarmic64::~ArmDynarmic64() {
+    ReleaseGuestProcess(m_cb->m_process);
     if (JitBlockList::Enabled()) {
         JitBlockList::End(m_cb->m_process);
+    }
+}
+
+void CopyJitGuestBlocks(std::vector<JitGuestBlock>& out) {
+    std::vector<Dynarmic::A64::Jit::CompiledBlock> blocks;
+    Dynarmic::A64::Jit::CopyCompiledBlocks(blocks);
+    out.reserve(out.size() + blocks.size());
+    for (const Dynarmic::A64::Jit::CompiledBlock& block : blocks) {
+        out.push_back(JitGuestBlock{block.host, block.host_end, block.guest_pc});
     }
 }
 

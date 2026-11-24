@@ -180,6 +180,8 @@ private:
 Jit::Jit(UserConfig conf) : impl(std::make_unique<Jit::Impl>(this, conf)) {}
 Jit::~Jit() = default;
 
+void Jit::CopyCompiledBlocks(std::vector<Jit::CompiledBlock>&) {}
+
 HaltReason Jit::Run() {
     return impl->Run();
 }

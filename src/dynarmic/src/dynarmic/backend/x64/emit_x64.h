@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -92,6 +93,15 @@ public:
     /// Looks up an emitted host block in the cache.
     std::optional<BlockDescriptor> GetBasicBlock(IR::LocationDescriptor descriptor) const;
 
+    /// Host range and the block's location-descriptor value, for a sampler. The descriptor's low
+    /// bits are the guest PC of the block's first instruction.
+    struct BlockRange {
+        u64 host;
+        u64 host_end;
+        u64 descriptor;
+    };
+    void CopyBlockRanges(std::vector<BlockRange>& out) const;
+
     /// Empties the entire cache.
     virtual void ClearCache();
 
@@ -143,6 +153,8 @@ public:
     // State
     BlockOfCode& code;
     ExceptionHandler exception_handler;
+    /// block_descriptors is read from the JIT thread and, once, from a sampler thread.
+    mutable std::shared_mutex block_descriptors_mutex;
     ::Common::unordered_map<IR::LocationDescriptor, BlockDescriptor> block_descriptors;
     ::Common::unordered_map<IR::LocationDescriptor, PatchInformation> patch_information;
 
