@@ -139,7 +139,8 @@ inline constexpr u32 MaxDrawArgWords = 6;
 ///   Direct:        word 0 bits 32-63 first_index; base_instance, num_instances; base_vertex,
 ///                  num_vertices (three words; 72 bytes unpacked, k2hiz)
 ///   Indirect, ByteCount: word 0 bits 32-63 stride; indirect_buffer; indirect_offset;
-///                  max_draw_counts (four words)
+///                  max_draw_counts (four words). An index batch (EDEN_NX2_INDEX_BATCH) writes
+///                  the same four, buffer 0, then the VkDrawIndexedIndirectCommand bytes.
 ///   IndirectCount: those, then count_buffer, count_offset (six words)
 ///   None:          word 0 alone
 [[nodiscard]] inline u32 PackDrawArgs(const DrawArgs& args, u64* out) noexcept {
@@ -197,6 +198,15 @@ inline constexpr u32 MaxDrawArgWords = 6;
         args.num_vertices = static_cast<u32>(words[2] >> 32);
         return args;
     case DrawCommand::Indirect:
+        // Four words, or four plus the index batch's commands (buffer word 0).
+        if (words.size() < 4) [[unlikely]] {
+            std::abort();
+        }
+        args.stride = static_cast<u32>(w0 >> 32);
+        args.indirect_buffer = words[1];
+        args.indirect_offset = words[2];
+        args.max_draw_counts = static_cast<u32>(words[3]);
+        return args;
     case DrawCommand::ByteCount:
     case DrawCommand::IndirectCount:
         need(args.command == DrawCommand::IndirectCount ? 6 : 4);
@@ -357,7 +367,8 @@ private:
     std::vector<u32> handles;
     std::vector<GeometrySlot> geometry;
     std::span<const GeometrySlot> geometry_view;
-    std::array<u64, 16> draw{};
+    // Four argument words plus 32 indexed-indirect commands (20 bytes each).
+    std::array<u64, 96> draw{};
     u32 draw_count{};
 };
 

@@ -382,6 +382,8 @@ private:
     void SendStageRecords(u64 seq, RecordList* records);
     /// B, no cache lock held: the draw packet in stage_writer.
     void SendStageDraw();
+    /// SendStageDraw without flushing queued invalidations first.
+    void CommitStageDraw();
     /// B (T8): the pages C may write for work `seq` (or, between packets, the next packet's): the
     /// bound render targets and depth only (every page for a target too large to walk). A caller
     /// whose pipeline writes memory it does not place (storage images, global stores) adds
@@ -680,6 +682,26 @@ private:
     [[nodiscard]] bool ContinueDrawMerge(bool is_indexed, u32 instance_count);
     void FinishDrawMerge();
     [[nodiscard]] bool DeferDrawMerge(u32 instance_count);
+
+    /// EDEN_NX2_INDEX_BATCH. Plain light indexed draws whose index ranges sit in one host
+    /// buffer, bound once, drawn with one vkCmdDrawIndexedIndirect. Held until the next draw
+    /// cannot join it. The memory stage (EDEN_NX2_BACK_STAGES) is the path that runs it.
+    struct IndexBatchState {
+        bool held{};
+        VideoCommon::BufferId id{};
+        u32 bind_offset{};
+        u32 index_size{};
+        u32 format{};
+        u32 count{};
+        std::array<VkDrawIndexedIndirectCommand, 32> commands{};
+        StageDrawParams params{};
+    };
+    IndexBatchState index_batch{};
+
+    [[nodiscard]] bool IndexBatchEnabled() const;
+    void FlushIndexBatch();
+    [[nodiscard]] bool AppendIndexBatch(const Tegra::Engines::Maxwell3D& mb,
+                                        const StageDrawParams& params);
 };
 
 } // namespace Vulkan

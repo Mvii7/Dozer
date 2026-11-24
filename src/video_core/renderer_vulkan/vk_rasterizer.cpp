@@ -1430,6 +1430,85 @@ bool RasterizerVulkan::DrawMergeEnabled() const {
     return enabled;
 }
 
+bool RasterizerVulkan::IndexBatchEnabled() const {
+    static const bool enabled = [] {
+        const char* const value = std::getenv("EDEN_NX2_INDEX_BATCH");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+void RasterizerVulkan::FlushIndexBatch() {
+    if (!index_batch.held) {
+        return;
+    }
+    index_batch.held = false;
+    const u32 count = index_batch.count;
+    if (count >= 2) {
+        StageDrawParams params = index_batch.params;
+        params.command = StageCommand::Indirect;
+        params.is_indexed = true;
+        params.indirect_buffer = 0;
+        params.indirect_offset = 0;
+        params.max_draw_counts = count;
+        params.stride = static_cast<u32>(sizeof(VkDrawIndexedIndirectCommand));
+        const u32 bytes = count * params.stride;
+        const u32 words = 4 + (bytes + static_cast<u32>(sizeof(u64)) - 1) / static_cast<u32>(sizeof(u64));
+        std::array<u64, 96> packed{};
+        const u32 header = VideoCommon::Nx2Stages::PackDrawArgs(params, packed.data());
+        std::memcpy(packed.data() + header, index_batch.commands.data(), bytes);
+        stage_writer.AddDrawWords(packed.data(), words);
+        static u32 logged{};
+        if (logged < 8) {
+            ++logged;
+            LOG_INFO(HW_GPU, "Index batch: {} draws, one indexed indirect", count);
+        }
+    } else {
+        std::array<u64, VideoCommon::Nx2Stages::MaxDrawArgWords> packed{};
+        stage_writer.AddDrawWords(
+            packed.data(), VideoCommon::Nx2Stages::PackDrawArgs(index_batch.params, packed.data()));
+    }
+    // The draw was built before anything queued since. Invalidations from later draws follow it.
+    CommitStageDraw();
+    FlushStageCWork();
+}
+
+bool RasterizerVulkan::AppendIndexBatch(const Tegra::Engines::Maxwell3D& mb,
+                                        const StageDrawParams& params) {
+    using LightChange = Tegra::Engines::Maxwell3D::LightChange;
+    if (!index_batch.held || index_batch.count >= index_batch.commands.size()) {
+        return false;
+    }
+    // Vertex streams, constant buffers and state stay as the first draw bound them.
+    constexpr u32 allowed = LightChange::IndexBuffer | LightChange::DrawParams | LightChange::UniformSame;
+    if ((mb.light.changes & ~allowed) != 0 || mb.regs.zpass_pixel_count_enable != 0) {
+        return false;
+    }
+    const auto& index_buffer = mb.draw_manager.draw_state.index_buffer;
+    if (static_cast<u32>(index_buffer.format) != index_batch.format || params.num_instances != 1) {
+        return false;
+    }
+    Nx2Record::CacheLock lock{buffer_cache.mutex};
+    const BufferCache::IndexPlace place = buffer_cache.IndexPlaceOf();
+    if (place.cpu_modified || place.id != index_batch.id || place.offset < index_batch.bind_offset ||
+        index_batch.index_size == 0 || (place.offset - index_batch.bind_offset) % index_batch.index_size != 0) {
+        return false;
+    }
+    const u32 steps = (place.offset - index_batch.bind_offset) / index_batch.index_size;
+    if (steps > ~u32{0} - params.first_index) {
+        return false;
+    }
+    VkDrawIndexedIndirectCommand& command = index_batch.commands[index_batch.count];
+    command.indexCount = params.num_vertices;
+    command.instanceCount = params.num_instances;
+    command.firstIndex = steps + params.first_index;
+    command.vertexOffset = static_cast<s32>(params.base_vertex);
+    command.firstInstance = params.base_instance;
+    ++index_batch.count;
+    buffer_cache.MarkIndexUsed(place);
+    return true;
+}
+
 namespace {
 u64 DrawMergeHash(const u8* data, u32 size) {
     u64 hash{14695981039346656037ull};
@@ -2301,6 +2380,7 @@ void RasterizerVulkan::ClearRecord(u32 layer_count) {
 
 void RasterizerVulkan::DispatchCompute() {
     FinishDrawMerge();
+    FlushIndexBatch();
     NoteLightWork();
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::Compute};
     VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::ComputeDispatches, 1);
@@ -3096,6 +3176,9 @@ void RasterizerVulkan::FlushAndInvalidateRegion(DAddr addr, u64 size,
 
 void RasterizerVulkan::WaitForIdle() {
     FinishDrawMerge();
+    if (split_draws && VideoCommon::Nx2Stages::OnStage(VideoCommon::Nx2Stages::Stage::B)) {
+        FlushIndexBatch();
+    }
     if (SplitOnB()) [[unlikely]] {
         WaitForIdleB();
         return;
@@ -3224,6 +3307,9 @@ void RasterizerVulkan::TiledCacheBarrier() {
 
 void RasterizerVulkan::FlushCommands() {
     FinishDrawMerge();
+    if (split_draws && VideoCommon::Nx2Stages::OnStage(VideoCommon::Nx2Stages::Stage::B)) {
+        FlushIndexBatch();
+    }
     if (SplitOnB()) [[unlikely]] {
         // C's (its draw counter and the scheduler).
         NoteLightWork();
@@ -3240,6 +3326,9 @@ void RasterizerVulkan::FlushCommands() {
 
 void RasterizerVulkan::TickFrame() {
     FinishDrawMerge();
+    if (split_draws && VideoCommon::Nx2Stages::OnStage(VideoCommon::Nx2Stages::Stage::B)) {
+        FlushIndexBatch();
+    }
     if (split_draws) [[unlikely]] {
         if (SplitOnB()) {
             // Never split (F4 / F5): Composite's TickFrame runs on C inside a ParkB (GPU::TickWork)
@@ -4702,6 +4791,7 @@ Tegra::Engines::Maxwell3D& RasterizerVulkan::EngineB() {
 template <typename Func>
 void RasterizerVulkan::JoinB(Func&& func) {
     // What B has for C goes first: C runs it before it parks.
+    FlushIndexBatch();
     FlushStageCWork();
     VideoCommon::Nx2Stages::JoinFromB([&] {
         const bool was_in_join = b_in_join;
@@ -4732,6 +4822,7 @@ void RasterizerVulkan::JoinBLocked(Func&& func) {
 
 template <typename Func>
 void RasterizerVulkan::StageToC(const Func& func) {
+    FlushIndexBatch();
     FlushStageCWork();
     if (OwnsRecordsB()) [[unlikely]] {
         // C parked: its half here, in its place in the stream.
@@ -4936,9 +5027,13 @@ void RasterizerVulkan::SendStageRecords(u64 seq, RecordList* records) {
 }
 
 void RasterizerVulkan::SendStageDraw() {
+    FlushStageCWork();
+    CommitStageDraw();
+}
+
+void RasterizerVulkan::CommitStageDraw() {
     namespace Stages = VideoCommon::Nx2Stages;
     VideoCommon::Nx2Profile::FineScope scope{VideoCommon::Nx2Profile::Zone::PacketSend};
-    FlushStageCWork();
     if (OwnsRecordsB()) [[unlikely]] {
         // C parked: the packet runs here (no draw is set up in a join's op so far).
         std::vector<u64> words(stage_writer.Words());
@@ -5446,8 +5541,9 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
         }
     };
     Stages::StageDrawWriter& out = stage_writer;
-    const auto finish_head = [&](u64 seq, RecordList* records) {
-        Profile::FineScope scope{Profile::Zone::PacketBuild};
+    // copy_geometry: the packet is not sent yet (an index batch). A later BeginRecords clears
+    // the runtime's slots, so the writer keeps its own copy.
+    const auto seal = [&](u64 seq, RecordList* records, bool copy_geometry) {
         Stages::DrawToC& head = out.Head();
         head.seq = seq;
         head.records = records;
@@ -5455,9 +5551,19 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
         // The geometry mirror: the packet's binds and the streams B keeps live (C binds them
         // again where its command buffer lost them, BindGeometryC). The runtime's own slots,
         // valid until its next BeginRecords: SendStageDraw copies them to ring 3.
-        out.SetGeometry(buffer_cache_runtime.PacketGeometry());
+        if (copy_geometry) {
+            for (const Stages::GeometrySlot& slot : buffer_cache_runtime.PacketGeometry()) {
+                out.AddGeometry(slot);
+            }
+        } else {
+            out.SetGeometry(buffer_cache_runtime.PacketGeometry());
+        }
         head.geometry_mirrored = buffer_cache_runtime.GeometryMirrored();
         head.vertex_live = buffer_cache.EnabledVertexBuffersMask();
+    };
+    const auto finish_head = [&](u64 seq, RecordList* records) {
+        Profile::FineScope scope{Profile::Zone::PacketBuild};
+        seal(seq, records, false);
         // Packed by command (a direct draw's 72 bytes in 24).
         std::array<u64, Stages::MaxDrawArgWords> packed;
         out.AddDrawWords(packed.data(), Stages::PackDrawArgs(params, packed.data()));
@@ -5504,11 +5610,24 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
             }
         }
     }
+    if (index_batch.held) {
+        // The packet held from the previous plain light draw. Join this one, or send it before
+        // this draw binds anything of its own.
+        if (try_plain && AppendIndexBatch(mb, params)) {
+            anchor.pipeline = last.pipeline;
+            follows = last.level;
+            Profile::Add(Profile::Counter::LightDraws, 1);
+            return;
+        }
+        FlushIndexBatch();
+    }
     if (try_plain || try_uniform) {
         GraphicsPipeline& pipeline = *last.pipeline;
         bool light_ok = false;
         u64 seq;
         RecordList* records;
+        BufferCache::IndexPlace index_place{};
+        bool index_place_ready = false;
         out.Begin();
         {
             Profile::Scope scope{Profile::Zone::LightDraw};
@@ -5558,11 +5677,50 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
                 take_indirect();
                 // EDEN_NX2_GPU_PROFILE: the streams this draw bound, as TryLightDraw counts them.
                 buffer_cache.CommitVertexStreamNote();
+                if (try_plain && is_indexed && !indirect && IndexBatchEnabled()) {
+                    index_place = buffer_cache.IndexPlaceOf();
+                    index_place_ready = true;
+                }
             }
             records = buffer_cache_runtime.EndRecords();
         }
         if (light_ok) {
-            finish_head(seq, records);
+            bool start_batch = false;
+            if (index_place_ready && params.num_instances == 1 &&
+                mb.regs.zpass_pixel_count_enable == 0) {
+                const auto& draw_state = mb.draw_manager.draw_state;
+                using IndexFormat = Tegra::Engines::Maxwell3D::Regs::IndexFormat;
+                using Topology = Tegra::Engines::Maxwell3D::Regs::PrimitiveTopology;
+                const IndexFormat format = draw_state.index_buffer.format;
+                const u32 index_size = format == IndexFormat::UnsignedShort ? 2u
+                                       : format == IndexFormat::UnsignedInt ? 4u
+                                                                            : 0u;
+                const Topology topology = draw_state.topology;
+                const bool rewritten = topology == Topology::Quads || topology == Topology::QuadStrip;
+                if (index_size != 0 && !rewritten && !index_place.cpu_modified &&
+                    index_place.id != VideoCommon::NULL_BUFFER_ID &&
+                    index_place.offset % index_size == 0) {
+                    Profile::FineScope scope{Profile::Zone::PacketBuild};
+                    seal(seq, records, true);
+                    index_batch.id = index_place.id;
+                    index_batch.bind_offset = index_place.offset;
+                    index_batch.index_size = index_size;
+                    index_batch.format = static_cast<u32>(format);
+                    index_batch.count = 1;
+                    index_batch.params = params;
+                    VkDrawIndexedIndirectCommand& command = index_batch.commands[0];
+                    command = {};
+                    command.indexCount = params.num_vertices;
+                    command.instanceCount = params.num_instances;
+                    command.firstIndex = params.first_index;
+                    command.vertexOffset = static_cast<s32>(params.base_vertex);
+                    command.firstInstance = params.base_instance;
+                    start_batch = true;
+                }
+            }
+            if (!start_batch) {
+                finish_head(seq, records);
+            }
             {
                 Profile::FineScope presets_scope{Profile::Zone::StagePresets};
                 NotePoolsB(mb, seq);
@@ -5571,7 +5729,14 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
                     VideoCommon::Nx2Stages::GpuPages().PreSetAll(seq);
                 }
             }
-            SendStageDraw();
+            if (start_batch) {
+                // Setup invalidations before the draw. The draw itself stays until it is joined
+                // or something else has to go to C.
+                FlushStageCWork();
+                index_batch.held = true;
+            } else {
+                SendStageDraw();
+            }
             if (try_plain) {
                 Profile::Add(Profile::Counter::LightDraws, 1);
                 if (indirect) {
@@ -6291,7 +6456,33 @@ void RasterizerVulkan::PrepareDrawC(const StageDrawReader& in, const StageDrawPa
     {
         Profile::Scope scope{Profile::Zone::DrawRecord};
         BindGeometryC(head);
-        RecordStageDraw(params);
+        // Index batch: the commands ride after the four indirect words, buffer 0. C copies them
+        // into a staging buffer of this tick and draws them with the index buffer B bound.
+        if (params.command == StageCommand::Indirect && params.indirect_buffer == 0 &&
+            in.DrawWords().size() > 4) {
+            const u32 stride = params.stride;
+            const u32 count = params.max_draw_counts;
+            const size_t bytes = size_t{count} * stride;
+            if (stride != 0 && bytes != 0 &&
+                (in.DrawWords().size() - 4) * sizeof(u64) >= bytes) {
+                const StagingBufferRef ref = staging_pool.Request(bytes, MemoryUsage::Upload);
+                std::memcpy(ref.mapped_span.data(), in.DrawWords().data() + 4, bytes);
+                scheduler.Record([buffer = ref.buffer, offset = ref.offset, count,
+                                  stride](vk::CommandBuffer cmdbuf) {
+                    const VkMemoryBarrier barrier{
+                        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                        .pNext = nullptr,
+                        .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
+                        .dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+                    };
+                    cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_HOST_BIT,
+                                           VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, 0, barrier);
+                    cmdbuf.DrawIndexedIndirect(buffer, offset, count, stride);
+                });
+            }
+        } else {
+            RecordStageDraw(params);
+        }
     }
     // The anchor: what the next light draw is checked against and repaired with. A plain light
     // draw keeps the descriptor entries (and the seq holding their uniform data) it followed.
