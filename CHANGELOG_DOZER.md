@@ -8,6 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 
+- Switch 2 video: a movie's compressed frames are accepted only until 24 are waiting; further
+  packets get nn::codec's busy result and the game sends them again when the decoder has room.
+  Taking the whole opening at once left the decoder behind the audio clock for the first moments
+  of Mario Kart World's VP9 intro (the picture stuttered, then ran evenly once frames arrived as
+  they were shown). End of stream is still taken, and a packet answered busy is kept so a client
+  that does not resend it does not lose a VP9 reference.
 - GPU thread split: a Switch 2 GPU map, and a new sparse region, is applied before the front
   parses the command lists submitted after it. Before, those lists could be read through the page
   table while the map, or an unmap queued ahead of it, had not run, so the uploaded data stayed
