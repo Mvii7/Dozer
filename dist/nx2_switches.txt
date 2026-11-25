@@ -74,8 +74,10 @@
 # cadence (4096 draws, 512 on Android). A number from 32 to that cadence is used instead of 512.
 #EDEN_NX2_SUBMIT_DRAWS=0
 # TC_EXPECTED_MIB / TC_CRITICAL_MIB: collector lines, in MiB. Without these the expected line
-# follows the device budget but stops at 9 GB, and costly images unused for TC_STALE_COSTLY
-# frames (default 150, 0 = keep them until the critical line) leave a few per frame.
+# follows the device budget but stops at 9 GB. Costly images unused for TC_STALE_COSTLY frames
+# (default 150, 0 = keep them until the critical line) leave a few per frame, including past
+# the critical line. A gigabyte past the expected line that grace is 90 frames. The collector's
+# time budget always applies, so a backlog cannot land in one frame.
 #EDEN_NX2_TC_EXPECTED_MIB=21322
 #EDEN_NX2_TC_CRITICAL_MIB=22346
 #EDEN_NX2_TC_STALE_COSTLY=150
