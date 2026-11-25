@@ -2455,18 +2455,24 @@ bool BufferCache<P>::PatchKeptUniform(const u8* previous, size_t previous_size, 
     if (overlaps == 0) {
         return false;
     }
-    const std::span<u8> bytes = runtime.UniformReuseScratch(size);
-    std::memcpy(bytes.data(), previous, size);
-    for (u64 i = since; i < log.count; ++i) {
-        const auto& [begin, write_end] = log.ranges[i % UniformWriteLog::SIZE];
-        const DAddr lo = (std::max)(begin, device_addr);
-        const DAddr hi = (std::min)(write_end, range_end);
-        if (lo >= hi) {
-            continue;
+    // Explicit instantiation builds this for OpenGL too. That runtime has no reuse scratch, and
+    // MSVC still compiles the member.
+    if constexpr (IS_OPENGL) {
+        return false;
+    } else {
+        const std::span<u8> bytes = runtime.UniformReuseScratch(size);
+        std::memcpy(bytes.data(), previous, size);
+        for (u64 i = since; i < log.count; ++i) {
+            const auto& [begin, write_end] = log.ranges[i % UniformWriteLog::SIZE];
+            const DAddr lo = (std::max)(begin, device_addr);
+            const DAddr hi = (std::min)(write_end, range_end);
+            if (lo >= hi) {
+                continue;
+            }
+            device_memory.ReadBlockUnsafe(lo, bytes.data() + (lo - device_addr), hi - lo);
         }
-        device_memory.ReadBlockUnsafe(lo, bytes.data() + (lo - device_addr), hi - lo);
+        return true;
     }
-    return true;
 }
 
 template <class P>
