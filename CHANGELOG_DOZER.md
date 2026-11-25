@@ -6,6 +6,15 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased
+
+- Uniform buffers: graphics buffers up to 16 KiB are streamed (`EDEN_NX2_UBO_STREAM_KIB`, `=0`
+  keeps the 4 KiB cutoff). `8654a34c53` with `EDEN_NX2_UBO_PATCH=0` drew the right picture.
+  Rebuilding a bound buffer from its last upload plus the small writes since
+  (`EDEN_NX2_UBO_PATCH=1`, `=2` reads the whole buffer anyway and logs a mismatch) stays off.
+  The write ranges came up short by the start's offset within 32 bytes, so the tail of an
+  unaligned constant-buffer write kept the previous upload. Those ranges now cover the write.
+
 ## Dozer 0.2.1 (`v0.2.1`)
 
 - GPU thread split: a Switch 2 GPU map, and a new sparse region, is applied before the front

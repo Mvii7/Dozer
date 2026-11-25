@@ -204,6 +204,16 @@
 # =2 compares anyway and logs "EDEN_NX2_UBO_KEEP: ... changed" for any range a keep would have
 # got wrong; the "Uniform buffer reuse" line counts kept, checked and changed binds.
 #EDEN_NX2_UBO_KEEP=0
+# UBO_STREAM_KIB (16): graphics uniform buffers up to this many KiB are streamed, not only the
+# 4 KiB the skip size covers, while that skip is on. =0 keeps 4 KiB. Above 64 is 64.
+# 8654a34c53 with UBO_PATCH=0 drew the right picture.
+#EDEN_NX2_UBO_STREAM_KIB=0
+# UBO_PATCH (off): a uniform bound to the same slot as last time, changed by small writes, is
+# built from that upload plus those writes. The ranges it copied used to drop the tail of a
+# write that did not start on a 32-byte boundary, and 8654a34c53 drew the wrong picture. The
+# tail is kept now. =1 tries the rebuild again. =2 also reads the whole buffer and logs
+# "EDEN_NX2_UBO_PATCH: ... does not match".
+#EDEN_NX2_UBO_PATCH=1
 #EDEN_NX2_SSBO_FAST=0
 #EDEN_NX2_SSBO_MEMO=0
 #EDEN_NX2_SYNC_SETS=0

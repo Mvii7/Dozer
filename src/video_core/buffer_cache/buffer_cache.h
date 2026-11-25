@@ -2231,18 +2231,31 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
             return alignment > 1 && (offset % alignment) != 0;
         }
     }();
+    // The skip size is 4 KiB (or 0 when cached binds hit). EDEN_NX2_UBO_STREAM_KIB, off, streams
+    // graphics uniforms past that while the skip is on. OpenGL's fast buffer stays at 4 KiB.
+    const u32 skip_size = channel_state->uniform_buffer_skip_cache_size;
+    const u32 stream_cap = [&] {
+        if constexpr (IS_OPENGL) {
+            return skip_size;
+        }
+        if (skip_size == 0) {
+            return u32{0};
+        }
+        const u32 raised = Nx2UniformStreamBytes();
+        return raised == 0 ? skip_size : (std::max)(skip_size, raised);
+    }();
     const bool use_fast_buffer = needs_alignment_stream
-        || (has_host_buffer && size <= channel_state->uniform_buffer_skip_cache_size
+        || (has_host_buffer && size <= stream_cap
             && !memory_tracker.IsRegionGpuModified(device_addr, size));
     if (use_fast_buffer) {
         Nx2UniformCensus::Add(Nx2UniformCensus::UniformFast, 1);
         Nx2UniformCensus::Add(Nx2UniformCensus::UniformBytes, size);
     } else {
         using namespace Nx2UniformCensus;
-        Add(!has_host_buffer                                         ? UniformNoBuffer
-            : channel_state->uniform_buffer_skip_cache_size == 0     ? UniformNoSkip
-            : size > channel_state->uniform_buffer_skip_cache_size   ? UniformTooBig
-                                                                     : UniformGpuWritten,
+        Add(!has_host_buffer       ? UniformNoBuffer
+            : skip_size == 0       ? UniformNoSkip
+            : size > stream_cap    ? UniformTooBig
+                                   : UniformGpuWritten,
             1);
     }
     if (use_fast_buffer) {
@@ -2277,26 +2290,56 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
                 const int keep_mode = Nx2UniformKeep();
                 const u64 sync_serial = Common::Nx2SyncSerial::Get();
                 const u64 writes = uniform_write_log.count;
+                bool patched = false;
                 if (keep_mode != 0) {
                     const auto* const kept =
                         runtime.KeptUniform(stage, index, device_addr, size, sync_serial);
-                    if (kept != nullptr &&
-                        !UniformWrittenSince(runtime.KeptUniformWrites(stage, index), device_addr,
-                                             size)) {
-                        if (keep_mode != 2) {
-                            runtime.BindKeptUniform(stage, index, *kept, size, writes);
-                            ++uniform_keeps;
-                            return;
+                    if (kept != nullptr) {
+                        const u64 kept_writes = runtime.KeptUniformWrites(stage, index);
+                        const bool written = UniformWrittenSince(kept_writes, device_addr, size);
+                        if (!written) {
+                            if (keep_mode != 2) {
+                                runtime.BindKeptUniform(stage, index, *kept, size, writes);
+                                ++uniform_keeps;
+                                return;
+                            }
+                            const std::span<u8> bytes = runtime.UniformReuseScratch(size);
+                            device_memory.ReadBlockUnsafe(device_addr, bytes.data(), size);
+                            ++uniform_keep_checks;
+                            if (std::memcmp(kept->bytes.data(), bytes.data(), size) != 0 &&
+                                uniform_keep_mismatches++ < 16) {
+                                LOG_ERROR(HW_GPU,
+                                          "EDEN_NX2_UBO_KEEP: stage {} slot {} range {:#x}+{:#x} "
+                                          "changed without a write notice or sync",
+                                          stage, index, device_addr, size);
+                            }
                         }
-                        const std::span<u8> bytes = runtime.UniformReuseScratch(size);
-                        device_memory.ReadBlockUnsafe(device_addr, bytes.data(), size);
-                        ++uniform_keep_checks;
-                        if (std::memcmp(kept->bytes.data(), bytes.data(), size) != 0 &&
-                            uniform_keep_mismatches++ < 16) {
-                            LOG_ERROR(HW_GPU,
-                                      "EDEN_NX2_UBO_KEEP: stage {} slot {} range {:#x}+{:#x} "
-                                      "changed without a write notice or sync",
-                                      stage, index, device_addr, size);
+                        // EDEN_NX2_UBO_PATCH: the slot's last slice plus the small writes since
+                        // it, instead of reading the whole uniform back out of guest memory.
+                        const int patch_mode = Nx2UniformPatch();
+                        if (written && keep_mode != 2 && patch_mode != 0 &&
+                            PatchKeptUniform(kept->bytes.data(), kept->bytes.size(), size,
+                                             device_addr, kept_writes)) {
+                            if (patch_mode == 2) {
+                                std::vector<u8> guest_bytes(size);
+                                device_memory.ReadBlockUnsafe(device_addr, guest_bytes.data(),
+                                                              size);
+                                const std::span<u8> patched_bytes =
+                                    runtime.UniformReuseScratch(size);
+                                if (std::memcmp(patched_bytes.data(), guest_bytes.data(), size) !=
+                                    0) {
+                                    if (uniform_patch_mismatches++ < 16) {
+                                        LOG_ERROR(HW_GPU,
+                                                  "EDEN_NX2_UBO_PATCH: stage {} slot {} range "
+                                                  "{:#x}+{:#x} does not match guest memory",
+                                                  stage, index, device_addr, size);
+                                    }
+                                    std::memcpy(patched_bytes.data(), guest_bytes.data(), size);
+                                }
+                            }
+                            patched = true;
+                            ++uniform_patches;
+                            Nx2UniformCensus::Add(Nx2UniformCensus::UniformPatched, 1);
                         }
                     }
                 }
@@ -2304,7 +2347,8 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
                 // two device pages, the second right after the first), the runtime compares and
                 // copies them in place instead of from a copy read into the scratch first.
                 const u8* guest = nullptr;
-                if (runtime.UniformDirectEnabled() && size != 0 && size <= Core::DEVICE_PAGESIZE) {
+                if (!patched && runtime.UniformDirectEnabled() && size != 0 &&
+                    size <= Core::DEVICE_PAGESIZE) {
                     const u8* const first = device_memory.GetPointer<u8>(device_addr);
                     const DAddr last = device_addr + size - 1;
                     if (first != nullptr &&
@@ -2314,13 +2358,15 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
                     }
                 }
                 bool reused;
-                if (guest != nullptr) {
+                if (patched || guest == nullptr) {
+                    if (!patched) {
+                        const std::span<u8> bytes = runtime.UniformReuseScratch(size);
+                        device_memory.ReadBlockUnsafe(device_addr, bytes.data(), size);
+                    }
+                    reused = runtime.BindMappedUniformBufferReuse(stage, index, device_addr, size);
+                } else {
                     reused = runtime.BindMappedUniformBufferReuseFrom(stage, index, device_addr,
                                                                       guest, size);
-                } else {
-                    const std::span<u8> bytes = runtime.UniformReuseScratch(size);
-                    device_memory.ReadBlockUnsafe(device_addr, bytes.data(), size);
-                    reused = runtime.BindMappedUniformBufferReuse(stage, index, device_addr, size);
                 }
                 runtime.NoteUniformKeep(stage, index, device_addr, size, sync_serial, writes);
                 static u64 binds{};
@@ -2335,9 +2381,11 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
                     LOG_INFO(HW_GPU,
                              "Uniform buffer reuse: {} of {} streamed binds reused, {} MiB not "
                              "copied ({} only through EDEN_NX2_UBO_STAGE); {} kept without "
-                             "reading (EDEN_NX2_UBO_KEEP), {} checked, {} changed",
+                             "reading (EDEN_NX2_UBO_KEEP), {} checked, {} changed; {} patched "
+                             "from the previous slice (EDEN_NX2_UBO_PATCH), {} differed",
                              reuses, binds, reused_bytes >> 20, runtime.UniformStageReuses(),
-                             uniform_keeps, uniform_keep_checks, uniform_keep_mismatches);
+                             uniform_keeps, uniform_keep_checks, uniform_keep_mismatches,
+                             uniform_patches, uniform_patch_mismatches);
                 }
                 return;
             }
@@ -2375,6 +2423,56 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
         runtime.BindUniformBuffer(buffer, offset, size);
     }
     channel_state->fast_bound_uniform_buffers[stage] &= ~(1u << binding_index);
+}
+
+template <class P>
+bool BufferCache<P>::PatchKeptUniform(const u8* previous, size_t previous_size, u32 size,
+                                      DAddr device_addr, u64 since) {
+    if (previous == nullptr || size == 0 || previous_size < size) {
+        return false;
+    }
+    const UniformWriteLog& log = uniform_write_log;
+    if (log.count - since > UniformWriteLog::SIZE) {
+        return false;
+    }
+    const DAddr range_end = device_addr + size;
+    u64 dirty = 0;
+    u32 overlaps = 0;
+    for (u64 i = since; i < log.count; ++i) {
+        const auto& [begin, write_end] = log.ranges[i % UniformWriteLog::SIZE];
+        const DAddr lo = (std::max)(begin, device_addr);
+        const DAddr hi = (std::min)(write_end, range_end);
+        if (lo >= hi) {
+            continue;
+        }
+        dirty += hi - lo;
+        ++overlaps;
+        // A few dozen bytes a draw. More than that and reading the uniform is the shorter walk.
+        if (dirty > 1024) {
+            return false;
+        }
+    }
+    if (overlaps == 0) {
+        return false;
+    }
+    // Explicit instantiation builds this for OpenGL too. That runtime has no reuse scratch, and
+    // MSVC still compiles the member.
+    if constexpr (IS_OPENGL) {
+        return false;
+    } else {
+        const std::span<u8> bytes = runtime.UniformReuseScratch(size);
+        std::memcpy(bytes.data(), previous, size);
+        for (u64 i = since; i < log.count; ++i) {
+            const auto& [begin, write_end] = log.ranges[i % UniformWriteLog::SIZE];
+            const DAddr lo = (std::max)(begin, device_addr);
+            const DAddr hi = (std::min)(write_end, range_end);
+            if (lo >= hi) {
+                continue;
+            }
+            device_memory.ReadBlockUnsafe(lo, bytes.data() + (lo - device_addr), hi - lo);
+        }
+        return true;
+    }
 }
 
 template <class P>
