@@ -9,12 +9,12 @@ and `=0` brings back the 2.0.0 code path.
 ## Unreleased
 
 - Vulkan, Switch 2: recorded draws are submitted every 512, and from 256 at a render-pass
-  boundary (`EDEN_NX2_SUBMIT_DRAWS`, `=0` keeps every 4096 draws, 512 on Android). Once 256
-  draws are waiting and the host GPU has already finished the previous submission, what is
-  waiting outside a render pass is submitted then. 4096 left Mario Kart's heavy courses
+  boundary (`EDEN_NX2_SUBMIT_DRAWS`, `=0` keeps every 4096 draws, 512 on Android). When the
+  host GPU has already finished the previous submission, what is waiting outside a render pass
+  is submitted then, without waiting for half the budget. 4096 left Mario Kart's heavy courses
   recording while the GPU sat idle. 128 did that overlap often enough to cost Donkey Kong
   Bananza 10-15% where a frame is mostly draws: each submit ends the pass and the next draw
-  binds again.
+  binds again. An idle submit still refuses to end a pass.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 

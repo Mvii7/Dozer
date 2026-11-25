@@ -3196,9 +3196,10 @@ void RasterizerVulkan::FlushWork(bool ends_pass) {
         return;
     }
     // The GPU has finished the previous submission and commands are waiting outside a pass.
-    // Not before half the budget: a draw-heavy scene keeps the GPU idle because each draw is
-    // cheap, and submitting then only adds rebinds.
-    if (draw_counter >= native_budget / 2 && scheduler.IdleGpuAwaitsWork()) {
+    // A heavy Mario Kart course records about a millisecond of draws while that GPU sits idle,
+    // then the fence waits for the whole batch. Inside a pass this stays quiet: ending the pass
+    // to submit made the next draw bind again, which cost Bananza at a 128-draw budget.
+    if (scheduler.IdleGpuAwaitsWork()) {
         draw_counter = 0;
         scheduler.Flush();
         return;
