@@ -3250,7 +3250,7 @@ public:
     struct LightChange {
         enum : u32 {
             VertexStreams = 1 << 0, ///< Vertex stream addresses and limits
-            IndexBuffer = 1 << 1,   ///< Index buffer start and limit addresses
+            IndexBuffer = 1 << 1,   ///< Index buffer start, limit, and (EDEN_NX2_LIGHT_INDEX) format
             DrawParams = 1 << 2,    ///< First/count, base vertex/instance, draw begin/end
             UniformSelect = 1 << 3, ///< Constant buffer address, size, offset (no draw reads them)
             UniformSame = 1 << 4,   ///< Constant buffer data rewritten with the bytes it held
