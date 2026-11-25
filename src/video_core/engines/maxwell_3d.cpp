@@ -104,8 +104,16 @@ const std::array<u16, Maxwell3D::Regs::NUM_REGS>& LightClasses() {
             // vertex buffer ranges and vertex count estimates, as the limits.
             fill(0x600 / sizeof(u32) + i * 2, 2, LightChange::VertexStreams);
         }
-        // Start and limit; the format stays State.
+        // Start and limit. EDEN_NX2_LIGHT_INDEX (on): the format too. The index bind reads the
+        // current format, and it is not in the pipeline key. =0 leaves the format as State.
         fill(MAXWELL3D_REG_INDEX(index_buffer), 4, LightChange::IndexBuffer);
+        const bool light_index = [] {
+            const char* value = std::getenv("EDEN_NX2_LIGHT_INDEX");
+            return value == nullptr || value[0] != '0';
+        }();
+        if (light_index) {
+            classes[MAXWELL3D_REG_INDEX(index_buffer.format)] = LightChange::IndexBuffer;
+        }
         for (const size_t method :
              {MAXWELL3D_REG_INDEX(index_buffer.first), MAXWELL3D_REG_INDEX(index_buffer.count),
               MAXWELL3D_REG_INDEX(vertex_buffer.first), MAXWELL3D_REG_INDEX(vertex_buffer.count),
@@ -130,7 +138,6 @@ const std::array<u16, Maxwell3D::Regs::NUM_REGS>& LightClasses() {
         for (const size_t method :
              {MAXWELL3D_REG_INDEX(inline_data), MAXWELL3D_REG_INDEX(launch_dma),
               MAXWELL3D_REG_INDEX(report_semaphore.query), MAXWELL3D_REG_INDEX(sync_info),
-              MAXWELL3D_REG_INDEX(clear_report_value), MAXWELL3D_REG_INDEX(render_enable.mode),
               MAXWELL3D_REG_INDEX(wait_for_idle), MAXWELL3D_REG_INDEX(fragment_barrier),
               MAXWELL3D_REG_INDEX(invalidate_texture_data_cache),
               MAXWELL3D_REG_INDEX(tiled_cache_barrier), MAXWELL3D_REG_INDEX(clear_surface),
@@ -147,6 +154,16 @@ const std::array<u16, Maxwell3D::Regs::NUM_REGS>& LightClasses() {
               MAXWELL3D_REG_INDEX(index_buffer16_subsequent),
               MAXWELL3D_REG_INDEX(index_buffer8_subsequent)}) {
             classes[method] = LightChange::Command;
+        }
+        // EDEN_NX2_LIGHT_INDEX: render_enable.mode and clear_report_value are applied when they
+        // are written (ProcessQueryCondition, ProcessCounterReset). A light draw already runs
+        // NotifySegment and CounterEnable, so the write does not end the chain. =0 keeps them
+        // Command, as before.
+        classes[MAXWELL3D_REG_INDEX(clear_report_value)] = LightChange::Command;
+        classes[MAXWELL3D_REG_INDEX(render_enable.mode)] = LightChange::Command;
+        if (light_index) {
+            classes[MAXWELL3D_REG_INDEX(clear_report_value)] = 0;
+            classes[MAXWELL3D_REG_INDEX(render_enable.mode)] = 0;
         }
         return classes;
     }();

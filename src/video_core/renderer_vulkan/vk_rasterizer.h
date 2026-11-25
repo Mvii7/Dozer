@@ -208,7 +208,8 @@ private:
     // constant buffer data or binds sets up its buffers and descriptors again, nothing else.
     // EDEN_NX2_LIGHT_VERTEX: stream stride, divisor, and an attribute format in the same type
     // class keep that pipeline when it has dynamic vertex input, and the draw records the vertex
-    // input again.
+    // input again. EDEN_NX2_LIGHT_INDEX: the index format may change (the bind reads it), and
+    // render_enable.mode and clear_report_value do not end the chain.
     /// What may follow a draw (LightFollowable).
     enum class LightLevel : u8 {
         None,    ///< A full setup only

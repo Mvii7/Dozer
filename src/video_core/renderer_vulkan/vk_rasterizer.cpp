@@ -1115,9 +1115,7 @@ void RasterizerVulkan::NoteLightPipeline(const GraphicsPipeline& pipeline, bool 
     }
     const auto& draw_state = maxwell3d->draw_manager.draw_state;
     if (!light_entry.shape_ok || indirect != last.indirect || is_indexed != last.is_indexed ||
-        draw_state.topology != last.topology ||
-        (is_indexed && draw_state.index_buffer.format != last.index_format) ||
-        !LightFeedbackOff()) {
+        draw_state.topology != last.topology || !LightFeedbackOff()) {
         return;
     }
     const u64 cached_writes = gpu_memory->CachedWrites() - last.cached_writes;
@@ -1172,7 +1170,8 @@ bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalid
     //   its value changes nothing). The pipeline key, the shaders, the texture and sampler
     //   pools, the render targets and the dynamic state do not read those (their dirty flags are
     //   the buffer cache's own: VertexBuffer*, IndexBuffer). Topology (the effect of
-    //   topology_override), index format and draw kind are the anchor's.
+    //   topology_override) and draw kind are the anchor's. EDEN_NX2_LIGHT_INDEX: the index
+    //   format may change; BindHostIndexBuffer reads the current one.
     // - memory: nothing was invalidated or flushed (light_epoch: CPU writes, unmaps, flushes,
     //   fences, frames, channel changes, clears, dispatches, copies), no other engine or method
     //   wrote memory (LightChange::Command) and every cached write since the anchor began was a
@@ -1239,9 +1238,7 @@ bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalid
     }
     const auto& draw_state = maxwell3d->draw_manager.draw_state;
     if (!light_entry.shape_ok || indirect != last.indirect || is_indexed != last.is_indexed ||
-        draw_state.topology != last.topology ||
-        (is_indexed && draw_state.index_buffer.format != last.index_format) ||
-        !LightFeedbackOff()) {
+        draw_state.topology != last.topology || !LightFeedbackOff()) {
         Profile::Add(Profile::Counter::LightShape, 1);
         return false;
     }
@@ -5137,7 +5134,6 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
             Profile::Add(Profile::Counter::LightOtherWork, 1);
         } else if (!shape_ok || indirect != last.indirect || is_indexed != last.is_indexed ||
                    draw_state.topology != last.topology ||
-                   (is_indexed && draw_state.index_buffer.format != last.index_format) ||
                    mb.regs.transform_feedback_enabled != 0) {
             Profile::Add(Profile::Counter::LightShape, 1);
         } else {
