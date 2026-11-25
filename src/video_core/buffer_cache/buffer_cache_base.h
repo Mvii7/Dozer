@@ -112,19 +112,21 @@ inline int Nx2UniformKeep() {
     static std::atomic<s8> mode{-1};
     return ReadNx2Mode(mode, "EDEN_NX2_UBO_KEEP");
 }
-/// EDEN_NX2_UBO_STREAM_KIB (16): while the 4 KiB uniform skip is on, graphics uniform buffers up
-/// to this many KiB are streamed too. 0 keeps the 4 KiB cutoff. Above 64 is 64.
+/// EDEN_NX2_UBO_STREAM_KIB (off): while the 4 KiB uniform skip is on, graphics uniform buffers up
+/// to this many KiB are streamed too. Unset or 0 keeps the 4 KiB cutoff. Above 64 is 64. Left
+/// off: a buffer in that range is also uploaded for other bindings, and streaming it skipped
+/// that upload (8654a34c53 drew the wrong picture).
 inline u32 Nx2UniformStreamBytes() {
     static std::atomic<s32> kib{-1};
     s32 value = kib.load(std::memory_order_relaxed);
     if (value < 0) {
         const char* env = std::getenv("EDEN_NX2_UBO_STREAM_KIB");
         if (env == nullptr || env[0] == '\0') {
-            value = 16;
+            value = 0;
         } else {
             char* end = nullptr;
             const long parsed = std::strtol(env, &end, 10);
-            value = (end == env || *end != '\0' || parsed < 0) ? 16 : static_cast<s32>(parsed);
+            value = (end == env || *end != '\0' || parsed < 0) ? 0 : static_cast<s32>(parsed);
             if (value > 64) {
                 value = 64;
             }
@@ -133,13 +135,19 @@ inline u32 Nx2UniformStreamBytes() {
     }
     return static_cast<u32>(value) << 10;
 }
-/// EDEN_NX2_UBO_PATCH: a streamed uniform whose slot still holds the last bind, and whose guest
-/// bytes changed only in small writes the buffer cache was told about, is built from that bind
-/// plus those spans. The rest is not read again. =0 reads the whole buffer; =2 reads it anyway
-/// and logs a patched buffer that does not match.
+/// EDEN_NX2_UBO_PATCH (off): a streamed uniform whose slot still holds the last bind, and whose
+/// guest bytes changed only in small writes the buffer cache was told about, is built from that
+/// bind plus those spans. =1 does that. =2 reads the whole buffer anyway and logs a mismatch.
+/// Left off: the rebuilt bytes were not the guest buffer (8654a34c53 drew the wrong picture).
 inline int Nx2UniformPatch() {
     static std::atomic<s8> mode{-1};
-    return ReadNx2Mode(mode, "EDEN_NX2_UBO_PATCH");
+    s8 value = mode.load(std::memory_order_relaxed);
+    if (value < 0) {
+        const char* env = std::getenv("EDEN_NX2_UBO_PATCH");
+        value = static_cast<s8>(env == nullptr ? 0 : env[0] == '2' ? 2 : env[0] == '1' ? 1 : 0);
+        mode.store(value, std::memory_order_relaxed);
+    }
+    return value;
 }
 inline int Nx2UniformSyncSkip() {
     static std::atomic<s8> mode{-1};
