@@ -112,23 +112,25 @@ inline int Nx2UniformKeep() {
     static std::atomic<s8> mode{-1};
     return ReadNx2Mode(mode, "EDEN_NX2_UBO_KEEP");
 }
-/// EDEN_NX2_UBO_STREAM_KIB (off): while the 4 KiB uniform skip is on, graphics uniform buffers up
-/// to this many KiB are streamed too. Unset or 0 keeps the 4 KiB cutoff. Above 64 is 64. Left
-/// off: a buffer in that range is also uploaded for other bindings, and streaming it skipped
-/// that upload (8654a34c53 drew the wrong picture).
+/// EDEN_NX2_UBO_STREAM_KIB (16): while the 4 KiB uniform skip is on, graphics uniform buffers up
+/// to this many KiB are streamed too. Unset is 16. =0 keeps the 4 KiB cutoff. Above 64 is 64.
+/// 8654a34c53 with EDEN_NX2_UBO_PATCH=0 drew the right picture, so the raise stays on.
 inline u32 Nx2UniformStreamBytes() {
     static std::atomic<s32> kib{-1};
     s32 value = kib.load(std::memory_order_relaxed);
     if (value < 0) {
         const char* env = std::getenv("EDEN_NX2_UBO_STREAM_KIB");
         if (env == nullptr || env[0] == '\0') {
-            value = 0;
+            value = 16;
         } else {
             char* end = nullptr;
             const long parsed = std::strtol(env, &end, 10);
-            value = (end == env || *end != '\0' || parsed < 0) ? 0 : static_cast<s32>(parsed);
-            if (value > 64) {
+            if (end == env || *end != '\0' || parsed < 0) {
+                value = 16;
+            } else if (parsed > 64) {
                 value = 64;
+            } else {
+                value = static_cast<s32>(parsed);
             }
         }
         kib.store(value, std::memory_order_relaxed);
@@ -138,7 +140,9 @@ inline u32 Nx2UniformStreamBytes() {
 /// EDEN_NX2_UBO_PATCH (off): a streamed uniform whose slot still holds the last bind, and whose
 /// guest bytes changed only in small writes the buffer cache was told about, is built from that
 /// bind plus those spans. =1 does that. =2 reads the whole buffer anyway and logs a mismatch.
-/// Left off: the rebuilt bytes were not the guest buffer (8654a34c53 drew the wrong picture).
+/// Left off. Those spans are the invalidation accumulator's ranges, and a write that did not
+/// start on a 32-byte boundary was recorded short of its tail, so the rebuild kept the previous
+/// upload there (8654a34c53). The accumulator now keeps the tail. =1 tries the rebuild again.
 inline int Nx2UniformPatch() {
     static std::atomic<s8> mode{-1};
     s8 value = mode.load(std::memory_order_relaxed);

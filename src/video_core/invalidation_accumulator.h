@@ -21,8 +21,13 @@ public:
     void Add(GPUVAddr address, size_t size) noexcept {
         auto const end_address = start_address + accumulated_size;
         if (!(address >= start_address && address + size <= end_address)) {
-            size = ((address + size + atomicity_size_mask) & atomicity_mask) - address;
-            address = address & atomicity_mask;
+            // The end is aligned first, then the start. Measuring the size from the original
+            // address and only then pulling the start down ends the range address % 32 bytes
+            // early, so the tail of a write that did not start on a 32-byte boundary was never
+            // invalidated. EDEN_NX2_UBO_PATCH copies these ranges and kept the previous bytes there.
+            const GPUVAddr aligned_end = (address + size + atomicity_size_mask) & atomicity_mask;
+            address &= atomicity_mask;
+            size = static_cast<size_t>(aligned_end - address);
             if (start_address == 0) {
                 start_address = address;
                 accumulated_size = size;
