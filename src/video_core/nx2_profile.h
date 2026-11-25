@@ -305,6 +305,7 @@ enum class Counter : u32 {
     // EDEN_NX2_LIGHT_UNIFORM: draws set up the light way with their uniform buffers and descriptors
     LightUniformDraws,
     LightUniformIndirectDraws, ///< Of LightUniformDraws: indirect draws
+    LightVertexDraws,          ///< Light draws that recorded vertex input again (EDEN_NX2_LIGHT_VERTEX)
     // Draws that could only go the uniform way but were set up in full, why:
     LightUniformMemory,      ///< Cached writes other than constant buffer data, or too many ranges
     LightUniformCaches,      ///< A write reached an image or a shader
@@ -679,12 +680,14 @@ inline void Report(const char* thread_name = "GPU thread") {
                                 TopValues(histograms[static_cast<size_t>(Histogram::LightBlocking)],
                                           method, 6));
         }
-        line += fmt::format(" | light draws {:.0f} ({:.0f} indirect); full: {:.0f} not after one, "
+        line += fmt::format(" | light draws {:.0f} ({:.0f} indirect, {:.0f} vertex input); full: "
+                            "{:.0f} not after one, "
                             "{:.0f} state, {:.0f} other work, {:.0f} draw kind, {:.0f} fell back; "
                             "not followable: {:.0f} shape, {:.0f} memory writes (uniform way only), "
                             "{:.0f} transform feedback, {:.0f} render targets or images, {:.0f} cut "
                             "short",
                             counter(Counter::LightDraws), counter(Counter::LightIndirectDraws),
+                            counter(Counter::LightVertexDraws),
                             counter(Counter::LightNotArmed), counter(Counter::LightStateChanged),
                             counter(Counter::LightOtherWork), counter(Counter::LightShape),
                             counter(Counter::LightFellBack), counter(Counter::LightRefusedShape),

@@ -3259,8 +3259,13 @@ public:
             Textures = 1 << 7,      ///< Texture header and sampler pools
             State = 1 << 8,         ///< Any other register: pipeline, fixed function state
             Command = 1 << 9,       ///< Memory writes (inline, DMA, semaphores), clears, barriers
+            /// Stream stride, divisor, and an attribute format whose type class did not change
+            /// (EDEN_NX2_LIGHT_VERTEX). With dynamic vertex input that is not in the pipeline key;
+            /// the light draw records the vertex input again. A type-class change stays State.
+            VertexInput = 1 << 10,
             /// What a light draw sets up again or no draw reads.
-            Light = VertexStreams | IndexBuffer | DrawParams | UniformSelect | UniformSame,
+            Light = VertexStreams | IndexBuffer | DrawParams | UniformSelect | UniformSame |
+                    VertexInput,
             /// What a light draw with uniform buffers (EDEN_NX2_LIGHT_UNIFORM) sets up again.
             Uniform = Light | UniformData | UniformBind,
         };
