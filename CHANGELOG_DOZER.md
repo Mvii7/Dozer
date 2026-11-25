@@ -8,6 +8,9 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased
 
+- Vulkan: NVIDIA driver 580.119.2 and newer keep `VK_EXT_vertex_input_dynamic_state`. The old
+  check compared `driverVersion` as a Vulkan version, so a 621 driver was treated as older than
+  580.119.2 and vertex layout stayed in the graphics pipeline key.
 - Uniform buffers: graphics buffers up to 16 KiB are streamed (`EDEN_NX2_UBO_STREAM_KIB`, `=0`
   keeps the 4 KiB cutoff). `8654a34c53` with `EDEN_NX2_UBO_PATCH=0` drew the right picture.
   Rebuilding a bound buffer from its last upload plus the small writes since

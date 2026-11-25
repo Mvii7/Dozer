@@ -41,6 +41,13 @@
 namespace Vulkan {
 using namespace Common::Literals;
 namespace {
+
+// NVIDIA stores driverVersion as 10 bits of major, 8 of minor, 8 of secondary, 6 of extra.
+// VK_MAKE_API_VERSION does not match that, so a 621 driver compared as a Vulkan version.
+constexpr u32 NvidiaDriverVersion(u32 major, u32 minor, u32 secondary) {
+    return (major << 22) | (minor << 14) | (secondary << 6);
+}
+
 namespace Alternatives {
 constexpr std::array STENCIL8_UINT{
     VK_FORMAT_D16_UNORM_S8_UINT,
@@ -1353,14 +1360,18 @@ bool Device::GetSuitability(bool requires_swapchain) {
     }
 
     // Intel Windows < 27.20.100.0: Broken VertexInputDynamicState
-    // Same for NVIDIA Proprietary < 580.119.02, unknown when VIDS was first NOT broken
-    // Disable VertexInputDynamicState on old Intel Windows drivers
+    // NVIDIA proprietary < 580.119.2: same, and unknown when it first worked. The driver packs
+    // driverVersion itself (NvidiaDriverVersion); a Vulkan version compares a 621 driver as older.
     if (extensions.vertex_input_dynamic_state) {
         const u32 version = (properties.properties.driverVersion << 3) >> 3;
-        if ((driver_id == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS && version < VK_MAKE_API_VERSION(27, 20, 100, 0))
-        || (driver_id == VK_DRIVER_ID_NVIDIA_PROPRIETARY && version < VK_MAKE_API_VERSION(580, 119, 02, 0))) {
+        if ((driver_id == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS &&
+             version < VK_MAKE_API_VERSION(27, 20, 100, 0)) ||
+            (driver_id == VK_DRIVER_ID_NVIDIA_PROPRIETARY &&
+             properties.properties.driverVersion < NvidiaDriverVersion(580, 119, 2))) {
             LOG_WARNING(Render_Vulkan, "Disabling broken VK_EXT_vertex_input_dynamic_state");
-            RemoveExtensionFeature(extensions.vertex_input_dynamic_state, features.vertex_input_dynamic_state, VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
+            RemoveExtensionFeature(extensions.vertex_input_dynamic_state,
+                                   features.vertex_input_dynamic_state,
+                                   VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
         }
     }
 
