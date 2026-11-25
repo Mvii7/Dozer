@@ -6,6 +6,13 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased
+
+- Cache invalidation: a write that did not start on a 32-byte boundary is recorded through
+  its aligned end. The size used to be measured before the start was pulled down, so the
+  range ended short by that offset. Page invalidation still covered the tail. A copy of the
+  recorded bytes, rather than of the page, kept the previous bytes there.
+
 ## Dozer 0.2.1 (`v0.2.1`)
 
 - GPU thread split: a Switch 2 GPU map, and a new sparse region, is applied before the front
