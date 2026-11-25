@@ -142,8 +142,9 @@ private:
 
 /// Applies delta words to a replica's registers (B and C; T2): writes each value, sets the
 /// register's dirty flags with both tables when Dirty or the replica held another value, and calls
-/// `note_light(method)` when Changed or the replica held another value (the caller notes the light
-/// change when LightTrackingEnabled). No DrawDeferred, no method runs.
+/// `note_light(method, previous)` when Changed or the replica held another value (`previous` is
+/// the value the replica held). The caller notes the light change when LightTrackingEnabled.
+/// No DrawDeferred, no method runs.
 template <typename NoteLight>
 void ApplyDelta(u32* regs, DirtyFlags& flags, const DirtyTables& tables, const u64* words,
                 u32 count, NoteLight&& note_light) {
@@ -151,14 +152,15 @@ void ApplyDelta(u32* regs, DirtyFlags& flags, const DirtyTables& tables, const u
         const u64 word = words[i];
         const u32 method = DeltaMethod(word);
         const u32 value = DeltaValue(word);
-        const bool differs = regs[method] != value;
+        const u32 previous = regs[method];
+        const bool differs = previous != value;
         regs[method] = value;
         if ((word & DeltaDirty) != 0 || differs) {
             flags[tables[0][method]] = true;
             flags[tables[1][method]] = true;
         }
         if ((word & DeltaChanged) != 0 || differs) {
-            note_light(method);
+            note_light(method, previous);
         }
     }
 }

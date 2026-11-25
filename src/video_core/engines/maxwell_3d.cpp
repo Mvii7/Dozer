@@ -84,9 +84,20 @@ const std::array<u16, Maxwell3D::Regs::NUM_REGS>& LightClasses() {
         const auto fill = [&classes](size_t begin, size_t count, u32 kind) {
             std::fill_n(classes.begin() + begin, count, static_cast<u16>(kind));
         };
+        // EDEN_NX2_LIGHT_VERTEX=0: stride and divisor stay State, as before.
+        const bool vertex_input = [] {
+            const char* value = std::getenv("EDEN_NX2_LIGHT_VERTEX");
+            return value == nullptr || value[0] != '0';
+        }();
         for (size_t i = 0; i < Maxwell3D::Regs::NumVertexArrays; ++i) {
-            // Address high and low; the stride/enable word and the frequency stay State.
-            fill(MAXWELL3D_REG_INDEX(vertex_streams) + i * 4 + 1, 2, LightChange::VertexStreams);
+            // Address high and low. Stride/enable and the divisor are dynamic vertex input
+            // (EDEN_NX2_LIGHT_VERTEX): a light draw records them again. Otherwise they stay State.
+            const size_t stream = MAXWELL3D_REG_INDEX(vertex_streams) + i * 4;
+            fill(stream + 1, 2, LightChange::VertexStreams);
+            if (vertex_input) {
+                classes[stream] = LightChange::VertexInput;
+                classes[stream + 3] = LightChange::VertexInput;
+            }
             fill(MAXWELL3D_REG_INDEX(vertex_stream_limits) + i * 2, 2, LightChange::VertexStreams);
             // The native class's stream sizes (Regs::NativeVertexStreamSize, padding in the
             // legacy layout): what a stream move writes besides the address. Read only for the
@@ -145,6 +156,40 @@ const std::array<u16, Maxwell3D::Regs::NUM_REGS>& LightClasses() {
 // The table, looked up once at startup: ProcessDirtyRegisters reads it for every register write
 // (LightClasses' function-local static is checked for its initialization on each call).
 const std::array<u16, Maxwell3D::Regs::NUM_REGS>& g_light_classes = LightClasses();
+
+// The two bits FixedPipelineState stores per attribute when vertex input is dynamic. A format
+// write that stays in one class does not change the pipeline; offset, size and buffer are
+// recorded again (UpdateVertexInput). Must match the LUT in FixedPipelineState::Refresh.
+u32 AttributeTypeClass(u32 hex) {
+    using VertexAttribute = Maxwell3D::Regs::VertexAttribute;
+    VertexAttribute attribute;
+    attribute.hex = hex;
+    if (attribute.constant != 0) {
+        return 0;
+    }
+    static constexpr std::array<u32, 8> classes{0, 1, 1, 2, 3, 1, 1, 1};
+    const u32 type = static_cast<u32>(attribute.type.Value());
+    return type < classes.size() ? classes[type] : 0;
+}
+
+bool LightVertexEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_LIGHT_VERTEX");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+u32 LightClassFor(u32 method, u32 previous, u32 value) {
+    constexpr u32 formats = MAXWELL3D_REG_INDEX(vertex_attrib_format);
+    if (LightVertexEnabled() && method >= formats &&
+        method < formats + Maxwell3D::Regs::NumVertexAttributes) {
+        return AttributeTypeClass(previous) == AttributeTypeClass(value)
+                   ? Maxwell3D::LightChange::VertexInput
+                   : Maxwell3D::LightChange::State;
+    }
+    return g_light_classes[method];
+}
 
 // EDEN_NX2_SAME_SKIP=0: a constant buffer write of the bytes guest memory already holds that
 // IsLightSameWrite counted is still made, and its range invalidated at the next FlushCaching.
@@ -660,12 +705,13 @@ void Maxwell3D::ProcessDirtyRegisters(u32 method, u32 argument) {
             NoteRootWrite(method, argument);
         }
     }
-    const bool changed = regs.reg_array[method] != argument;
+    const u32 previous = regs.reg_array[method];
+    const bool changed = previous != argument;
     regs.reg_array[method] = argument;
     for (auto const& table : dirty.tables)
         dirty.flags[table[method]] = true;
     if (LightTrackingEnabled() && (changed || execution_mask[method])) {
-        NoteLightChange(g_light_classes[method], method);
+        NoteLightChange(LightClassFor(method, previous, argument), method);
     }
 }
 
@@ -2630,13 +2676,13 @@ void Maxwell3D::StageCbWrite(GPUVAddr address, const u32* start_base, u32 amount
 
 void Maxwell3D::StageApplyDelta(const u64* words, u32 count) {
     const bool light_tracking = LightTrackingEnabled();
-    VideoCommon::Nx2RegReplica::ApplyDelta(regs.reg_array.data(), dirty.flags, dirty.tables, words,
-                                           count, [this, light_tracking](u32 method) {
-                                               if (light_tracking) {
-                                                   NoteLightChange(g_light_classes[method],
-                                                                   method);
-                                               }
-                                           });
+    VideoCommon::Nx2RegReplica::ApplyDelta(
+        regs.reg_array.data(), dirty.flags, dirty.tables, words, count,
+        [this, light_tracking](u32 method, u32 previous) {
+            if (light_tracking) {
+                NoteLightChange(LightClassFor(method, previous, regs.reg_array[method]), method);
+            }
+        });
 }
 
 void Maxwell3D::StageCopyFrom(Maxwell3D& primary, VideoCore::RasterizerInterface* rasterizer_) {
