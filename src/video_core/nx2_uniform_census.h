@@ -26,6 +26,7 @@ enum Counter : u32 {
     UniformNoSkip,      ///< Cached path: the skip size is 0 (cache hits preferred)
     UniformNoBuffer,    ///< Cached path: no host buffer
     UniformBytes,       ///< Bytes of the fast path's binds
+    UniformPatched,     ///< Fast binds built from the previous slice plus small writes
     CbWrites,           ///< Constant buffer data writes (CbWriteImpl)
     CbWriteBytes,
     InlineWrites,       ///< Inline uploads into the buffer cache (InlineMemory, InlineMemoryBatched)
@@ -62,13 +63,14 @@ inline void NoteDraw() {
     LOG_INFO(HW_GPU,
              "nx2 uniform census: {} draws; per draw {:.2f} uniform binds ({:.1f}% fast, "
              "{:.1f}% GPU-written, {:.1f}% too big, {:.1f}% skip size 0, {:.1f}% no buffer, "
-             "{:.1f}% root table; {:.0f} fast bytes), {:.2f} constant buffer writes ({:.0f} "
-             "bytes), {:.2f} inline writes ({:.0f} bytes, {:.2f} on GPU-written pages)",
+             "{:.1f}% root table; {:.0f} fast bytes, {:.2f} patched), {:.2f} constant buffer "
+             "writes ({:.0f} bytes), {:.2f} inline writes ({:.0f} bytes, {:.2f} on GPU-written "
+             "pages)",
              draws, per_draw(UniformBinds), share(UniformFast), share(UniformGpuWritten),
              share(UniformTooBig), share(UniformNoSkip), share(UniformNoBuffer),
-             share(UniformRootTable), per_draw(UniformBytes), per_draw(CbWrites),
-             per_draw(CbWriteBytes), per_draw(InlineWrites), per_draw(InlineWriteBytes),
-             per_draw(InlineGpuWritten));
+             share(UniformRootTable), per_draw(UniformBytes), per_draw(UniformPatched),
+             per_draw(CbWrites), per_draw(CbWriteBytes), per_draw(InlineWrites),
+             per_draw(InlineWriteBytes), per_draw(InlineGpuWritten));
 }
 
 } // namespace VideoCommon::Nx2UniformCensus
