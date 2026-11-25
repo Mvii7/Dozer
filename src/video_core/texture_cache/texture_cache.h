@@ -256,8 +256,9 @@ void TextureCache<P>::RunGarbageCollector() {
     u64 ticks_to_destroy = 0;
     size_t num_iterations = 0;
     // Costly (ASTC) images are normally kept until the critical line. Past the expected line the
-    // ones unused for EDEN_NX2_TC_STALE_COSTLY frames (default 150, the same grace as any other
-    // image, 0 = off) go a few per frame, so a race does not save them all for one burst.
+    // ones unused for EDEN_NX2_TC_STALE_COSTLY frames (default 150, 0 = off) go a few per frame,
+    // including after the critical line. A gigabyte past the expected line that grace is 90
+    // frames: 150 never fired during a Mario Kart World race, and 50 recreated textures.
     static const u64 stale_costly_ticks = [] {
         const char* value = std::getenv("EDEN_NX2_TC_STALE_COSTLY");
         return value != nullptr ? std::strtoull(value, nullptr, 10) : 150ULL;
@@ -267,7 +268,8 @@ void TextureCache<P>::RunGarbageCollector() {
     // Evicting a GPU-modified image downloads it and waits for the GPU: a few per frame at most.
     size_t downloads_left = 1;
     // EDEN_NX2_TC_GC_BUDGET_US: a pass stops after this long (default 1500, 0 = no limit), so a
-    // burst of evictions is spread over frames; ignored once memory is 1 GiB over the critical line.
+    // burst of evictions is spread over frames. This used to be ignored a gigabyte past the
+    // critical line, and one frame then deleted thousands of images.
     static const u64 budget_us = [] {
         const char* value = std::getenv("EDEN_NX2_TC_GC_BUDGET_US");
         return value != nullptr ? std::strtoull(value, nullptr, 10) : 1500ULL;
@@ -300,7 +302,7 @@ void TextureCache<P>::RunGarbageCollector() {
         if (num_iterations == 0) {
             return true;
         }
-        if (budget_us != 0 && total_used_memory < critical_memory + 1_GiB &&
+        if (budget_us != 0 &&
             std::chrono::steady_clock::now() - start_time > std::chrono::microseconds{budget_us}) {
             return true;
         }
@@ -348,17 +350,24 @@ void TextureCache<P>::RunGarbageCollector() {
     if (frame_tick >= ticks_to_destroy) {
         lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
     }
+    // Above the critical line this used to be skipped, so images that had already gone stale
+    // waited for the age-10 wipe. That wipe deleted 4851 costly images in one frame.
+    if (stale_costly_ticks != 0 && total_used_memory >= expected_memory) {
+        const bool piled = total_used_memory >= expected_memory + 1_GiB;
+        const u64 grace = piled ? (std::min)(stale_costly_ticks, 90ULL) : stale_costly_ticks;
+        if (frame_tick > grace) {
+            Configure(false);
+            allow_costly = true;
+            num_iterations = piled ? 32 : 16;
+            lru_cache.ForEachItemBelow(frame_tick - grace, Cleanup);
+        }
+    }
     if (total_used_memory >= critical_memory) {
         Configure(true);
+        allow_costly = false;
         if (frame_tick >= ticks_to_destroy) {
             lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
         }
-    } else if (stale_costly_ticks != 0 && total_used_memory >= expected_memory &&
-               frame_tick > stale_costly_ticks) {
-        Configure(false);
-        allow_costly = true;
-        num_iterations = 16;
-        lru_cache.ForEachItemBelow(frame_tick - stale_costly_ticks, Cleanup);
     }
     defer_view_removal = false;
     if (gc_deleted_any) {
@@ -443,9 +452,9 @@ void TextureCache<P>::TickFrame() {
                     // A 16 GB card leaves this line near 10 GB, and the critical line near 12 GB.
                     // Mario Kart World then keeps every image touched in the last 150 frames until
                     // that higher line, and one frame of the race deletes thousands of costly ones.
-                    // Hold the expected line at 9 GB so those images leave steadily first. The
-                    // critical line stays on the device budget, so the age-10 wipe still waits
-                    // until VRAM is actually short. EDEN_NX2_TC_EXPECTED_MIB still overrides.
+                    // Hold the expected line at 9 GB so those images leave steadily first. A gigabyte
+                    // past it their grace is 90 frames, and the collector stays time-boxed after
+                    // the critical line. EDEN_NX2_TC_EXPECTED_MIB still overrides.
                     constexpr u64 steady_expected = 9_GiB;
                     if (expected_memory > steady_expected) {
                         expected_memory = steady_expected;

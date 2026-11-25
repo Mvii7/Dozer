@@ -9,10 +9,12 @@ and `=0` brings back the 2.0.0 code path.
 ## Unreleased
 
 - Texture cache: the expected line stops at 9 GB on a large card, and costly images unused for
-  150 frames leave a few per frame past that line (`EDEN_NX2_TC_STALE_COSTLY`, `=0` keeps them
-  until the critical line, `EDEN_NX2_TC_EXPECTED_MIB` overrides the 9 GB cap). A 16 GB card was
-  leaving the line near 10 GB and the critical line near 12 GB, so Mario Kart World kept every
-  image touched in the last 150 frames until one stretch deleted thousands of costly ones.
+  150 frames leave a few per frame past that line, including after the critical line
+  (`EDEN_NX2_TC_STALE_COSTLY`, `=0` keeps them until the age-10 wipe,
+  `EDEN_NX2_TC_EXPECTED_MIB` overrides the 9 GB cap). A gigabyte past 9 GB that grace is 90
+  frames. The collector's time budget is no longer dropped a gigabyte past the critical line:
+  Mario Kart World climbed to 13 GB of device memory, then one frame deleted 4851 costly images
+  and took 787 ms. Lichii stays near 8.6 GB.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 
