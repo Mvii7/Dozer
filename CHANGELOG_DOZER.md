@@ -8,12 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased
 
-- Uniform buffers: streaming graphics buffers past 4 KiB (`EDEN_NX2_UBO_STREAM_KIB=16`) and
-  rebuilding a bound buffer from its last upload plus the small writes since
-  (`EDEN_NX2_UBO_PATCH=1`, `=2` reads the whole buffer anyway and logs a mismatch) are off.
-  `8654a34c53` had both on and drew the wrong picture: the rebuilt bytes were not the guest
-  buffer, and a buffer in that range is also uploaded for other bindings, which streaming
-  skipped. Unset, the 4 KiB skip and a full read of a changed buffer are as before.
+- Uniform buffers: graphics buffers up to 16 KiB are streamed (`EDEN_NX2_UBO_STREAM_KIB`, `=0`
+  keeps the 4 KiB cutoff). `8654a34c53` with `EDEN_NX2_UBO_PATCH=0` drew the right picture.
+  Rebuilding a bound buffer from its last upload plus the small writes since
+  (`EDEN_NX2_UBO_PATCH=1`, `=2` reads the whole buffer anyway and logs a mismatch) stays off.
+  The write ranges came up short by the start's offset within 32 bytes, so the tail of an
+  unaligned constant-buffer write kept the previous upload. Those ranges now cover the write.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 
