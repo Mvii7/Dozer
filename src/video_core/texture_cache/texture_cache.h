@@ -255,12 +255,12 @@ void TextureCache<P>::RunGarbageCollector() {
     bool aggressive_mode = false;
     u64 ticks_to_destroy = 0;
     size_t num_iterations = 0;
-    // Costly (ASTC) images are normally kept until the critical line, so a course's textures pile
-    // up and are cleared in one burst when the next course loads. Past the expected line the ones
-    // unused for EDEN_NX2_TC_STALE_COSTLY frames (default 600, 0 = off) go a few per frame.
+    // Costly (ASTC) images are normally kept until the critical line. Past the expected line the
+    // ones unused for EDEN_NX2_TC_STALE_COSTLY frames (default 150, the same grace as any other
+    // image, 0 = off) go a few per frame, so a race does not save them all for one burst.
     static const u64 stale_costly_ticks = [] {
         const char* value = std::getenv("EDEN_NX2_TC_STALE_COSTLY");
-        return value != nullptr ? std::strtoull(value, nullptr, 10) : 600ULL;
+        return value != nullptr ? std::strtoull(value, nullptr, 10) : 150ULL;
     }();
     bool allow_costly = false;
     bool gc_deleted_any = false;
@@ -357,7 +357,7 @@ void TextureCache<P>::RunGarbageCollector() {
                frame_tick > stale_costly_ticks) {
         Configure(false);
         allow_costly = true;
-        num_iterations = 10;
+        num_iterations = 16;
         lru_cache.ForEachItemBelow(frame_tick - stale_costly_ticks, Cleanup);
     }
     defer_view_removal = false;
@@ -440,6 +440,16 @@ void TextureCache<P>::TickFrame() {
                     const u64 reserve = (std::max)(memory_slack_estimate, budget / 8);
                     critical_memory = (std::max)(budget - margin - reserve, budget / 2);
                     expected_memory = (std::max)(critical_memory - 2 * margin, budget / 3);
+                    // A 16 GB card leaves this line near 10 GB, and the critical line near 12 GB.
+                    // Mario Kart World then keeps every image touched in the last 150 frames until
+                    // that higher line, and one frame of the race deletes thousands of costly ones.
+                    // Hold the expected line at 9 GB so those images leave steadily first. The
+                    // critical line stays on the device budget, so the age-10 wipe still waits
+                    // until VRAM is actually short. EDEN_NX2_TC_EXPECTED_MIB still overrides.
+                    constexpr u64 steady_expected = 9_GiB;
+                    if (expected_memory > steady_expected) {
+                        expected_memory = steady_expected;
+                    }
                     // Recently used images stay while the heap itself (usage plus the block slack
                     // measured now, uncapped) is a margin under the budget: the heavy part of a
                     // Mario Kart World race sits at the critical line, where the collector deleted
