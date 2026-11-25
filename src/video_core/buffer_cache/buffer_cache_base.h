@@ -112,6 +112,35 @@ inline int Nx2UniformKeep() {
     static std::atomic<s8> mode{-1};
     return ReadNx2Mode(mode, "EDEN_NX2_UBO_KEEP");
 }
+/// EDEN_NX2_UBO_STREAM_KIB (16): while the 4 KiB uniform skip is on, graphics uniform buffers up
+/// to this many KiB are streamed too. 0 keeps the 4 KiB cutoff. Above 64 is 64.
+inline u32 Nx2UniformStreamBytes() {
+    static std::atomic<s32> kib{-1};
+    s32 value = kib.load(std::memory_order_relaxed);
+    if (value < 0) {
+        const char* env = std::getenv("EDEN_NX2_UBO_STREAM_KIB");
+        if (env == nullptr || env[0] == '\0') {
+            value = 16;
+        } else {
+            char* end = nullptr;
+            const long parsed = std::strtol(env, &end, 10);
+            value = (end == env || *end != '\0' || parsed < 0) ? 16 : static_cast<s32>(parsed);
+            if (value > 64) {
+                value = 64;
+            }
+        }
+        kib.store(value, std::memory_order_relaxed);
+    }
+    return static_cast<u32>(value) << 10;
+}
+/// EDEN_NX2_UBO_PATCH: a streamed uniform whose slot still holds the last bind, and whose guest
+/// bytes changed only in small writes the buffer cache was told about, is built from that bind
+/// plus those spans. The rest is not read again. =0 reads the whole buffer; =2 reads it anyway
+/// and logs a patched buffer that does not match.
+inline int Nx2UniformPatch() {
+    static std::atomic<s8> mode{-1};
+    return ReadNx2Mode(mode, "EDEN_NX2_UBO_PATCH");
+}
 inline int Nx2UniformSyncSkip() {
     static std::atomic<s8> mode{-1};
     return ReadNx2Mode(mode, "EDEN_NX2_UNIFORM_SYNC_SKIP");
@@ -674,9 +703,11 @@ public:
         std::array<std::pair<DAddr, DAddr>, SIZE> ranges{};
         u64 count = 0;
     } uniform_write_log;
-    u64 uniform_keeps = 0;           ///< Binds EDEN_NX2_UBO_KEEP made without reading
-    u64 uniform_keep_checks = 0;     ///< =2: keeps compared with guest memory instead
-    u64 uniform_keep_mismatches = 0; ///< =2: of them, ranges that had changed
+    u64 uniform_keeps = 0;            ///< Binds EDEN_NX2_UBO_KEEP made without reading
+    u64 uniform_keep_checks = 0;      ///< =2: keeps compared with guest memory instead
+    u64 uniform_keep_mismatches = 0;  ///< =2: of them, ranges that had changed
+    u64 uniform_patches = 0;          ///< Binds EDEN_NX2_UBO_PATCH built from the previous slice
+    u64 uniform_patch_mismatches = 0; ///< =2: of them, that did not match a full read
     void NoteUniformWrite(DAddr device_addr, u64 size) {
         UniformWriteLog& log = uniform_write_log;
         log.ranges[log.count % UniformWriteLog::SIZE] = {device_addr, device_addr + size};
@@ -755,6 +786,12 @@ private:
     void BindHostGraphicsUniformBuffers(size_t stage);
 
     void BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 binding_index, bool needs_bind);
+
+    /// EDEN_NX2_UBO_PATCH: writes `previous` into the reuse scratch and overlays the writes noted
+    /// since `since` that land in [device_addr, device_addr + size), read from guest memory.
+    /// False when those writes are missing from the log or cover more than 1024 bytes.
+    bool PatchKeptUniform(const u8* previous, size_t previous_size, u32 size, DAddr device_addr,
+                          u64 since);
 
     void BindHostGraphicsStorageBuffers(size_t stage);
 
