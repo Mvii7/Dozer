@@ -1198,8 +1198,11 @@ bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalid
     // it last did, while the data written lies outside handles, storage buffer descriptors and
     // the texture pools, no constant buffer they are read from moved, and no image or shader saw
     // the writes (LightUniformOk). Pipeline, images, render targets, push constants and dynamic
-    // state stay the anchor's, as above. EDEN_NX2_LIGHT_STORAGE: storage buffer descriptors may
-    // have changed too; ConfigureUniforms binds those buffers again from them as the full setup
+    // state stay the anchor's, as above. EDEN_NX2_LIGHT_VERTEX: stride, divisor and an attribute
+    // format in the same type class are recorded again (UpdateVertexInput) when the pipeline has
+    // dynamic vertex input; without it the draw is set up in full. EDEN_NX2_LIGHT_STORAGE:
+    // storage buffer descriptors may have changed too; ConfigureUniforms binds those buffers
+    // again from them as the full setup
     // does (what else it sets up does not read them: same pipeline, layout, handles and images).
     namespace Profile = VideoCommon::Nx2Profile;
     using LightChange = Tegra::Engines::Maxwell3D::LightChange;
@@ -1215,6 +1218,12 @@ bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalid
         Profile::Add((light.changes & LightChange::Command) != 0 ? Profile::Counter::LightOtherWork
                                                                  : Profile::Counter::LightStateChanged,
                      1);
+        return false;
+    }
+    // Stride and attribute formats are dynamic only with VK_EXT_vertex_input_dynamic_state.
+    if ((light.changes & LightChange::VertexInput) != 0 &&
+        (last.pipeline == nullptr || !last.pipeline->HasDynamicVertexInput())) {
+        Profile::Add(Profile::Counter::LightStateChanged, 1);
         return false;
     }
     if (last.maxwell3d != maxwell3d || last.gpu_memory != gpu_memory ||
@@ -1274,6 +1283,11 @@ bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalid
         HandleTransformFeedback();
         query_cache.CounterEnable(VideoCommon::QueryType::ZPassPixelCount64,
                                   maxwell3d->regs.zpass_pixel_count_enable);
+        if ((light.changes & LightChange::VertexInput) != 0) {
+            maxwell3d->dirty.flags[Dirty::VertexInput] = true;
+            UpdateVertexInput(maxwell3d->regs);
+            Profile::Add(Profile::Counter::LightVertexDraws, 1);
+        }
         if (texture_cache.Nx2InPassFeedback()) [[unlikely]] {
             // EDEN_NX2_RX_RT_FIT=3: the anchor's feedback loop is this draw's (same pipeline,
             // images and render targets).
@@ -1314,6 +1328,11 @@ bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalid
     HandleTransformFeedback();
     query_cache.CounterEnable(VideoCommon::QueryType::ZPassPixelCount64,
                               maxwell3d->regs.zpass_pixel_count_enable);
+    if ((light.changes & LightChange::VertexInput) != 0) {
+        maxwell3d->dirty.flags[Dirty::VertexInput] = true;
+        UpdateVertexInput(maxwell3d->regs);
+        Profile::Add(Profile::Counter::LightVertexDraws, 1);
+    }
     if (texture_cache.Nx2InPassFeedback()) [[unlikely]] {
         // EDEN_NX2_RX_RT_FIT=3: as the uniform way above.
         RecordInPassFeedbackBarrier(scheduler, true);
@@ -5110,6 +5129,9 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
                              ? Profile::Counter::LightOtherWork
                              : Profile::Counter::LightStateChanged,
                          1);
+        } else if ((light.changes & Tegra::Engines::Maxwell3D::LightChange::VertexInput) != 0 &&
+                   (last.pipeline == nullptr || !last.pipeline->HasDynamicVertexInput())) {
+            Profile::Add(Profile::Counter::LightStateChanged, 1);
         } else if (last.maxwell3d != &mb || last.gpu_memory != gpu_memory ||
                    last.epoch != anchor.epoch || indirect_barrier) {
             Profile::Add(Profile::Counter::LightOtherWork, 1);
@@ -5214,6 +5236,9 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
                 if (rebind_storage) {
                     Profile::Add(Profile::Counter::LightStorageDraws, 1);
                 }
+            }
+            if ((mb.light.changes & Tegra::Engines::Maxwell3D::LightChange::VertexInput) != 0) {
+                Profile::Add(Profile::Counter::LightVertexDraws, 1);
             }
             // A light draw leaves the setup it followed.
             anchor.pipeline = last.pipeline;
@@ -5898,6 +5923,12 @@ void RasterizerVulkan::PrepareDrawC(const StageDrawReader& in, const StageDrawPa
         stage_dynamic = {.active = true, .pipeline = &pipeline};
         UpdateDynamicStates();
         stage_dynamic = {};
+    } else if ((mc.light.changes & Tegra::Engines::Maxwell3D::LightChange::VertexInput) != 0 &&
+               pipeline.HasDynamicVertexInput()) {
+        // Stride and attribute formats are not in the pipeline. Record them; the rest of the
+        // anchor's dynamic state stays.
+        mc.dirty.flags[Dirty::VertexInput] = true;
+        UpdateVertexInput(mc.regs);
     }
     if (Stages::Get().mode == 2) [[unlikely]] {
         // The double setup parks B: not with the texture cache held (B's joins take it). Before

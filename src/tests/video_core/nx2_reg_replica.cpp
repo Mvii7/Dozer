@@ -64,7 +64,7 @@ void Deliver(const Setup& setup, RegCapture& capture, Model& replica, u64 strip)
     }
     ApplyDelta(replica.regs.data(), replica.flags, setup.tables, words.data(),
                static_cast<u32>(words.size()),
-               [&](u32 method) { replica.changes |= setup.classes[method]; });
+               [&](u32 method, u32) { replica.changes |= setup.classes[method]; });
 }
 
 // Differences between the reference and the replica (constant buffer data registers aside:

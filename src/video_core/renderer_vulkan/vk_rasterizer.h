@@ -206,6 +206,9 @@ private:
     // and draw parameters since the last one binds those buffers and draws; the rest of the last
     // draw's setup is still in the command buffer. EDEN_NX2_LIGHT_UNIFORM: one that also changed
     // constant buffer data or binds sets up its buffers and descriptors again, nothing else.
+    // EDEN_NX2_LIGHT_VERTEX: stream stride, divisor, and an attribute format in the same type
+    // class keep that pipeline when it has dynamic vertex input, and the draw records the vertex
+    // input again.
     /// What may follow a draw (LightFollowable).
     enum class LightLevel : u8 {
         None,    ///< A full setup only
