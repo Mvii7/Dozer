@@ -6,6 +6,14 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased
+
+- Texture cache: the expected line stops at 9 GB on a large card, and costly images unused for
+  150 frames leave a few per frame past that line (`EDEN_NX2_TC_STALE_COSTLY`, `=0` keeps them
+  until the critical line, `EDEN_NX2_TC_EXPECTED_MIB` overrides the 9 GB cap). A 16 GB card was
+  leaving the line near 10 GB and the critical line near 12 GB, so Mario Kart World kept every
+  image touched in the last 150 frames until one stretch deleted thousands of costly ones.
+
 ## Dozer 0.2.1 (`v0.2.1`)
 
 - GPU thread split: a Switch 2 GPU map, and a new sparse region, is applied before the front
