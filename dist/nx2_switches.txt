@@ -67,11 +67,12 @@
 #EDEN_NX2_GPU_PROFILE=0
 #EDEN_NX2_FRAMES_AHEAD=2
 # SUBMIT_DRAWS (Switch 2, 512): how many draws are recorded before the host GPU is given them.
-# Also submits at a render-pass boundary from half that, and, once that many draws are waiting,
-# when the GPU has already finished the previous submission (100 us). 4096 left Mario Kart's
-# heavy courses recording while the GPU sat idle. 128 cost Donkey Kong Bananza 10-15% in a
-# draw-heavy area (each submit ends the pass and the next draw binds again). =0 is the old
-# cadence (4096 draws, 512 on Android). A number from 32 to that cadence is used instead of 512.
+# Also submits at a render-pass boundary from half that, and whenever the GPU has already
+# finished the previous submission and the recorded work is outside a render pass (100 us).
+# 4096 left Mario Kart's heavy courses recording while the GPU sat idle. 128 cost Donkey Kong
+# Bananza 10-15% in a draw-heavy area (each submit ends the pass and the next draw binds
+# again). =0 is the old cadence (4096 draws, 512 on Android). A number from 32 to that cadence
+# is used instead of 512.
 #EDEN_NX2_SUBMIT_DRAWS=0
 # TC_EXPECTED_MIB / TC_CRITICAL_MIB: collector lines, in MiB. Without these the expected line
 # follows the device budget but stops at 9 GB. Costly images unused for TC_STALE_COSTLY frames

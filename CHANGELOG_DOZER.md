@@ -18,12 +18,12 @@ and `=0` brings back the 2.0.0 code path.
   The write ranges came up short by the start's offset within 32 bytes, so the tail of an
   unaligned constant-buffer write kept the previous upload. Those ranges now cover the write.
 - Vulkan, Switch 2: recorded draws are submitted every 512, and from 256 at a render-pass
-  boundary (`EDEN_NX2_SUBMIT_DRAWS`, `=0` keeps every 4096 draws, 512 on Android). Once 256
-  draws are waiting and the host GPU has already finished the previous submission, what is
-  waiting outside a render pass is submitted then. 4096 left Mario Kart's heavy courses
+  boundary (`EDEN_NX2_SUBMIT_DRAWS`, `=0` keeps every 4096 draws, 512 on Android). When the
+  host GPU has already finished the previous submission, what is waiting outside a render pass
+  is submitted then, without waiting for half the budget. 4096 left Mario Kart's heavy courses
   recording while the GPU sat idle. 128 did that overlap often enough to cost Donkey Kong
   Bananza 10-15% where a frame is mostly draws: each submit ends the pass and the next draw
-  binds again.
+  binds again. An idle submit still refuses to end a pass.
 - GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): the split
   back, and with the back stages the front, each take a physical core, and the other threads stay
   off those cores. They were sharing a core with the game. Mario Kart World with the pack ahead
