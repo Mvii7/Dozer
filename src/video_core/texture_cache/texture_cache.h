@@ -297,16 +297,20 @@ void TextureCache<P>::RunGarbageCollector() {
         }
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
-    const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode,
+    // A skipped image used to take one of the 10-40 delete slots. Old GPU-modified images sit at
+    // the front of the list and are kept until the heap itself is short, so the walk stopped on
+    // them and the textures behind them stayed for the whole race. Slots count deletes only.
+    size_t examined = 0;
+    const auto Cleanup = [this, &num_iterations, &examined, &high_priority_mode, &aggressive_mode,
                           &allow_costly, &downloads_left, &start_time, &gc_deleted_any](ImageId image_id) {
-        if (num_iterations == 0) {
+        if (num_iterations == 0 || examined >= 512) {
             return true;
         }
         if (budget_us != 0 &&
             std::chrono::steady_clock::now() - start_time > std::chrono::microseconds{budget_us}) {
             return true;
         }
-        --num_iterations;
+        ++examined;
         auto& image = slot_images[image_id];
         if (True(image.flags & ImageFlagBits::IsDecoding)) {
             return false;
@@ -321,6 +325,7 @@ void TextureCache<P>::RunGarbageCollector() {
             (must_download && downloads_left == 0)) {
             return false;
         }
+        --num_iterations;
         if (must_download) {
             --downloads_left;
             auto map = runtime.DownloadStagingBuffer(image.unswizzled_size_bytes);

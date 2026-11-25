@@ -14,7 +14,9 @@ and `=0` brings back the 2.0.0 code path.
   `EDEN_NX2_TC_EXPECTED_MIB` overrides the 9 GB cap). A gigabyte past 9 GB that grace is 90
   frames. The collector's time budget is no longer dropped a gigabyte past the critical line:
   Mario Kart World climbed to 13 GB of device memory, then one frame deleted 4851 costly images
-  and took 787 ms. Lichii stays near 8.6 GB.
+  and took 787 ms. Lichii stays near 8.6 GB. A skipped image was also using up one of the few
+  delete slots, so old render targets at the front of the list kept the walk from reaching the
+  textures behind them until that wipe.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 
