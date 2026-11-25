@@ -300,6 +300,8 @@ void TextureCache<P>::RunGarbageCollector() {
     // A skipped image used to take one of the 10-40 delete slots. Old GPU-modified images sit at
     // the front of the list and are kept until the heap itself is short, so the walk stopped on
     // them and the textures behind them stayed for the whole race. Slots count deletes only.
+    // Each pass gets its own looks: the first pass skips costly images, and sharing the cap
+    // used those looks up before the pass that is allowed to delete them.
     size_t examined = 0;
     const auto Cleanup = [this, &num_iterations, &examined, &high_priority_mode, &aggressive_mode,
                           &allow_costly, &downloads_left, &start_time, &gc_deleted_any](ImageId image_id) {
@@ -352,6 +354,7 @@ void TextureCache<P>::RunGarbageCollector() {
         return false;
     };
     Configure(false);
+    examined = 0;
     if (frame_tick >= ticks_to_destroy) {
         lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
     }
@@ -364,12 +367,14 @@ void TextureCache<P>::RunGarbageCollector() {
             Configure(false);
             allow_costly = true;
             num_iterations = piled ? 32 : 16;
+            examined = 0;
             lru_cache.ForEachItemBelow(frame_tick - grace, Cleanup);
         }
     }
     if (total_used_memory >= critical_memory) {
         Configure(true);
         allow_costly = false;
+        examined = 0;
         if (frame_tick >= ticks_to_destroy) {
             lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
         }
