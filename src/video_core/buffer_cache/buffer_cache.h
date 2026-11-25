@@ -2231,8 +2231,8 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
             return alignment > 1 && (offset % alignment) != 0;
         }
     }();
-    // The skip size is 4 KiB (or 0 when cached binds hit). EDEN_NX2_UBO_STREAM_KIB streams graphics
-    // uniforms past that, up to 16 KiB, while the skip is on. OpenGL's fast buffer stays at 4 KiB.
+    // The skip size is 4 KiB (or 0 when cached binds hit). EDEN_NX2_UBO_STREAM_KIB, off, streams
+    // graphics uniforms past that while the skip is on. OpenGL's fast buffer stays at 4 KiB.
     const u32 skip_size = channel_state->uniform_buffer_skip_cache_size;
     const u32 stream_cap = [&] {
         if constexpr (IS_OPENGL) {

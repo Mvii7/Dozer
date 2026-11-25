@@ -8,12 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased
 
-- Uniform buffers: graphics buffers up to 16 KiB are streamed, not only the 4 KiB the skip size
-  covers (`EDEN_NX2_UBO_STREAM_KIB`, `=0` keeps 4 KiB). A buffer bound to the same slot as last
-  time, changed by small writes, is built from that upload plus those writes
-  (`EDEN_NX2_UBO_PATCH`, `=0` reads the whole buffer, `=2` reads it anyway and logs a mismatch).
-  Mario Kart World's heavy stretch was spending the frame on the GPU thread with about 17% of
-  uniform binds over 4 KiB and about 9 constant-buffer writes a draw.
+- Uniform buffers: streaming graphics buffers past 4 KiB (`EDEN_NX2_UBO_STREAM_KIB=16`) and
+  rebuilding a bound buffer from its last upload plus the small writes since
+  (`EDEN_NX2_UBO_PATCH=1`, `=2` reads the whole buffer anyway and logs a mismatch) are off.
+  `8654a34c53` had both on and drew the wrong picture: the rebuilt bytes were not the guest
+  buffer, and a buffer in that range is also uploaded for other bindings, which streaming
+  skipped. Unset, the 4 KiB skip and a full read of a changed buffer are as before.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 
