@@ -6,6 +6,12 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
+## Unreleased
+
+- Vulkan: NVIDIA driver 580.119.2 and newer keep `VK_EXT_vertex_input_dynamic_state`. The old
+  check compared `driverVersion` as a Vulkan version, so a 621 driver was treated as older than
+  580.119.2 and vertex layout stayed in the graphics pipeline key.
+
 ## Dozer 0.2.1 (`v0.2.1`)
 
 - GPU thread split: a Switch 2 GPU map, and a new sparse region, is applied before the front
