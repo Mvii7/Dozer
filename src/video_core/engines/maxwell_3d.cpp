@@ -172,7 +172,8 @@ const std::array<u16, Maxwell3D::Regs::NUM_REGS>& LightClasses() {
               MAXWELL3D_REG_INDEX(index_buffer32_subsequent),
               MAXWELL3D_REG_INDEX(index_buffer16_subsequent),
               MAXWELL3D_REG_INDEX(index_buffer8_subsequent)}) {
-            classes[method] = light_loop ? LightChange::DrawParams : LightChange::Command;
+            classes[method] = static_cast<u16>(light_loop ? LightChange::DrawParams
+                                                          : LightChange::Command);
         }
         if (light_loop) {
             classes[MAXWELL3D_REG_INDEX(inline_index_2x16.count)] = LightChange::DrawParams;
