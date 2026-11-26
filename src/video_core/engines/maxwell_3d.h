@@ -3251,7 +3251,8 @@ public:
         enum : u32 {
             VertexStreams = 1 << 0, ///< Vertex stream addresses and limits
             IndexBuffer = 1 << 1,   ///< Index buffer start, limit, and (EDEN_NX2_LIGHT_INDEX) format
-            DrawParams = 1 << 2,    ///< First/count, base vertex/instance, draw begin/end
+            DrawParams = 1 << 2,    ///< First/count, base vertex/instance, draw begin/end,
+                                    ///< and (EDEN_NX2_LIGHT_LOOP) the small index and instance draws
             UniformSelect = 1 << 3, ///< Constant buffer address, size, offset (no draw reads them)
             UniformSame = 1 << 4,   ///< Constant buffer data rewritten with the bytes it held
             UniformData = 1 << 5,   ///< Constant buffer data changed (or not compared)
