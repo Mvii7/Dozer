@@ -6,8 +6,13 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Unreleased
+## Unreleased (Dozer)
 
+- GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
+  cores, the split back, and with the back stages the front, each take a physical core, and the
+  other threads stay off those cores. They were sharing a core with the game. The Safe launcher
+  sets 0. Mario Kart World with the pack ahead was spending the whole frame on the game thread
+  while the GPU had already finished.
 - Constant buffers (`EDEN_NX2_BOUND_CB=0` is the old path): a buffer that is one continuous
   device range is translated once and copied into. The caches hear the merged range at the next
   draw, and the texture cache is left alone when that range holds no image. Each write used to
