@@ -275,6 +275,31 @@ bool LightDrawShape(const Tegra::Engines::Maxwell3D::DrawManager::State& draw_st
            (!is_indexed || draw_state.index_buffer.format != Maxwell::IndexFormat::UnsignedByte);
 }
 
+// EDEN_NX2_LIGHT_LOOP (on): one instance of vertex_array_instance_* may take the light path.
+bool LightLoopEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_LIGHT_LOOP");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+// A light draw records the current draw parameters. A general draw qualifies, and so does one
+// instance of vertex_array_instance_* (EDEN_NX2_LIGHT_LOOP): that call draws a single instance
+// at base_instance. Inline indexes do not, because they are not the bound index buffer.
+bool LightShapeOk(const Tegra::Engines::Maxwell3D::DrawManager::State& draw_state,
+                  u32 instance_count, bool is_indexed) {
+    using DrawMode = Tegra::Engines::Maxwell3D::DrawManager::DrawMode;
+    if (instance_count != 1 || !draw_state.inline_index_draw_indexes.empty() ||
+        !LightDrawShape(draw_state, is_indexed)) {
+        return false;
+    }
+    if (draw_state.draw_mode == DrawMode::General) {
+        return true;
+    }
+    return LightLoopEnabled() && draw_state.draw_mode == DrawMode::Instance;
+}
+
 // Back stages, cut c: the fence calls B runs in a join (nx2_stage_split.h), with this fence
 // manager's async check.
 using VideoCommon::Nx2Stages::FenceCall;
@@ -1316,8 +1341,20 @@ bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalid
     buffer_cache.plain_light_draw = VideoCommon::Nx2LightSyncSkip() != 0;
     buffer_cache.BindHostGeometryBuffers(is_indexed);
     buffer_cache.plain_light_draw = false;
-    // An upload needs ConfigureImpl's barrier after it and ends the render pass.
-    if (buffer_cache.any_buffer_uploaded || !scheduler.IsRenderPassActive()) {
+    // An upload's barrier ends the render pass (ConfigureDelta does this and keeps the draw).
+    // The pipeline, descriptors and dynamic state stay bound across that boundary, so the draw
+    // is recorded in the pass begun again here. Giving up would set the draw up in full as well.
+    if (buffer_cache.any_buffer_uploaded) {
+        buffer_cache.runtime.PostCopyBarrier();
+        buffer_cache.any_buffer_uploaded = false;
+    }
+    if (!scheduler.IsRenderPassActive()) {
+        std::scoped_lock texture_lock{texture_cache.mutex};
+        if (const Framebuffer* framebuffer = texture_cache.GetFramebuffer()) {
+            scheduler.RequestRenderpass(framebuffer);
+        }
+    }
+    if (!scheduler.IsRenderPassActive()) {
         Profile::Add(Profile::Counter::LightFellBack, 1);
         return false;
     }
@@ -1443,13 +1480,9 @@ void RasterizerVulkan::Draw(bool is_indexed, u32 instance_count) {
     }
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::Draw};
     {
-        // Light draws are plain: one instance, no instancing loop, no inline indices.
+        // Light draws record this call's parameters. Inline indexes stay on the full setup.
         const auto& draw_state = maxwell3d->draw_manager.draw_state;
-        BeginLightDraw(false, instance_count == 1 &&
-                                  draw_state.draw_mode ==
-                                      Tegra::Engines::Maxwell3D::DrawManager::DrawMode::General &&
-                                  draw_state.inline_index_draw_indexes.empty() &&
-                                  LightDrawShape(draw_state, is_indexed));
+        BeginLightDraw(false, LightShapeOk(draw_state, instance_count, is_indexed));
     }
     TraceWindowTarget(*maxwell3d, *gpu_memory, is_indexed ? "draw-indexed" : "draw",
                       is_indexed ? maxwell3d->draw_manager.draw_state.index_buffer.count
@@ -4880,10 +4913,7 @@ void RasterizerVulkan::DrawB(bool is_indexed, u32 instance_count) {
     Tegra::Engines::Maxwell3D& mb = EngineB();
     // B's replica holds the draw's side state (the proxy's event record).
     const auto& draw_state = mb.draw_manager.draw_state;
-    const bool shape_ok =
-        instance_count == 1 &&
-        draw_state.draw_mode == Tegra::Engines::Maxwell3D::DrawManager::DrawMode::General &&
-        draw_state.inline_index_draw_indexes.empty() && LightDrawShape(draw_state, is_indexed);
+    const bool shape_ok = LightShapeOk(draw_state, instance_count, is_indexed);
     const DrawParams draw_params{MakeDrawParams(draw_state, instance_count, is_indexed)};
     StageDrawParams params{};
     params.command = StageCommand::Direct;
@@ -5162,8 +5192,8 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
             seq = buffer_cache_runtime.BeginRecords(GeometryMirrorBinds());
             ForceGeometryB(mb);
             if (try_plain) {
-                // ConfigureImpl's geometry buffers (TryLightDraw); an upload needs the full
-                // setup's barrier.
+                // ConfigureImpl's geometry buffers (TryLightDraw). An upload's barrier stays in
+                // this packet; C begins the render pass again and records the draw.
                 Profile::FineScope geometry_scope{Profile::Zone::LightGeometry};
                 if (buffer_cache.UpdateGeometryBuffers(is_indexed)) {
                     // EDEN_NX2_LIGHT_SYNC_SKIP, as TryLightDraw: plain here by B's checks (its
@@ -5177,7 +5207,13 @@ void RasterizerVulkan::PrepareDrawB(bool is_indexed, bool indirect, bool shape_o
                     buffer_cache.plain_light_draw = VideoCommon::Nx2LightSyncSkip() != 0;
                     buffer_cache.BindHostGeometryBuffers(is_indexed);
                     buffer_cache.plain_light_draw = false;
-                    light_ok = !buffer_cache.any_buffer_uploaded;
+                    // The upload's barrier is in this packet (ConfigureDelta keeps the draw).
+                    // C begins the render pass again; the pipeline and descriptors stay bound.
+                    if (buffer_cache.any_buffer_uploaded) {
+                        buffer_cache.runtime.PostCopyBarrier();
+                        buffer_cache.any_buffer_uploaded = false;
+                    }
+                    light_ok = true;
                 }
                 if (light_ok) {
                     Stages::DrawToC& head = out.Head();
@@ -5880,6 +5916,13 @@ void RasterizerVulkan::PrepareDrawC(const StageDrawReader& in, const StageDrawPa
         break;
     }
     case DrawKind::LightPlain:
+        if (state_ok && textures_ok && !scheduler.IsRenderPassActive()) {
+            // B's upload barrier ended the pass. Begin it again and keep the draw: the pipeline,
+            // descriptors and dynamic state are still bound in this command buffer.
+            if (const Framebuffer* framebuffer = texture_cache.GetFramebuffer()) {
+                scheduler.RequestRenderpass(framebuffer);
+            }
+        }
         if (state_ok && textures_ok && scheduler.IsRenderPassActive()) {
             set_up = false;
             configured = true;
