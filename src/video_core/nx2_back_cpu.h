@@ -30,12 +30,26 @@ namespace VideoCommon::Nx2BackCpu {
 // core's execution units. Unset (the default): the back runs on one core (both of its logical
 // processors, CPU Sets) and the process's other threads are kept off that core (the process's
 // default CPU Sets; threads of other processes may still use it). With the back stages the front
-// gets the next core the same way. =0 leaves every thread where Windows puts it. EDEN_NX2_BACK_CORE
+// gets the next core the same way. Unset, only with at least 8 cores (AutoMinCores): fewer leave
+// the six guest cores sharing what is left. =1 pins from 4 cores (the front from 6). =0 leaves
+// every thread where Windows puts it. EDEN_NX2_BACK_CORE
 // and EDEN_NX2_FRONT_CORE pick the cores by Windows' CoreIndex, as the log line names them
 // (default: the second core of processor group 0, away from core 0's interrupts, then the next).
 // 2: pinned, and where the back and the front run is logged (verify). 3: not pinned, logged.
 // Read at the first call (the back's StartBack or the front's NoteFront), as the other split
 // switches are, so a front end that sets it in main() is seen.
+/// Unset EDEN_NX2_BACK_CPU pins only with this many physical cores (group 0).
+constexpr size_t AutoMinCores = 8;
+
+/// Whether EDEN_NX2_BACK_CPU is unset (the default), not set to a mode.
+inline bool Automatic() {
+    static const bool automatic = [] {
+        const char* env = std::getenv("EDEN_NX2_BACK_CPU");
+        return env == nullptr || env[0] == '\0';
+    }();
+    return automatic;
+}
+
 inline int Mode() {
     static std::atomic<s8> mode{-1};
     s8 value = mode.load(std::memory_order_relaxed);
@@ -145,7 +159,7 @@ inline void StartBack() {
         }
     }
     std::sort(cores.begin(), cores.end());
-    if (cores.size() < 4) {
+    if (cores.size() < (Automatic() ? AutoMinCores : 4)) {
         LOG_INFO(HW_GPU, "GPU thread split: the back is not pinned ({} cores)", cores.size());
         return;
     }
@@ -216,7 +230,7 @@ inline void StartFront() {
         }
     }
     std::sort(cores.begin(), cores.end());
-    if (cores.size() < 6) {
+    if (cores.size() < (Automatic() ? AutoMinCores : 6)) {
         LOG_INFO(HW_GPU, "GPU back stages: the front is not pinned ({} cores)", cores.size());
         return;
     }

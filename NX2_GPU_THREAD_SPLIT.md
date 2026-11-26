@@ -328,17 +328,20 @@ Built; not measured yet.
 ## A core of its own for the back (2026-11-01)
 
 The back is the thread a frame waits on (~98% busy). On Windows nothing places it
-(`Common::SetCurrentThreadToPerformanceCores` acts on Android only), so the other logical
-processor of its core may run another busy thread of the process meanwhile (the front spinning
-in Drain, HostTiming, a guest CPU core), and the two share that core. `EDEN_NX2_BACK_CPU` (on unless `=0`): the back runs on one physical core (CPU Sets, both of its logical processors) and the process's other threads on the
-other cores (the process's default CPU Sets, set back when the split stops; each new back thread
-pins itself again); `EDEN_NX2_BACK_CORE=<n>` picks the core by Windows' CoreIndex, as the log line
-names it (default: the second core of group 0). `=2` pins and logs where the back and the front
-ran, every ~32,768 samples (a sample per back wake and per 4,096 ring words: "GPU thread split
-placement (N samples, back pinned): back on logical processors ...; front last waiting on ...;
-back on the front's core X% of samples"; pinned, X should be 0); `=3` only logs (where Windows
-puts them unpinned). The switch is read at first use. Built; not measured yet
-(src/video_core/nx2_back_cpu.h).
+(`Common::SetCurrentThreadToPerformanceCores` acts on Android only), so the other logical processor
+of its core may run another busy thread of the process meanwhile (the front spinning in Drain,
+HostTiming, a guest CPU core), and the two share that core. `EDEN_NX2_BACK_CPU` (on with at least 8
+cores when unset, `=1` from 4, `=0` off): the back runs on one physical core (CPU Sets, both of its
+logical processors), with the back stages the front on the next one, and the process's other
+threads on the other cores (the process's default CPU Sets, set back when the split stops; each new
+back thread pins itself again); `EDEN_NX2_BACK_CORE=<n>` picks the core by Windows' CoreIndex, as
+the log line names it (default: the second core of group 0). `=2` pins and logs where the back and
+the front ran, every ~32,768 samples (a sample per back wake and per 4,096 ring words: "GPU thread
+split placement (N samples, back pinned): back on logical processors ...; front last waiting on
+...; back on the front's core X% of samples"; pinned, X should be 0); `=3` only logs (where Windows
+puts them unpinned). The switch is read at first use (src/video_core/nx2_back_cpu.h). Measured:
+Mario Kart World with the pack ahead ~38 to ~45 fps; Donkey Kong Bananza's first boss, mid-fight,
+~40 to ~46 fps.
 
 ## Smaller trims on the back (2026-11-01)
 
