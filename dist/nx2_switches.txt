@@ -196,6 +196,10 @@
 # --- draws, buffers and descriptors: shortcuts on by default; =0 as before, and for most of
 #     them =2 keeps them on and logs what they would get wrong ---
 #EDEN_NX2_LIGHT_DRAW=0
+# LIGHT_INDEX (on): an index format change stays on the light path (the bind reads the current
+# format), and render_enable.mode and clear_report_value do not end it. They are applied when
+# written. =0 makes an index format change, or either of those writes, take the full setup.
+#EDEN_NX2_LIGHT_INDEX=0
 #EDEN_NX2_LIGHT_UNIFORM=0
 #EDEN_NX2_LIGHT_UNIFORM_VALUES=0
 #EDEN_NX2_LIGHT_STORAGE=0

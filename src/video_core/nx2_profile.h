@@ -294,7 +294,7 @@ enum class Counter : u32 {
     LightNotArmed,       ///< The previous draw was not one a light draw can follow
     LightStateChanged,   ///< Registers other than vertex/index buffers and draw parameters changed
     LightOtherWork,      ///< Other work in between: commands recorded, caches invalidated, memory written
-    LightShape,          ///< Another kind of draw (indexed, indirect, topology, index format)
+    LightShape,          ///< Another kind of draw (indexed, indirect, topology)
     LightFellBack,       ///< Buffers deleted, uploaded or the render pass ended on the way
     // Draws set up in full that a light draw may not follow, why (the first reason that applies):
     LightRefusedShape,    ///< Instances, inline indices, quads, 8-bit indices, count buffer, byte count
