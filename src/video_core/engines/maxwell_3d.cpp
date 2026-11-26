@@ -56,6 +56,16 @@ constexpr u32 MacroRegistersStart = 0xE00;
 
 namespace {
 
+// EDEN_NX2_LIGHT_LOOP (on): index_buffer8/16/32 and one instance of vertex_array_instance_* stay
+// on the light path. =0 keeps those methods as a full setup.
+bool LightLoopEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_LIGHT_LOOP");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
 // EDEN_NX2_LIGHT_DRAW=0: every draw is set up in full (vk_rasterizer.cpp). Its changes are still
 // tracked while profiling (EDEN_NX2_GPU_PROFILE), for the "draw changes" counts.
 bool LightTrackingEnabled() {
@@ -143,8 +153,17 @@ const std::array<u16, Maxwell3D::Regs::NUM_REGS>& LightClasses() {
               MAXWELL3D_REG_INDEX(tiled_cache_barrier), MAXWELL3D_REG_INDEX(clear_surface),
               MAXWELL3D_REG_INDEX(draw_texture.src_y0), MAXWELL3D_REG_INDEX(falcon[4]),
               MAXWELL3D_REG_INDEX(load_mme.instruction_ptr), MAXWELL3D_REG_INDEX(load_mme.instruction),
-              MAXWELL3D_REG_INDEX(load_mme.start_address), MAXWELL3D_REG_INDEX(shadow_ram_control),
-              MAXWELL3D_REG_INDEX(draw_inline_index), MAXWELL3D_REG_INDEX(inline_index_2x16.even),
+              MAXWELL3D_REG_INDEX(load_mme.start_address), MAXWELL3D_REG_INDEX(shadow_ram_control)}) {
+            classes[method] = LightChange::Command;
+        }
+        // The small indexed draws and the one-instance vertex array draws. EDEN_NX2_LIGHT_LOOP
+        // (on): DrawParams, so the draw they issue can stay on the light path. It records the
+        // current first, count and base instance. =0 keeps them Command, as before. Inline index
+        // words are DrawParams too, but those draws still take the full setup: the indexes are
+        // not the bound index buffer. Their count words stay State when the switch is off.
+        const bool light_loop = LightLoopEnabled();
+        for (const size_t method :
+             {MAXWELL3D_REG_INDEX(draw_inline_index), MAXWELL3D_REG_INDEX(inline_index_2x16.even),
               MAXWELL3D_REG_INDEX(inline_index_4x8.index0),
               MAXWELL3D_REG_INDEX(vertex_array_instance_first),
               MAXWELL3D_REG_INDEX(vertex_array_instance_subsequent),
@@ -153,7 +172,11 @@ const std::array<u16, Maxwell3D::Regs::NUM_REGS>& LightClasses() {
               MAXWELL3D_REG_INDEX(index_buffer32_subsequent),
               MAXWELL3D_REG_INDEX(index_buffer16_subsequent),
               MAXWELL3D_REG_INDEX(index_buffer8_subsequent)}) {
-            classes[method] = LightChange::Command;
+            classes[method] = light_loop ? LightChange::DrawParams : LightChange::Command;
+        }
+        if (light_loop) {
+            classes[MAXWELL3D_REG_INDEX(inline_index_2x16.count)] = LightChange::DrawParams;
+            classes[MAXWELL3D_REG_INDEX(inline_index_4x8.count)] = LightChange::DrawParams;
         }
         // EDEN_NX2_LIGHT_INDEX: render_enable.mode and clear_report_value are applied when they
         // are written (ProcessQueryCondition, ProcessCounterReset). A light draw already runs

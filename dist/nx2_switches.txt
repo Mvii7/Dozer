@@ -208,6 +208,11 @@
 # format), and render_enable.mode and clear_report_value do not end it. They are applied when
 # written. =0 makes an index format change, or either of those writes, take the full setup.
 #EDEN_NX2_LIGHT_INDEX=0
+# LIGHT_LOOP (on): index_buffer8/16/32 first and subsequent, and one instance of
+# vertex_array_instance_first/subsequent, stay on the light path. The draw call records the
+# current first, count and base instance. Inline index draws still take the full setup.
+# =0 makes those methods take the full setup.
+#EDEN_NX2_LIGHT_LOOP=0
 #EDEN_NX2_LIGHT_UNIFORM=0
 #EDEN_NX2_LIGHT_UNIFORM_VALUES=0
 #EDEN_NX2_LIGHT_STORAGE=0
