@@ -275,31 +275,6 @@ bool LightDrawShape(const Tegra::Engines::Maxwell3D::DrawManager::State& draw_st
            (!is_indexed || draw_state.index_buffer.format != Maxwell::IndexFormat::UnsignedByte);
 }
 
-// EDEN_NX2_LIGHT_LOOP (on): one instance of vertex_array_instance_* may take the light path.
-bool LightLoopEnabled() {
-    static const bool enabled = [] {
-        const char* value = std::getenv("EDEN_NX2_LIGHT_LOOP");
-        return value == nullptr || value[0] != '0';
-    }();
-    return enabled;
-}
-
-// A light draw records the current draw parameters. A general draw qualifies, and so does one
-// instance of vertex_array_instance_* (EDEN_NX2_LIGHT_LOOP): that call draws a single instance
-// at base_instance. Inline indexes do not, because they are not the bound index buffer.
-bool LightShapeOk(const Tegra::Engines::Maxwell3D::DrawManager::State& draw_state,
-                  u32 instance_count, bool is_indexed) {
-    using DrawMode = Tegra::Engines::Maxwell3D::DrawManager::DrawMode;
-    if (instance_count != 1 || !draw_state.inline_index_draw_indexes.empty() ||
-        !LightDrawShape(draw_state, is_indexed)) {
-        return false;
-    }
-    if (draw_state.draw_mode == DrawMode::General) {
-        return true;
-    }
-    return LightLoopEnabled() && draw_state.draw_mode == DrawMode::Instance;
-}
-
 // Back stages, cut c: the fence calls B runs in a join (nx2_stage_split.h), with this fence
 // manager's async check.
 using VideoCommon::Nx2Stages::FenceCall;
@@ -1468,9 +1443,13 @@ void RasterizerVulkan::Draw(bool is_indexed, u32 instance_count) {
     }
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::Draw};
     {
-        // Light draws record this call's parameters: one instance, no inline indices.
+        // Light draws are plain: one instance, no instancing loop, no inline indices.
         const auto& draw_state = maxwell3d->draw_manager.draw_state;
-        BeginLightDraw(false, LightShapeOk(draw_state, instance_count, is_indexed));
+        BeginLightDraw(false, instance_count == 1 &&
+                                  draw_state.draw_mode ==
+                                      Tegra::Engines::Maxwell3D::DrawManager::DrawMode::General &&
+                                  draw_state.inline_index_draw_indexes.empty() &&
+                                  LightDrawShape(draw_state, is_indexed));
     }
     TraceWindowTarget(*maxwell3d, *gpu_memory, is_indexed ? "draw-indexed" : "draw",
                       is_indexed ? maxwell3d->draw_manager.draw_state.index_buffer.count
@@ -4902,7 +4881,10 @@ void RasterizerVulkan::DrawB(bool is_indexed, u32 instance_count) {
     Tegra::Engines::Maxwell3D& mb = EngineB();
     // B's replica holds the draw's side state (the proxy's event record).
     const auto& draw_state = mb.draw_manager.draw_state;
-    const bool shape_ok = LightShapeOk(draw_state, instance_count, is_indexed);
+    const bool shape_ok =
+        instance_count == 1 &&
+        draw_state.draw_mode == Tegra::Engines::Maxwell3D::DrawManager::DrawMode::General &&
+        draw_state.inline_index_draw_indexes.empty() && LightDrawShape(draw_state, is_indexed);
     const DrawParams draw_params{MakeDrawParams(draw_state, instance_count, is_indexed)};
     StageDrawParams params{};
     params.command = StageCommand::Direct;
