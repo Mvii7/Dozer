@@ -255,23 +255,28 @@ void TextureCache<P>::RunGarbageCollector() {
     bool aggressive_mode = false;
     u64 ticks_to_destroy = 0;
     size_t num_iterations = 0;
-    // Costly (ASTC) images are normally kept until the critical line, so a course's textures pile
-    // up and are cleared in one burst when the next course loads. Past the expected line the ones
-    // unused for EDEN_NX2_TC_STALE_COSTLY frames (default 600, 0 = off) go a few per frame.
+    // Costly (ASTC) images are normally kept until the critical line. Past the expected line the
+    // ones unused for EDEN_NX2_TC_STALE_COSTLY frames (default 150, 0 = off) go a few per frame,
+    // including after the critical line. A gigabyte past the expected line that grace is 90
+    // frames: 150 never fired during a Mario Kart World race, and 50 recreated textures.
     static const u64 stale_costly_ticks = [] {
         const char* value = std::getenv("EDEN_NX2_TC_STALE_COSTLY");
-        return value != nullptr ? std::strtoull(value, nullptr, 10) : 600ULL;
+        return value != nullptr ? std::strtoull(value, nullptr, 10) : 150ULL;
     }();
     bool allow_costly = false;
     bool gc_deleted_any = false;
     // Evicting a GPU-modified image downloads it and waits for the GPU: a few per frame at most.
     size_t downloads_left = 1;
     // EDEN_NX2_TC_GC_BUDGET_US: a pass stops after this long (default 1500, 0 = no limit), so a
-    // burst of evictions is spread over frames; ignored once memory is 1 GiB over the critical line.
+    // burst of evictions is spread over frames. A gigabyte past the critical line the limit is
+    // four times that, so memory still comes back quickly. It used to be no limit there, and one
+    // frame then deleted thousands of images.
     static const u64 budget_us = [] {
         const char* value = std::getenv("EDEN_NX2_TC_GC_BUDGET_US");
         return value != nullptr ? std::strtoull(value, nullptr, 10) : 1500ULL;
     }();
+    const u64 pass_budget_us =
+        total_used_memory >= critical_memory + 1_GiB ? budget_us * 4 : budget_us;
     const auto start_time = std::chrono::steady_clock::now();
     defer_view_removal = true;
     const auto Configure = [&](bool allow_aggressive) {
@@ -295,16 +300,23 @@ void TextureCache<P>::RunGarbageCollector() {
         }
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
-    const auto Cleanup = [this, &num_iterations, &high_priority_mode, &aggressive_mode,
-                          &allow_costly, &downloads_left, &start_time, &gc_deleted_any](ImageId image_id) {
-        if (num_iterations == 0) {
+    // A skipped image used to take one of the 10-40 delete slots. Old GPU-modified images sit at
+    // the front of the list and are kept until the heap itself is short, so the walk stopped on
+    // them and the textures behind them stayed for the whole race. Slots count deletes only.
+    // Each pass gets its own looks: the first pass skips costly images, and sharing the cap
+    // used those looks up before the pass that is allowed to delete them.
+    size_t examined = 0;
+    const auto Cleanup = [this, &num_iterations, &examined, &high_priority_mode, &aggressive_mode,
+                          &allow_costly, &downloads_left, &start_time, &gc_deleted_any,
+                          pass_budget_us](ImageId image_id) {
+        if (num_iterations == 0 || examined >= 512) {
             return true;
         }
-        if (budget_us != 0 && total_used_memory < critical_memory + 1_GiB &&
-            std::chrono::steady_clock::now() - start_time > std::chrono::microseconds{budget_us}) {
+        if (pass_budget_us != 0 && std::chrono::steady_clock::now() - start_time >
+                                       std::chrono::microseconds{pass_budget_us}) {
             return true;
         }
-        --num_iterations;
+        ++examined;
         auto& image = slot_images[image_id];
         if (True(image.flags & ImageFlagBits::IsDecoding)) {
             return false;
@@ -319,6 +331,7 @@ void TextureCache<P>::RunGarbageCollector() {
             (must_download && downloads_left == 0)) {
             return false;
         }
+        --num_iterations;
         if (must_download) {
             --downloads_left;
             auto map = runtime.DownloadStagingBuffer(image.unswizzled_size_bytes);
@@ -345,20 +358,30 @@ void TextureCache<P>::RunGarbageCollector() {
         return false;
     };
     Configure(false);
+    examined = 0;
     if (frame_tick >= ticks_to_destroy) {
         lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
     }
+    // Above the critical line this used to be skipped, so images that had already gone stale
+    // waited for the age-10 wipe. That wipe deleted 4851 costly images in one frame.
+    if (stale_costly_ticks != 0 && total_used_memory >= expected_memory) {
+        const bool piled = total_used_memory >= expected_memory + 1_GiB;
+        const u64 grace = piled ? (std::min)(stale_costly_ticks, 90ULL) : stale_costly_ticks;
+        if (frame_tick > grace) {
+            Configure(false);
+            allow_costly = true;
+            num_iterations = piled ? 32 : 16;
+            examined = 0;
+            lru_cache.ForEachItemBelow(frame_tick - grace, Cleanup);
+        }
+    }
     if (total_used_memory >= critical_memory) {
         Configure(true);
+        allow_costly = false;
+        examined = 0;
         if (frame_tick >= ticks_to_destroy) {
             lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, Cleanup);
         }
-    } else if (stale_costly_ticks != 0 && total_used_memory >= expected_memory &&
-               frame_tick > stale_costly_ticks) {
-        Configure(false);
-        allow_costly = true;
-        num_iterations = 10;
-        lru_cache.ForEachItemBelow(frame_tick - stale_costly_ticks, Cleanup);
     }
     defer_view_removal = false;
     if (gc_deleted_any) {
@@ -440,6 +463,13 @@ void TextureCache<P>::TickFrame() {
                     const u64 reserve = (std::max)(memory_slack_estimate, budget / 8);
                     critical_memory = (std::max)(budget - margin - reserve, budget / 2);
                     expected_memory = (std::max)(critical_memory - 2 * margin, budget / 3);
+                    // A 16 GB card leaves this line near 10 GB, and the critical line near 12 GB.
+                    // Mario Kart World then keeps every image touched in the last 150 frames until
+                    // that higher line, and one frame of the race deletes thousands of costly ones.
+                    // Hold the expected line at 5/8 of the budget (about 9 GB there) so those
+                    // images leave steadily first. A gigabyte past it their grace is 90 frames.
+                    // EDEN_NX2_TC_EXPECTED_MIB still overrides.
+                    expected_memory = (std::min)(expected_memory, budget / 8 * 5);
                     // Recently used images stay while the heap itself (usage plus the block slack
                     // measured now, uncapped) is a margin under the budget: the heavy part of a
                     // Mario Kart World race sits at the critical line, where the collector deleted
