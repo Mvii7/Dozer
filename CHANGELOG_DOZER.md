@@ -6,14 +6,18 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Dozer 0.2.1 (`v0.2.1`)
+## Unreleased (Dozer)
 
 - Switch 2 video: a movie's compressed frames are accepted only until 24 are waiting; further
-  packets get nn::codec's busy result and the game sends them again when the decoder has room.
+  packets get nn::codec's busy result and the game sends them again when the decoder has room
+  (the submission-ready event still stops at 8 waiting, as before).
   Taking the whole opening at once left the decoder behind the audio clock for the first moments
   of Mario Kart World's VP9 intro (the picture stuttered, then ran evenly once frames arrived as
   they were shown). End of stream is still taken, and a packet answered busy is kept so a client
   that does not resend it does not lose a VP9 reference.
+
+## Dozer 0.2.1 (`v0.2.1`)
+
 - GPU thread split: a Switch 2 GPU map, and a new sparse region, is applied before the front
   parses the command lists submitted after it. Before, those lists could be read through the page
   table while the map, or an unmap queued ahead of it, had not run, so the uploaded data stayed

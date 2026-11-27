@@ -33,14 +33,16 @@ TEST_CASE("Nx2 video input queue takes packets up to the busy watermark", "[core
     Service::Nx2VideoInputQueue queue;
     for (u64 index = 0; index < queue.RefuseAt; ++index) {
         REQUIRE(queue.Submit(Input{{static_cast<u8>(index)}, index * 16667, false}));
-        REQUIRE(queue.HasRoom() == (index + 1 < queue.RefuseAt));
+        REQUIRE(queue.HasRoom() == (index + 1 < queue.RoomBelow));
+        REQUIRE(queue.Full() == (index + 1 >= queue.RefuseAt));
     }
     REQUIRE(queue.Full());
     REQUIRE_FALSE(queue.Submit(Input{{0xAB}, queue.RefuseAt * 16667, false}));
     REQUIRE(queue.Size() == queue.RefuseAt);
 
     REQUIRE(queue.Pop().pts == 0);
-    REQUIRE(queue.HasRoom());
+    REQUIRE_FALSE(queue.Full());
+    REQUIRE_FALSE(queue.HasRoom());
     REQUIRE(queue.Submit(Input{{0xAB}, queue.RefuseAt * 16667, false}));
     REQUIRE(queue.Size() == queue.RefuseAt);
 }

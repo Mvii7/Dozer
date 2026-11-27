@@ -27,6 +27,8 @@ public:
         bool end;
     };
 
+    /// The submission-ready event stops below this many packets, as before the cap.
+    static constexpr size_t RoomBelow = 8;
     /// Submit answers busy from this many packets on. End of stream is still taken.
     static constexpr size_t RefuseAt = 24;
 
@@ -69,7 +71,7 @@ public:
     }
 
     bool HasRoom() const {
-        return !Full();
+        return inputs.size() < RoomBelow;
     }
 
     bool Full() const {
