@@ -2118,16 +2118,23 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code) {
                  (u64{insn.Bits(74, 2)} << 47) | (u64{insn.Bits(71, 1)} << 49));
             break;
         }
-        case 0x234: { // HSETP2 with a register B (32-39): as 0x434, B's swizzle 60-61, abs 62, neg 63.
+        case 0x234: case 0x634: { // HSETP2 with a register B (32-39) or constant buffer B (0x634,
+            // read into R250): as 0x434, B's swizzle 60-61, abs 62, neg 63.
             // EDEN_NX2_HSETP2_REG=0 rejects it as before.
             static const bool lower_register = [] {
                 const char* const value = std::getenv("EDEN_NX2_HSETP2_REG");
                 return value == nullptr || value[0] != '0';
             }();
             if (!lower_register) return fail(index, "unsupported native opcode");
-            if (insn.Bits(40, 20) || insn.Bits(64, 5) || insn.Bits(69, 2) == 3 || insn.Bits(91, 1))
+            const bool constant = opcode == 0x634;
+            if ((!constant && insn.Bits(40, 20)) || insn.Bits(64, 5) || insn.Bits(69, 2) == 3 ||
+                insn.Bits(91, 1))
                 return fail(index, "native half comparison mode");
-            const auto b = half_source(1);
+            auto b = half_source(1);
+            if (constant) {
+                b = {materialize(2, 255, 250, false, false), insn.Bits(60, 2),
+                     insn.Bits(62, 1) != 0, insn.Bits(63, 1) != 0};
+            }
             emit(0x5d20000000000000ULL | predicate | insn.Bits(84, 3) | (u64{insn.Bits(81, 3)} << 3) |
                  (u64{insn.Bits(80, 1)} << 6) | (u64{insn.Bits(24, 8)} << 8) | (u64{b.reg} << 20) |
                  (u64{b.swizzle} << 28) | (u64{b.absolute} << 30) | (u64{b.negate} << 31) |
