@@ -560,6 +560,9 @@
 #EDEN_NX2_INDIRECT_DIAG=1
 #EDEN_NX2_FRONT_DIAG=0
 #EDEN_NX2_FRONT_DIAG_REGS=0
+# MACRO_DUMP=<n>: log the code of the macros called most and <n> of their calls (parameters, data
+# RAM, every write), for writing hand-made versions of them. Logging only.
+#EDEN_NX2_MACRO_DUMP=16
 #EDEN_NX2_PROFILE_FINE=0
 #EDEN_NX2_PROFILE_LEAN=1
 #EDEN_NX2_PROFILE_TSC=0

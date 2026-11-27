@@ -27,6 +27,7 @@
 #include "video_core/nx2.h"
 #include "video_core/nx2_front_diag_hooks.h"
 #include "video_core/nx2_front_same.h"
+#include "video_core/nx2_macro_dump.h"
 #include "video_core/nx2_indirect_diag.h"
 #include "video_core/nx2_mode_diag.h"
 #include "video_core/nx2_profile.h"
@@ -2140,6 +2141,10 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
             jit = engine.native_jit.get();
         }
         jit->Prepare(engine.native_code, engine.native_code_generation);
+        if (VideoCommon::Nx2MacroDump::On()) [[unlikely]] {
+            VideoCommon::Nx2MacroDump::Get().Note(engine.native_code, engine.native_code_generation,
+                                                  start, fs.parameters, native_data_ram, fs.regs);
+        }
         // The macro reads its parameters in place; MME_DMA_READ_FIFOED appends to them
         // (FrontDmaRead), the JIT reloading them after such a write.
         const size_t parameter_count = fs.parameters.size();

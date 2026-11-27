@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_MACRO_DUMP=<n>` (diagnostics, off): logs the code of the macros the split front calls
+  most and `<n>` of their calls (parameters, data RAM reads and writes, every register write,
+  marked where it changes the register), and per macro how many of its writes change a register.
+  Each logged call runs again on a copy of the data RAM; the real call is unchanged.
 - GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
   cores, the split back, and with the back stages the front, each take a physical core, and the
   other threads stay off those cores. They were sharing a core with the game. The Safe launcher
