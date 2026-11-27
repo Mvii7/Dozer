@@ -2114,6 +2114,11 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
     const u32 start = positions[((method - MacroRegistersStart) >> 1) % positions.size()];
     namespace Diag = VideoCommon::Nx2FrontDiag;
     const bool diag = Diag::On();
+    // EDEN_NX2_MACRO_DUMP: before the C++ macros below take theirs.
+    if (VideoCommon::Nx2MacroDump::On() && fs.indirect_record == 0) [[unlikely]] {
+        VideoCommon::Nx2MacroDump::Get().Note(engine.native_code, engine.native_code_generation,
+                                              start, fs.parameters, native_data_ram, fs.regs);
+    }
     // EDEN_NX2_HLE_DIRECT=1: NVN's direct draw macros in C++, without the JIT's setup around
     // them. A write that changes nothing is dropped as FrontWrite would drop it, where the JIT's
     // same value filter would be armed; a call the C++ does not cover goes on below.
@@ -2149,18 +2154,21 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
                 };
                 const auto result = Direct::Run(kind, fs.parameters, native_data_ram, emit);
                 if (profile) [[unlikely]] {
-                    if (fs.lean) {
-                        fs.lean_counts.writes += dropped;
-                        fs.lean_counts.same += dropped;
-                    } else if (dropped != 0) {
-                        Profile::Add(Profile::Counter::MethodWrites, dropped);
-                        Profile::Add(Profile::Counter::SameValueWrites, dropped);
-                    }
                     Profile::Add(result.success ? Profile::Counter::HleDirectCalls
                                                 : Profile::Counter::HleDirectDeclined,
                                  1);
-                    if (fs.same.mode != 0) {
-                        Diag::NoteSameCall(fs.same.mode, why, dropped, 0, 0);
+                    // A declined call is counted where the JIT runs it.
+                    if (result.success) {
+                        if (fs.lean) {
+                            fs.lean_counts.writes += dropped;
+                            fs.lean_counts.same += dropped;
+                        } else if (dropped != 0) {
+                            Profile::Add(Profile::Counter::MethodWrites, dropped);
+                            Profile::Add(Profile::Counter::SameValueWrites, dropped);
+                        }
+                        if (fs.same.mode != 0) {
+                            Diag::NoteSameCall(fs.same.mode, why, dropped, 0, 0);
+                        }
                     }
                 }
                 if (diag && result.success) [[unlikely]] {
@@ -2259,10 +2267,6 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
                 fs.direct_verifier->Check(direct, engine.native_code, start, fs.parameters,
                                           native_data_ram);
             }
-        }
-        if (VideoCommon::Nx2MacroDump::On()) [[unlikely]] {
-            VideoCommon::Nx2MacroDump::Get().Note(engine.native_code, engine.native_code_generation,
-                                                  start, fs.parameters, native_data_ram, fs.regs);
         }
         // The macro reads its parameters in place; MME_DMA_READ_FIFOED appends to them
         // (FrontDmaRead), the JIT reloading them after such a write.
