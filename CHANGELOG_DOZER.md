@@ -18,6 +18,11 @@ and `=0` brings back the 2.0.0 code path.
   its limit as a Vulkan version, which overflowed above every NVIDIA driver, so the extension was
   always off and the vertex layout stayed in the graphics pipeline key. Pipelines are built again
   once, since their keys change.
+- Cache invalidation: a write that did not start on a 32-byte boundary is recorded through its
+  aligned end. The size was measured before the start was pulled down, so the range ended short
+  by that offset. Page invalidation still covered the tail, but `EDEN_NX2_UBO_KEEP` compares
+  these ranges byte by byte and could bind the previous contents of a uniform buffer whose only
+  change was in it.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 
