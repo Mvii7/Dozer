@@ -2115,8 +2115,8 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
     namespace Diag = VideoCommon::Nx2FrontDiag;
     const bool diag = Diag::On();
     // EDEN_NX2_HLE_DIRECT=1: NVN's direct draw macros in C++, without the JIT's setup around
-    // them. A write that changes nothing is dropped as FrontWrite would drop it (the filter's
-    // rule), unless the profile notes every write; a call the C++ does not cover goes on below.
+    // them. A write that changes nothing is dropped as FrontWrite would drop it, where the JIT's
+    // same value filter would be armed; a call the C++ does not cover goes on below.
     if (fs.hle_direct == 1 && fs.indirect_record == 0 && fs.same.mode != 2 &&
         fs.control != Regs::ShadowRamControl::Replay) {
         namespace Direct = VideoCommon::Nx2HleDirect;
@@ -2128,7 +2128,12 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
             const bool ran = [&] {
                 Profile::Scope profile_scope{Profile::Zone::Macro, !fs.lean && profile};
                 const Diag::Timer diag_timer = diag ? Diag::MacroBegin(start) : Diag::Timer{};
-                const bool drop = fs.skip_same && (fs.lean || !profile);
+                // Dropped where the JIT's filter is armed (nx2_front_same.h's Why).
+                namespace Same = VideoCommon::Nx2FrontSame;
+                const Same::Disarm why =
+                    Same::Why(fs.skip_same, static_cast<u32>(fs.control), false,
+                              diag && fs.diag_regs, profile && !fs.lean, fs.gap_methods);
+                const bool drop = why == Same::Disarm::None;
                 const bool tracked = fs.control == Regs::ShadowRamControl::Track ||
                                      fs.control == Regs::ShadowRamControl::TrackWithFilter;
                 u32 emits = 0;
@@ -2154,6 +2159,9 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
                     Profile::Add(result.success ? Profile::Counter::HleDirectCalls
                                                 : Profile::Counter::HleDirectDeclined,
                                  1);
+                    if (fs.same.mode != 0) {
+                        Diag::NoteSameCall(fs.same.mode, why, dropped, 0, 0);
+                    }
                 }
                 if (diag && result.success) [[unlikely]] {
                     Diag::MacroEnd(diag_timer, start, true, emits, 0);
