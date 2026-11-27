@@ -38,16 +38,6 @@ public:
     }
 
     template <typename F>
-    void ForEach(F&& f) const {
-        for (auto [address, size] : buffer) {
-            f(address, size);
-        }
-        if (start_address > 0) {
-            f(start_address, accumulated_size);
-        }
-    }
-
-    template <typename F>
     [[nodiscard]] bool InvalidateAll(F&& f) noexcept {
         if (start_address > 0) {
             for (auto [address, size] : buffer)

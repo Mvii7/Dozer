@@ -17,10 +17,12 @@ and `=0` brings back the 2.0.0 code path.
   device range is translated once and copied into. The caches hear the merged range at the next
   draw, and the texture cache is left alone when that range holds no image. Each write used to
   walk the page table and queue its own range.
-- Draw merge (`EDEN_NX2_DRAW_MERGE=0` is the old path): a run of indexed draws that share a
-  pipeline, geometry and fixed function state is one instanced draw. When the draws differ only
-  in one plain constant buffer of at most 256 bytes, that buffer is packed and the shaders read
-  it by instance index. A run that differs in nothing else is instanced as it stands.
+- Draw merge (`EDEN_NX2_DRAW_MERGE=0` is the old path; needs the light draws, which are on): an
+  indexed draw that repeats the one recorded just before it, with nothing recorded in between and
+  no state, texture pool or memory change but constant buffer data, becomes another instance of
+  that draw. When only one constant buffer of at most 256 bytes that only the vertex shader reads
+  differs, its bytes are packed and a variant of the vertex shader reads them by instance index.
+  The GPU profile counts merged draws.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 

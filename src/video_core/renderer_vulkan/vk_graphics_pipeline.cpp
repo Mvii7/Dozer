@@ -1992,53 +1992,15 @@ bool GraphicsPipeline::HasPipeline() const noexcept {
     return static_cast<bool>(pipeline);
 }
 
-bool GraphicsPipeline::DrawInstancedWithDescriptors(std::span<const DescriptorUpdateEntry> entries,
-                                                    u32 index_count, u32 instance_count,
-                                                    u32 first_index, u32 vertex_offset) {
-    if (!pipeline || entries.size() != num_descriptor_entries) {
-        return false;
-    }
-    std::vector<DescriptorUpdateEntry> payload(entries.begin(), entries.end());
-    VkDeviceSize descriptor_buffer_offset{};
-    u32 descriptor_buffer_chunk{};
-    if (descriptor_set_layout && uses_descriptor_buffer &&
-        !PrepareDescriptorBuffer(payload.data(), descriptor_buffer_offset, descriptor_buffer_chunk)) {
-        return false;
-    }
-    const bool bind_descriptor_buffer =
-        uses_descriptor_buffer && scheduler.UpdateDescriptorBufferChunk(descriptor_buffer_chunk);
-    scheduler.Record([this, payload = std::move(payload), descriptor_buffer_offset,
-                      descriptor_buffer_chunk, bind_descriptor_buffer, index_count, instance_count,
-                      first_index, vertex_offset](vk::CommandBuffer cmdbuf) {
-        if (!pipeline) {
-            return;
-        }
-        if (bind_descriptor_buffer) {
-            const VkDescriptorBufferBindingInfoEXT binding_info{
-                descriptor_buffer_ring.BindingInfo(descriptor_buffer_chunk)};
-            cmdbuf.BindDescriptorBuffersEXT(binding_info);
-        }
+void GraphicsPipeline::RecordMergedBind(std::vector<DescriptorUpdateEntry> entries) {
+    // Push descriptors and push constants stay valid across the bind: the layout is defined
+    // as the one of the pipeline these shaders were built for.
+    scheduler.UpdateGraphicsPipeline(this);
+    scheduler.Record([this, entries = std::move(entries)](vk::CommandBuffer cmdbuf) {
         cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, *pipeline);
-        if (descriptor_set_layout) {
-            if (uses_descriptor_buffer) {
-                const u32 buffer_index{};
-                cmdbuf.SetDescriptorBufferOffsetsEXT(VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                     *pipeline_layout, 0, buffer_index,
-                                                     descriptor_buffer_offset);
-            } else if (uses_push_descriptor) {
-                cmdbuf.PushDescriptorSetWithTemplateKHR(*descriptor_update_template,
-                                                        *pipeline_layout, 0, payload.data());
-            } else {
-                const VkDescriptorSet descriptor_set{descriptor_allocator.Commit()};
-                device.GetLogical().UpdateDescriptorSet(descriptor_set, *descriptor_update_template,
-                                                        payload.data());
-                cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS, *pipeline_layout, 0,
-                                          descriptor_set, nullptr);
-            }
-        }
-        cmdbuf.DrawIndexed(index_count, instance_count, first_index, vertex_offset, 0);
+        cmdbuf.PushDescriptorSetWithTemplateKHR(*descriptor_update_template, *pipeline_layout, 0,
+                                                entries.data());
     });
-    return true;
 }
 
 bool GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,

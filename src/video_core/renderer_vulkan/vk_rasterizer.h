@@ -638,20 +638,26 @@ private:
     /// packet's binds may be in an older command buffer. Written by B with C parked.
     bool geometry_replayed_c{};
 
+    /// EDEN_NX2_DRAW_MERGE: a run of indexed draws added as instances to the first one (the
+    /// anchor) while it is the last command recorded (Scheduler::MergeDrawTail).
     struct DrawMergeState {
         bool armed{};
-        bool variant{};
+        bool variant{};     ///< One constant buffer packed per instance, read by merged_pipeline
+        bool full_anchor{}; ///< The anchor was set up in full (its pipeline holds its payload)
         GraphicsPipeline* pipeline{};
         GraphicsPipeline* merged_pipeline{};
-        GraphicsPipelineCacheKey key{};
+        Tegra::Engines::Maxwell3D* maxwell3d{};
+        Tegra::MemoryManager* gpu_memory{};
+        u64 epoch{}; ///< light_epoch when the anchor was recorded
         u32 count{};
+        u32 max_count{};
         u32 cbuf{0xffffffffu};
         u32 stride{};
-        u32 base_instance{};
+        u8* pack{}; ///< Mapped upload memory, stride bytes per instance
         u32 num_vertices{};
         u32 base_vertex{};
         u32 first_index{};
-        bool is_indexed{};
+        u32 base_index{};
         Tegra::Engines::Maxwell3D::Regs::PrimitiveTopology topology{};
         Tegra::Engines::Maxwell3D::Regs::IndexFormat index_format{};
         GPUVAddr index_address{};
@@ -662,24 +668,28 @@ private:
         std::array<u8, Tegra::Engines::Maxwell3D::Regs::NumVertexArrays> vertex_enable{};
         struct Cbuf {
             bool used{};
-            bool packable{};
+            bool packable{}; ///< At most 256 bytes, read as plain data (no handles, addresses)
             GPUVAddr address{};
             u32 used_size{};
             u32 buffer_size{};
-            u64 hash{};
-            std::array<u8, 256> bytes{};
+            std::array<u8, 256> bytes{}; ///< The anchor's, when packable
         };
         std::array<Cbuf, Tegra::Engines::Maxwell3D::Regs::MaxConstBuffers> cbufs{};
-        std::vector<u8> pack;
-        std::vector<BufferCacheRuntime::CapturedUniform> captures;
     };
+    static constexpr u32 MaxPlainMerge = 256;
+    static constexpr u32 MaxVariantMerge = 128;
     DrawMergeState draw_merge;
+    std::vector<BufferCacheRuntime::CapturedUniform> draw_merge_captures;
+    GraphicsPipeline* draw_merge_pipeline{}; ///< What PrepareDraw's full setup draws with
     bool draw_merge_from_light{};
 
     [[nodiscard]] bool DrawMergeEnabled() const;
+    /// Records the draw as a run's anchor; false: not one, the caller records it.
+    [[nodiscard]] bool BeginDrawMerge(bool is_indexed, u32 instance_count, u32 num_vertices,
+                                      u32 first_index, u32 base_vertex);
     [[nodiscard]] bool ContinueDrawMerge(bool is_indexed, u32 instance_count);
-    void FinishDrawMerge();
-    [[nodiscard]] bool DeferDrawMerge(u32 instance_count);
+    [[nodiscard]] bool StartDrawMergeVariant(u32 which, std::span<const u8> now);
+    void EndDrawMerge();
 };
 
 } // namespace Vulkan

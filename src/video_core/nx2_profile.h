@@ -434,6 +434,9 @@ enum class Counter : u32 {
     StreamMarks,          ///< Vertex streams MarkVertexStreamsUsed saw
     StreamMarksStamped,   ///< Of them: tracked before, only stamped (the range and its buffer's
                           ///< usage generation unchanged)
+    // EDEN_NX2_DRAW_MERGE:
+    MergedDraws,        ///< Draws added as instances to the draw before them
+    MergedVariantDraws, ///< Of them: with one constant buffer read by instance index
     Count,
 };
 
@@ -726,6 +729,11 @@ inline void Report(const char* thread_name = "GPU thread") {
                                 counter(Counter::LightStorageFellBack),
                                 TopValues(histograms[static_cast<size_t>(Histogram::LightStorageFirst)],
                                           method, 6));
+        }
+        if (data.counters[static_cast<size_t>(Counter::MergedDraws)] != 0) {
+            line += fmt::format(" | merged draws {:.0f} ({:.0f} by instance index)",
+                                counter(Counter::MergedDraws),
+                                counter(Counter::MergedVariantDraws));
         }
         line += fmt::format(" | constant buffer writes of held bytes skipped {:.0f} (invalidated "
                             "later {:.0f}), made {:.0f}, not counted (pages written around the "

@@ -121,16 +121,10 @@ public:
     /// texture_cache_locked: the caller holds texture_cache.mutex.
     [[nodiscard]] GraphicsPipeline* CurrentGraphicsPipeline(bool texture_cache_locked = false);
 
-    /// A pipeline for graphics_key whose shaders index constant buffer `cbuf` by the instance.
-    /// Null when the shaders cannot be built. GPU thread only.
-    [[nodiscard]] GraphicsPipeline* InstanceMergedPipeline(u32 cbuf, u32 stride);
-
-    /// Refreshes the current graphics key and reports whether it is still `saved`.
-    [[nodiscard]] bool MatchesKey(const GraphicsPipelineCacheKey& saved);
-
-    [[nodiscard]] GraphicsPipeline* Current() const noexcept {
-        return current_pipeline;
-    }
+    /// EDEN_NX2_DRAW_MERGE: a pipeline for `key` whose vertex shader reads constant buffer
+    /// `cbuf` at instance * stride. Null when it cannot be built. Built here, on the GPU thread.
+    [[nodiscard]] GraphicsPipeline* InstanceMergedPipeline(const GraphicsPipelineCacheKey& key,
+                                                           u32 cbuf, u32 stride);
 
     [[nodiscard]] ComputePipeline* CurrentComputePipeline(u64* native_key = nullptr);
 

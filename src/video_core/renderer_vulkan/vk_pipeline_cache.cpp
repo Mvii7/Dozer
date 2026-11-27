@@ -45,7 +45,6 @@
 #include "video_core/renderer_vulkan/vk_descriptor_pool.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
-#include "video_core/renderer_vulkan/vk_state_tracker.h"
 #include "video_core/renderer_vulkan/vk_shader_reuse.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/renderer_vulkan/vk_update_descriptor.h"
@@ -427,7 +426,8 @@ Shader::RuntimeInfo MakeRuntimeInfo(std::span<const Shader::IR::Program> program
     info.input_topology = key.input_topology;
     info.force_early_z = key.force_early_z;
     info.y_negate = key.y_negate;
-    if (merge_cbuf != 0xffffffffu && merge_stride != 0 &&
+    // EDEN_NX2_DRAW_MERGE: the instance index is a vertex shader input.
+    if (merge_cbuf != 0xffffffffu && merge_stride != 0 && program.stage == Shader::Stage::VertexB &&
         (program.info.constant_buffer_mask & (1u << merge_cbuf)) != 0) {
         info.instance_cbuf_index = merge_cbuf;
         info.instance_cbuf_stride = merge_stride;
@@ -1593,9 +1593,10 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline() {
     return pipeline;
 }
 
-GraphicsPipeline* PipelineCache::InstanceMergedPipeline(u32 cbuf, u32 stride) {
+GraphicsPipeline* PipelineCache::InstanceMergedPipeline(const GraphicsPipelineCacheKey& key, u32 cbuf,
+                                                        u32 stride) try {
     for (const InstanceMerge& slot : instance_merges) {
-        if (slot.cbuf == cbuf && slot.stride == stride && slot.key == graphics_key) {
+        if (slot.cbuf == cbuf && slot.stride == stride && slot.key == key) {
             return slot.pipeline && slot.pipeline->HasPipeline() ? slot.pipeline.get() : nullptr;
         }
     }
@@ -1606,43 +1607,26 @@ GraphicsPipeline* PipelineCache::InstanceMergedPipeline(u32 cbuf, u32 stride) {
         merge_stride = 0;
     };
     GraphicsEnvironments environments;
-    GetGraphicsEnvironments(environments, graphics_key.unique_hashes);
+    GetGraphicsEnvironments(environments, key.unique_hashes);
     main_pools.ReleaseContents();
-    const ShaderTranslationKey translation_key{MakeShaderTranslationKey(graphics_key, device)};
+    const ShaderTranslationKey translation_key{MakeShaderTranslationKey(key, device)};
     const std::shared_ptr<ReusableShaders> shaders{BuildGraphicsShaders(
-        main_pools, translation_key, environments.Span(), graphics_key.Hash())};
+        main_pools, translation_key, environments.Span(), key.Hash())};
     if (!shaders) {
-        instance_merges.push_back({graphics_key, cbuf, stride, nullptr});
+        instance_merges.push_back({key, cbuf, stride, nullptr});
         return nullptr;
     }
     auto pipeline{std::make_unique<GraphicsPipeline>(
         scheduler, buffer_cache, texture_cache, vulkan_pipeline_cache, &shader_notify, device,
         descriptor_pool, guest_descriptor_queue, descriptor_buffer_ring, nullptr, nullptr,
-        render_pass_cache, graphics_key, shaders->modules, shaders->InfoPointers())};
+        render_pass_cache, key, shaders->modules, shaders->InfoPointers())};
     GraphicsPipeline* const result{pipeline->HasPipeline() ? pipeline.get() : nullptr};
-    instance_merges.push_back({graphics_key, cbuf, stride, std::move(pipeline)});
+    instance_merges.push_back({key, cbuf, stride, std::move(pipeline)});
     return result;
-}
-
-bool PipelineCache::MatchesKey(const GraphicsPipelineCacheKey& saved) {
-    const GraphicsPipelineCacheKey previous{graphics_key};
-    if (!RefreshStages(graphics_key.unique_hashes)) {
-        graphics_key = previous;
-        maxwell3d->dirty.flags[VideoCommon::Dirty::Shaders] = true;
-        return false;
-    }
-    graphics_key.state.Refresh(*maxwell3d, dynamic_features);
-    if (graphics_key != saved) {
-        graphics_key = previous;
-        // RefreshStages and FixedPipelineState::Refresh clear these as they read them. The key
-        // was put back, so the next lookup has to read them again.
-        maxwell3d->dirty.flags[VideoCommon::Dirty::Shaders] = true;
-        maxwell3d->dirty.flags[Dirty::VertexInput] = true;
-        maxwell3d->dirty.flags[Dirty::ViewportSwizzles] = true;
-        maxwell3d->dirty.flags[Dirty::Blending] = true;
-        return false;
-    }
-    return true;
+} catch (const Shader::Exception& exception) {
+    LOG_ERROR(Render_Vulkan, "Draw merge variant: {}", exception.what());
+    instance_merges.push_back({key, cbuf, stride, nullptr});
+    return nullptr;
 }
 
 std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipelineFromReusedShaders() {

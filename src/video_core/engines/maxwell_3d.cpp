@@ -1199,6 +1199,12 @@ MAXWELL3D_FORCE_INLINE void Maxwell3D::NoteLightWrite(GPUVAddr address, u32 size
             last_size += size;
             return;
         }
+        // Words already noted (a merged draw run writes the same ones for each draw).
+        for (u32 i = 0; i < light.written_count; ++i) {
+            if (address >= written[i].first && address + size <= written[i].first + written[i].second) {
+                return;
+            }
+        }
     }
     if (light.written_count < written.size()) {
         written[light.written_count] = {address, size};

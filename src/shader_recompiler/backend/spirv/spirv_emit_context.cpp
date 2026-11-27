@@ -1572,7 +1572,7 @@ void EmitContext::DefineInputs(const IR::Program& program) {
             }
         }
     }
-    if (runtime_info.instance_cbuf_index != 0xffffffffu) {
+    if (runtime_info.instance_cbuf_index != 0xffffffffu && stage == Stage::VertexB) {
         instance_index = DefineInput(*this, U32[1], true, spv::BuiltIn::InstanceIndex);
     }
     if (loads[IR::Attribute::InstanceId]) {

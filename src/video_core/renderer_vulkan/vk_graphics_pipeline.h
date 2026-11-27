@@ -139,14 +139,18 @@ public:
 
     [[nodiscard]] bool HasPipeline() const noexcept;
 
+    [[nodiscard]] bool UsesPushDescriptor() const noexcept {
+        return descriptor_set_layout && uses_push_descriptor && !uses_descriptor_buffer;
+    }
+
+    /// The push descriptor payload of the last ConfigureDraw.
     [[nodiscard]] std::span<const DescriptorUpdateEntry> LastDescriptors() const noexcept {
         return last_descriptor_payload;
     }
 
-    /// Binds this pipeline and `entries`, then draws `instance_count` indexed instances.
-    bool DrawInstancedWithDescriptors(std::span<const DescriptorUpdateEntry> entries,
-                                      u32 index_count, u32 instance_count, u32 first_index,
-                                      u32 vertex_offset);
+    /// EDEN_NX2_DRAW_MERGE: binds this pipeline and pushes `entries` (a push descriptor
+    /// payload), as the next draw's setup.
+    void RecordMergedBind(std::vector<DescriptorUpdateEntry> entries);
     GraphicsPipeline& operator=(GraphicsPipeline&&) noexcept = delete;
     GraphicsPipeline(GraphicsPipeline&&) noexcept = delete;
 
