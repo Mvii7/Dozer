@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <iterator>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -219,8 +220,8 @@ private:
                            code[pc * 3]);
         }
         LOG_INFO(HW_GPU,
-                 "Macro dump: code of {:#x} ({} instructions, high word first, "
-                 "pc:bits95-64 bits63-32 bits31-0): {}",
+                 "Macro dump: code of {:#x} ({} instructions, pc:bits31-0 bits63-32 "
+                 "bits95-64): {}",
                  start, last - start + 1, text);
     }
 

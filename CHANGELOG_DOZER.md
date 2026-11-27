@@ -8,6 +8,12 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_HLE_DIRECT=1` (test switch, off): NVN's direct draw macros run in C++ instead of the
+  macro JIT: the index buffer and draw macro and the vertex attribute format and vertex stream
+  macros, which Donkey Kong Bananza calls ~1,000,000 times a second in its first boss fight. A
+  macro is taken when its code hashes to the version written here, at any position; writes that
+  change nothing are dropped as `EDEN_NX2_JIT_SAME` drops them. `=2` checks the C++ against the
+  macro on one call in 8 and logs differences. The profile counts the calls.
 - `EDEN_NX2_MACRO_DUMP=<n>` (diagnostics, off): logs the code of the macros the split front calls
   most and `<n>` of their calls (parameters, data RAM reads and writes, every register write,
   marked where it changes the register), and per macro how many of its writes change a register.

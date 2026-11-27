@@ -164,6 +164,10 @@
 # HLE_INDIRECT=0: run NVN's indexed indirect draw macro as it is, reading its records on the
 # CPU (default: one host indirect draw from the GPU-written records).
 #EDEN_NX2_HLE_INDIRECT=0
+# HLE_DIRECT=1: run NVN's direct draw macros (index buffer and draw, vertex attribute formats,
+# vertex streams) in C++ instead of the macro JIT. =2 checks the C++ against the macro on one call
+# in 8 (logs mismatches; the JIT still runs them all). Off by default while it is tested.
+#EDEN_NX2_HLE_DIRECT=1
 # INDIRECT_BATCH=0: one host draw per call of NVN's multi-draw macro (default: calls whose
 # records follow each other share one host draw).
 #EDEN_NX2_INDIRECT_BATCH=0
