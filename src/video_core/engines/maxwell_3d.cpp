@@ -27,6 +27,8 @@
 #include "video_core/nx2.h"
 #include "video_core/nx2_front_diag_hooks.h"
 #include "video_core/nx2_front_same.h"
+#include "video_core/nx2_hle_direct.h"
+#include "video_core/nx2_macro_dump.h"
 #include "video_core/nx2_indirect_diag.h"
 #include "video_core/nx2_mode_diag.h"
 #include "video_core/nx2_profile.h"
@@ -1442,6 +1444,35 @@ struct Maxwell3D::FrontState {
     bool hle_indirect{};
     bool front_verify{};
     bool indirect_batch{};
+    /// EDEN_NX2_HLE_DIRECT (nx2_hle_direct.h), read once: 0 off, 1 on, 2 verify. Which macro
+    /// each start is, for direct_generation's code.
+    u32 hle_direct{};
+    std::array<VideoCommon::Nx2HleDirect::Kind, 0x1000> direct_kinds{};
+    u64 direct_generation{~0ULL};
+    std::unique_ptr<VideoCommon::Nx2HleDirect::Verifier> direct_verifier;
+    /// Which of nx2_hle_direct.h's macros the one at `start` is, looked up once per generation.
+    VideoCommon::Nx2HleDirect::Kind DirectKind(std::span<const u32> code, u64 generation,
+                                               u32 start) {
+        namespace Direct = VideoCommon::Nx2HleDirect;
+        if (start >= direct_kinds.size()) [[unlikely]] {
+            return Direct::Kind::None;
+        }
+        if (direct_generation != generation) [[unlikely]] {
+            direct_kinds.fill(Direct::Kind::Unknown);
+            direct_generation = generation;
+        }
+        Direct::Kind& kind = direct_kinds[start];
+        if (kind == Direct::Kind::Unknown) [[unlikely]] {
+            kind = Direct::Identify(code, start);
+            if (kind != Direct::Kind::None) {
+                LOG_INFO(HW_GPU, "Macro at {:#x} is NVN's {} macro: {} (EDEN_NX2_HLE_DIRECT={})",
+                         start, Direct::Name(kind),
+                         hle_direct == 2 ? "checked against the macro" : "run in C++",
+                         hle_direct);
+            }
+        }
+        return kind;
+    }
     struct DecidedCheck {
         u32 key{}; ///< The macro's start + 1 (0: none; a start of ~0 is never kept)
         bool indirect{}; ///< NVN's indexed indirect draw (else not)
@@ -1775,6 +1806,7 @@ Maxwell3D::FrontState& Maxwell3D::Front(Core::System& system, VideoCommon::GpuSp
             front->hle_indirect = HleIndirectEnabled();
             front->front_verify = FrontVerifyEnabled();
             front->indirect_batch = IndirectBatchEnabled();
+            front->hle_direct = VideoCommon::Nx2HleDirect::Mode();
             bool fifo_narrowed = false;
 #ifdef ARCHITECTURE_x86_64
             if (front->macro_lean && front->front_jit) {
@@ -2082,6 +2114,89 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
     const u32 start = positions[((method - MacroRegistersStart) >> 1) % positions.size()];
     namespace Diag = VideoCommon::Nx2FrontDiag;
     const bool diag = Diag::On();
+    // EDEN_NX2_MACRO_DUMP: before the C++ macros below take theirs.
+    if (VideoCommon::Nx2MacroDump::On() && fs.indirect_record == 0) [[unlikely]] {
+        VideoCommon::Nx2MacroDump::Get().Note(engine.native_code, engine.native_code_generation,
+                                              start, fs.parameters, native_data_ram, fs.regs);
+    }
+    // EDEN_NX2_HLE_DIRECT=1: NVN's direct draw macros in C++, without the JIT's setup around
+    // them. A write that changes nothing is dropped as FrontWrite would drop it, where the JIT's
+    // same value filter would be armed; a call the C++ does not cover goes on below.
+    if (fs.hle_direct == 1 && fs.indirect_record == 0 && fs.same.mode != 2 &&
+        fs.control != Regs::ShadowRamControl::Replay) {
+        namespace Direct = VideoCommon::Nx2HleDirect;
+        const Direct::Kind kind =
+            fs.DirectKind(engine.native_code, engine.native_code_generation, start);
+        if (kind != Direct::Kind::None) {
+            namespace Profile = VideoCommon::Nx2Profile;
+            const bool profile = Profile::Enabled();
+            const bool ran = [&] {
+                Profile::Scope profile_scope{Profile::Zone::Macro, !fs.lean && profile};
+                const Diag::Timer diag_timer = diag ? Diag::MacroBegin(start) : Diag::Timer{};
+                // Dropped where the JIT's filter is armed (nx2_front_same.h's Why).
+                namespace Same = VideoCommon::Nx2FrontSame;
+                const Same::Disarm why =
+                    Same::Why(fs.skip_same, static_cast<u32>(fs.control), false,
+                              diag && fs.diag_regs, profile && !fs.lean, fs.gap_methods);
+                const bool drop = why == Same::Disarm::None;
+                const bool tracked = fs.control == Regs::ShadowRamControl::Track ||
+                                     fs.control == Regs::ShadowRamControl::TrackWithFilter;
+                u32 emits = 0;
+                u32 dropped = 0;
+                const auto emit = [&](u32 address, u32 value) {
+                    ++emits;
+                    if (drop && !execution_mask[address] && fs.regs[address] == value &&
+                        (!tracked || fs.shadow[address] == value)) {
+                        ++dropped;
+                        return;
+                    }
+                    FrontWrite(split, fs, address, value, true, true);
+                };
+                const auto result = Direct::Run(kind, fs.parameters, native_data_ram, emit);
+                if (profile) [[unlikely]] {
+                    Profile::Add(result.success ? Profile::Counter::HleDirectCalls
+                                                : Profile::Counter::HleDirectDeclined,
+                                 1);
+                    // A declined call is counted where the JIT runs it.
+                    if (result.success) {
+                        if (fs.lean) {
+                            fs.lean_counts.writes += dropped;
+                            fs.lean_counts.same += dropped;
+                        } else if (dropped != 0) {
+                            Profile::Add(Profile::Counter::MethodWrites, dropped);
+                            Profile::Add(Profile::Counter::SameValueWrites, dropped);
+                        }
+                        if (fs.same.mode != 0) {
+                            Diag::NoteSameCall(fs.same.mode, why, dropped, 0, 0);
+                        }
+                    }
+                }
+                if (diag && result.success) [[unlikely]] {
+                    Diag::MacroEnd(diag_timer, start, true, emits, 0);
+                }
+                return result.success;
+            }();
+            if (ran) {
+                fs.parameters.clear();
+                if (fs.draw_pending) {
+                    fs.draw_pending = false;
+                    split.DeferTo<VideoCommon::DeferTarget::OnA>(
+                        [this, system_ptr = &system] { FinishFrontMacro(*system_ptr); });
+                    if (diag) [[unlikely]] {
+                        Diag::NoteDeferredDraw(false, false, true);
+                    }
+                }
+                if ((fs.macro_lean ? fs.front_verify : FrontVerifyEnabled()) &&
+                    (++fs.calls & 4095) == 0) [[unlikely]] {
+                    FrontVerify(split, fs);
+                }
+                if (fs.lean) [[unlikely]] {
+                    fs.FlushLean();
+                }
+                return;
+            }
+        }
+    }
     if (fs.indirect_record != 0) {
         const GPUVAddr record = std::exchange(fs.indirect_record, GPUVAddr{0});
         if (fs.parameters.size() == 6) {
@@ -2140,6 +2255,19 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
             jit = engine.native_jit.get();
         }
         jit->Prepare(engine.native_code, engine.native_code_generation);
+        // EDEN_NX2_HLE_DIRECT=2: the C++ version checked against the macro (the JIT runs it).
+        if (fs.hle_direct == 2 && check == nullptr) [[unlikely]] {
+            namespace Direct = VideoCommon::Nx2HleDirect;
+            const Direct::Kind direct =
+                fs.DirectKind(engine.native_code, engine.native_code_generation, start);
+            if (direct != Direct::Kind::None) {
+                if (!fs.direct_verifier) {
+                    fs.direct_verifier = std::make_unique<Direct::Verifier>();
+                }
+                fs.direct_verifier->Check(direct, engine.native_code, start, fs.parameters,
+                                          native_data_ram);
+            }
+        }
         // The macro reads its parameters in place; MME_DMA_READ_FIFOED appends to them
         // (FrontDmaRead), the JIT reloading them after such a write.
         const size_t parameter_count = fs.parameters.size();

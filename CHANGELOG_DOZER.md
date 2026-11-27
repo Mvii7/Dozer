@@ -8,6 +8,17 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_HLE_DIRECT=1` (test switch, off): NVN's direct draw macros run in C++ instead of the
+  macro JIT: the index buffer and draw macro and the vertex attribute format and vertex stream
+  macros, which Donkey Kong Bananza calls ~1,000,000 times a second in its first boss fight. A
+  macro is taken when its code hashes to the version written here, at any position; they skip the
+  JIT's per-call setup, and a write that changes nothing is dropped by the rule `FrontWrite` drops
+  it by. Front diagnostics count them as HLE calls. `=2` checks the C++ against the
+  macro on one call in 8 and logs differences. The profile counts the calls.
+- `EDEN_NX2_MACRO_DUMP=<n>` (diagnostics, off): logs the code of the macros the split front calls
+  most and `<n>` of their calls (parameters, data RAM reads and writes, every register write,
+  marked where it changes the register), and per macro how many of its writes change a register.
+  Each logged call runs again on a copy of the data RAM; the real call is unchanged.
 - GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
   cores, the split back, and with the back stages the front, each take a physical core, and the
   other threads stay off those cores. They were sharing a core with the game. The Safe launcher

@@ -434,6 +434,8 @@ enum class Counter : u32 {
     StreamMarks,          ///< Vertex streams MarkVertexStreamsUsed saw
     StreamMarksStamped,   ///< Of them: tracked before, only stamped (the range and its buffer's
                           ///< usage generation unchanged)
+    HleDirectCalls,       ///< Macro calls run by their C++ version (EDEN_NX2_HLE_DIRECT=1)
+    HleDirectDeclined,    ///< Calls of those macros it left to the JIT (not a case it covers)
     Count,
 };
 
@@ -842,6 +844,11 @@ inline void Report(const char* thread_name = "GPU thread") {
                             counter(Counter::RepairsPipeline), counter(Counter::RepairsRecords),
                             counter(Counter::PresetsKept), counter(Counter::StreamMarks),
                             counter(Counter::StreamMarksStamped));
+    }
+    if (any(Counter::HleDirectCalls, Counter::HleDirectDeclined)) {
+        line += fmt::format(" | HLE direct macro calls {:.0f} ({:.0f} left to the JIT)",
+                            counter(Counter::HleDirectCalls),
+                            counter(Counter::HleDirectDeclined));
     }
     if (any(Counter::TextureBufferDraws, Counter::ConditionalRenderings)) {
         line += fmt::format(
