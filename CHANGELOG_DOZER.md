@@ -8,6 +8,21 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
+  cores, the split back, and with the back stages the front, each take a physical core, and the
+  other threads stay off those cores. They were sharing a core with the game. The Safe launcher
+  sets 0. Mario Kart World with the pack ahead was spending the whole frame on the game thread
+  while the GPU had already finished.
+- Vulkan, NVIDIA: `VK_EXT_vertex_input_dynamic_state` is used with driver 580.119.2 and
+  newer (Graphics settings, "Vertex Input Dynamic State", turns it off). The check built
+  its limit as a Vulkan version, which overflowed above every NVIDIA driver, so the extension was
+  always off and the vertex layout stayed in the graphics pipeline key. Pipelines are built again
+  once, since their keys change.
+- Cache invalidation: a write that did not start on a 32-byte boundary is recorded through its
+  aligned end. The size was measured before the start was pulled down, so the range ended short
+  by that offset. Page invalidation still covered the tail, but `EDEN_NX2_UBO_KEEP` compares
+  these ranges byte by byte and could bind the previous contents of a uniform buffer whose only
+  change was in it.
 - Switch 2 video: a movie's compressed frames are accepted only until 24 are waiting; further
   packets get nn::codec's busy result and the game sends them again when the decoder has room
   (the submission-ready event still stops at 8 waiting, as before).
