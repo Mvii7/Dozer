@@ -102,7 +102,7 @@ public:
 private:
     static constexpr u64 HotCalls = 20000;
     static constexpr u64 LogEvery = 40000;
-    static constexpr u32 MaxStarts = 8;
+    static constexpr u32 MaxStarts = 64;
 
     struct Write {
         Word method;
