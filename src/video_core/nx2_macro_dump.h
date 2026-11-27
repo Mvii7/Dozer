@@ -15,7 +15,7 @@
 #include <fmt/format.h>
 
 #include "common/common_types.h"
-#include "common/logging/log.h"
+#include "common/logging.h"
 #include "video_core/macro_turing.h"
 
 // EDEN_NX2_MACRO_DUMP=<n> (Maxwell3D's split front, FrontRunMacro): for the macros called most,
