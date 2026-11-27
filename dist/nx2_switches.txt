@@ -148,9 +148,6 @@
 #EDEN_NX2_ACQUIRE_NODRAIN_EQUAL=0
 # FRONT_RUNS=0: increasing runs of 3D state methods go to the front word by word, as before.
 #EDEN_NX2_FRONT_RUNS=0
-# FRONT_MACRO_RUNS=0: a macro call sent increasing once reaches the split front as its first word
-# and then the rest, as before (on: in one call).
-#EDEN_NX2_FRONT_MACRO_RUNS=0
 # JIT_SAME: the front's macro JIT drops state writes that would change nothing. 0 off
 # (default), 1 in the JIT (recommended), 2 verify, 3 in C++.
 #EDEN_NX2_JIT_SAME=1

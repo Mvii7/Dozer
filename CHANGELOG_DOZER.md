@@ -8,10 +8,6 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
-- Split front: a macro call sent increasing once (its start method, then its parameters) reaches
-  the front in one call instead of two: the first word no longer takes the per-word path on its
-  own. Donkey Kong Bananza sends ~1,200,000 such calls a second in its first boss fight. Same
-  words, same order. `EDEN_NX2_FRONT_MACRO_RUNS=0` sends them as before.
 - `EDEN_NX2_HLE_DIRECT=1` (test switch, off): NVN's direct draw macros run in C++ instead of the
   macro JIT: the index buffer and draw macro and the vertex attribute format and vertex stream
   macros, which Donkey Kong Bananza calls ~1,000,000 times a second in its first boss fight. A
