@@ -6,12 +6,18 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Unreleased
+## Unreleased (Dozer)
 
-- Cache invalidation: a write that did not start on a 32-byte boundary is recorded through
-  its aligned end. The size used to be measured before the start was pulled down, so the
-  range ended short by that offset. Page invalidation still covered the tail. A copy of the
-  recorded bytes, rather than of the page, kept the previous bytes there.
+- GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
+  cores, the split back, and with the back stages the front, each take a physical core, and the
+  other threads stay off those cores. They were sharing a core with the game. The Safe launcher
+  sets 0. Mario Kart World with the pack ahead was spending the whole frame on the game thread
+  while the GPU had already finished.
+- Cache invalidation: a write that did not start on a 32-byte boundary is recorded through its
+  aligned end. The size was measured before the start was pulled down, so the range ended short
+  by that offset. Page invalidation still covered the tail, but `EDEN_NX2_UBO_KEEP` compares
+  these ranges byte by byte and could bind the previous contents of a uniform buffer whose only
+  change was in it.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 
