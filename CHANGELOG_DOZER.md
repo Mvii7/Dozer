@@ -13,7 +13,7 @@ and `=0` brings back the 2.0.0 code path.
   other threads stay off those cores. They were sharing a core with the game. The Safe launcher
   sets 0. Mario Kart World with the pack ahead was spending the whole frame on the game thread
   while the GPU had already finished.
-- Vulkan, NVIDIA: `VK_EXT_vertex_input_dynamic_state` is used again with driver 580.119.2 and
+- Vulkan, NVIDIA: `VK_EXT_vertex_input_dynamic_state` is used with driver 580.119.2 and
   newer (Graphics settings, "Vertex Input Dynamic State", turns it off). The check built
   its limit as a Vulkan version, which overflowed above every NVIDIA driver, so the extension was
   always off and the vertex layout stayed in the graphics pipeline key. Pipelines are built again
