@@ -46,6 +46,7 @@ add_executable(tests
     frontend_common/nx_archive.cpp
     video_core/memory_tracker.cpp
     video_core/native_qmd.cpp
+    video_core/shader_precache.cpp
     video_core/ampere_returns.cpp
     video_core/nx2_present.cpp
     video_core/ampere_branch_flag.cpp

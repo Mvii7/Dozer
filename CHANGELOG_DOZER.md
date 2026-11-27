@@ -8,6 +8,20 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Precompile All Shaders, per game (game list context menu, Vulkan). Turning it on reads the
+  player's own game file and keys, extracts every NVN2 compute program from its shader containers
+  (BFSHA, BNSH, SARC, CGSB, SHN, BAHS, effect sets, `.ptcl`, zstd with the game's dictionaries)
+  and from asset packs (Kirby Air Riders' `PDAT` files, read 64 MiB at a time), lowers them as a
+  dispatch would and writes them to `<shader dir>/<title id>/warm-compute.bin`. On the next start
+  the loading screen builds the ones the disk cache doesn't hold, with guessed constant buffer and
+  texture reads, so the driver's pipeline cache has them when the game dispatches them; the
+  pipelines themselves are dropped. Skip on the loading screen starts the game, and the next start
+  builds only the rest. A matching `.done` marker (file contents, driver, device, cache version,
+  build and the settings that change the SPIR-V) skips it until one of those changes. A file
+  left stale by a newer cache version is built again when the game starts. "Delete Shader
+  Precache" under Remove clears the files and the request. Ported from Lichii (#781, #2331; the
+  asset pack reader is Zachary McKenney's #1117). Lichii's global "precache shaders" setting is not
+  ported, and Dozer already builds every recorded pipeline at boot.
 - GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
   cores, the split back, and with the back stages the front, each take a physical core, and the
   other threads stay off those cores. They were sharing a core with the game. The Safe launcher

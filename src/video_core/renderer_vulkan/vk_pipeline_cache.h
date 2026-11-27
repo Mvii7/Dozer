@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -141,6 +142,14 @@ public:
                            const VideoCore::DiskResourceLoadCallback& callback);
 
 private:
+    /// Precompile All Shaders: builds the compute programs of the title's shader precache file
+    /// that the disk cache didn't hold, so the driver's cache has them when the game dispatches
+    /// them. Returns a function that records a skipped precache's progress once the Vulkan
+    /// pipeline cache holding its builds is saved, empty when there is none to record.
+    std::function<void()> PrecacheShaders(u64 title_id, bool vulkan_cache_restored,
+                                          std::stop_token stop_loading,
+                                          const VideoCore::DiskResourceLoadCallback& callback);
+
     [[nodiscard]] GraphicsPipeline* CurrentGraphicsPipelineSlowPath();
 
     [[nodiscard]] GraphicsPipeline* BuiltPipeline(GraphicsPipeline* pipeline);

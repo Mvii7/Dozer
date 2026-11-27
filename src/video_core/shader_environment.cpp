@@ -179,9 +179,7 @@ u32 GenericEnvironment::TranslateProgramAddress(u32 address) const {
 
 std::optional<u64> GenericEnvironment::Analyze() {
     if (native_source_size) {
-        // Include the converted header and a version tag to isolate this experimental ABI.
-        return Common::CityHash64(reinterpret_cast<const char*>(code.data()),
-                                  code.size() * sizeof(u64)) ^ 0x4f554e4345000002ULL;
+        return NativeShaderHash(code);
     }
     const std::optional<u64> size{TryFindSize()};
     if (!size) {
@@ -542,6 +540,15 @@ std::shared_ptr<const LoweredNativeCode> GenericEnvironment::LowerNativeCode(u32
             program_base, lowered.error_offset, lowered.error, words[0] & 0xfff, words[0],
             words[1], words[2], words[3]);
     }
+    auto result = MakeLoweredNativeCode(native, lowered, sph, native_header_size);
+    LOG_DEBUG(Shader, "Lowered native shader at {:#x}: {} source bytes, {} instructions",
+              program_base, result->source_size, lowered.instructions.size());
+    return result;
+}
+
+std::shared_ptr<LoweredNativeCode> MakeLoweredNativeCode(
+    std::span<const Shader::Ampere::Instruction> native, Shader::Ampere::LoweredProgram& lowered,
+    const Shader::ProgramHeader& sph, u32 native_header_size) {
     VideoCommon::ApplyMkwZeroDepthFallback(native, lowered);
     auto result = std::make_shared<LoweredNativeCode>();
     result->native_program_key = Shader::Ampere::NativeProgramKey(native);
@@ -561,9 +568,14 @@ std::shared_ptr<const LoweredNativeCode> GenericEnvironment::LowerNativeCode(u32
     // unreachable data. Existing disk-cache serialization carries it with code.
     lowered_code.push_back(0);
     Shader::Ampere::AppendNativeAddressMap(lowered_code, lowered.source_instruction_offsets);
-    LOG_DEBUG(Shader, "Lowered native shader at {:#x}: {} source bytes, {} instructions",
-              program_base, result->source_size, lowered.instructions.size());
     return result;
+}
+
+u64 NativeShaderHash(std::span<const u64> code) {
+    // Include the converted header and a version tag to isolate this experimental ABI.
+    return Common::CityHash64(reinterpret_cast<const char*>(code.data()),
+                              code.size() * sizeof(u64)) ^
+           0x4f554e4345000002ULL;
 }
 
 GraphicsEnvironment::GraphicsEnvironment(Tegra::Engines::Maxwell3D& maxwell3d_,
@@ -936,6 +948,9 @@ u64 FileEnvironment::ReadInstruction(u32 address) {
 u32 FileEnvironment::ReadCbufValue(u32 cbuf_index, u32 cbuf_offset) {
     const auto it{cbuf_values.find(MakeCbufKey(cbuf_index, cbuf_offset))};
     if (it == cbuf_values.end()) {
+        if (guess) {
+            return cbuf_index == 0 ? guess->cbuf_bank0 : guess->cbuf_other;
+        }
         throw Shader::LogicError("Uncached read texture type");
     }
     return it->second;
@@ -944,6 +959,9 @@ u32 FileEnvironment::ReadCbufValue(u32 cbuf_index, u32 cbuf_offset) {
 Shader::TextureType FileEnvironment::ReadTextureType(u32 handle) {
     const auto it{texture_types.find(handle)};
     if (it == texture_types.end()) {
+        if (guess) {
+            return guess->texture_type;
+        }
         throw Shader::LogicError("Uncached read texture type");
     }
     return it->second;
@@ -952,6 +970,9 @@ Shader::TextureType FileEnvironment::ReadTextureType(u32 handle) {
 Shader::TexturePixelFormat FileEnvironment::ReadTexturePixelFormat(u32 handle) {
     const auto it{texture_pixel_formats.find(handle)};
     if (it == texture_pixel_formats.end()) {
+        if (guess) {
+            return guess->pixel_format;
+        }
         throw Shader::LogicError("Uncached read texture pixel format");
     }
     return it->second;

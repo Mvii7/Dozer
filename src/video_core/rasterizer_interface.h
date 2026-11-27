@@ -35,6 +35,7 @@ enum class LoadCallbackStage {
     Prepare,
     Build,
     Complete,
+    Warm, ///< Shader precache: compute programs from the game files, built before the game starts
 };
 using DiskResourceLoadCallback = std::function<void(LoadCallbackStage, std::size_t, std::size_t)>;
 

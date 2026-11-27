@@ -31,6 +31,7 @@
 #endif
 #include "qt_common/config/uisettings.h"
 #include "qt_common/game_list/game_list_p.h"
+#include "yuzu/shader_warm_dialog.h"
 #include "qt_common/game_list/model.h"
 #include "qt_common/qt_common.h"
 #include "qt_common/util/game.h"
@@ -465,6 +466,9 @@ void GameList::AddGamePopup(QMenu& context_menu, u64 program_id, const std::stri
     QAction* open_mod_location = context_menu.addAction(tr("Open Mod Data Location"));
     QAction* open_transferable_shader_cache =
         context_menu.addAction(tr("Open Transferable Pipeline Cache"));
+    QAction* precompile_shaders = context_menu.addAction(tr("Precompile All Shaders"));
+    precompile_shaders->setCheckable(true);
+    precompile_shaders->setChecked(ShaderWarmRequested(program_id));
     QAction* ryujinx = context_menu.addAction(tr("Link to Ryujinx"));
     context_menu.addSeparator();
     QMenu* remove_menu = context_menu.addMenu(tr("Remove"));
@@ -476,6 +480,7 @@ void GameList::AddGamePopup(QMenu& context_menu, u64 program_id, const std::stri
     QAction* remove_vk_shader_cache = remove_menu->addAction(tr("Remove Vulkan Pipeline Cache"));
     remove_menu->addSeparator();
     QAction* remove_shader_cache = remove_menu->addAction(tr("Remove All Pipeline Caches"));
+    QAction* delete_shader_warm = remove_menu->addAction(tr("Delete Shader Precache"));
     QAction* remove_all_content = remove_menu->addAction(tr("Remove All Installed Contents"));
     QMenu* play_time_menu = context_menu.addMenu(tr("Manage Play Time"));
     QAction* set_play_time = play_time_menu->addAction(tr("Edit Play Time Data"));
@@ -523,6 +528,8 @@ void GameList::AddGamePopup(QMenu& context_menu, u64 program_id, const std::stri
     remove_gl_shader_cache->setVisible(program_id != 0);
     remove_vk_shader_cache->setVisible(program_id != 0);
     remove_shader_cache->setVisible(program_id != 0);
+    precompile_shaders->setVisible(program_id != 0);
+    delete_shader_warm->setVisible(ShaderWarmFilesExist(program_id));
     remove_all_content->setVisible(program_id != 0);
 
     connect(favorite, &QAction::triggered, this,
@@ -539,6 +546,11 @@ void GameList::AddGamePopup(QMenu& context_menu, u64 program_id, const std::stri
     });
     connect(open_transferable_shader_cache, &QAction::triggered, this,
             [this, program_id]() { emit OpenTransferableShaderCacheRequested(program_id); });
+    connect(precompile_shaders, &QAction::toggled, this, [this, program_id, path](bool checked) {
+        emit PrecompileShadersRequested(program_id, path, checked);
+    });
+    connect(delete_shader_warm, &QAction::triggered, this,
+            [this, program_id]() { emit DeleteShaderWarmRequested(program_id); });
     connect(remove_all_content, &QAction::triggered, this, [this, program_id]() {
         emit RemoveInstalledEntryRequested(program_id, QtCommon::Game::InstalledEntryType::Game);
     });

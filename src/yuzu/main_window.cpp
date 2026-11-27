@@ -43,6 +43,7 @@
 #include "util/util.h"
 #include "yuzu/game/game_list.h"
 #include "yuzu/nx2perf_session.h"
+#include "video_core/shader_warm/shader_warm_builder.h"
 
 #include "applets/qt_amiibo_settings.h"
 #include "applets/qt_controller.h"
@@ -1479,6 +1480,10 @@ void MainWindow::ConnectWidgetEvents() {
     connect(game_list, &GameList::RemoveInstalledEntryRequested, this,
             &MainWindow::OnGameListRemoveInstalledEntry);
     connect(game_list, &GameList::RemoveFileRequested, this, &MainWindow::OnGameListRemoveFile);
+    connect(game_list, &GameList::PrecompileShadersRequested, this,
+            &MainWindow::OnGameListPrecompileShaders);
+    connect(game_list, &GameList::DeleteShaderWarmRequested, this,
+            &MainWindow::OnGameListDeleteShaderWarm);
     connect(game_list, &GameList::RemovePlayTimeRequested, this,
             &MainWindow::OnGameListRemovePlayTimeData);
     connect(game_list, &GameList::SetPlayTimeRequested, this, &MainWindow::OnGameListSetPlayTime);
@@ -1994,6 +1999,30 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
         return;
     case Nx2PerfSession::Boot::Cancel:
         return;
+    }
+
+    // Precompile All Shaders: a precache file that is missing or stale (another cache version, an
+    // older builder) is built from the game files first. A stopped or failed build starts the game
+    // with the file it had, or without precompiling when there is none.
+    if (has_title_id && Settings::values.use_disk_shader_cache.GetValue()) {
+        namespace ShaderWarm = VideoCommon::ShaderWarm;
+        const auto warm_file = ShaderWarm::ComputeWarmPath(title_id);
+        if (ShaderWarm::WarmRequested(warm_file)) {
+            if (const auto stale = ShaderWarm::WarmFilesStale(warm_file)) {
+                LOG_INFO(Frontend, "Shader precache for {:016x}: {}, building it", title_id,
+                         *stale);
+                ShaderWarmDialog dialog(*QtCommon::system,
+                                        std::filesystem::path{filename.toStdU16String()},
+                                        title_id, QFileInfo(filename).completeBaseName(), this);
+                connect(&dialog, &ShaderWarmDialog::BuildFinished, &dialog, [&dialog](bool ok) {
+                    if (ok) {
+                        dialog.accept();
+                    }
+                });
+                dialog.Start();
+                dialog.exec();
+            }
+        }
     }
 
     if (has_title_id && type == StartGameType::Normal) {
@@ -2550,6 +2579,71 @@ void MainWindow::OnGameListRemoveInstalledEntry(u64 program_id,
     Common::FS::RemoveDirRecursively(Common::FS::GetEdenPath(Common::FS::EdenPath::CacheDir) /
                                      "game_list");
     game_list->PopulateAsync(UISettings::values.game_dirs);
+}
+
+/// Precompile All Shaders: turning it on records the request and builds the precache file now; the
+/// compiling itself runs on the loading screen of the next start. Turning it off keeps the files.
+void MainWindow::OnGameListPrecompileShaders(u64 program_id, const std::string& game_path,
+                                             bool on) {
+    if (!SetShaderWarmRequested(program_id, on)) {
+        QMessageBox::warning(this, tr("Precompile All Shaders"),
+                             tr("The setting could not be saved in the shader folder."));
+        return;
+    }
+    LOG_INFO(Frontend, "Precompile all shaders for {:016x}: {}", program_id, on ? "on" : "off");
+    if (!on) {
+        return;
+    }
+    if (shader_warm_dialog) {
+        if (shader_warm_dialog->IsRunning()) {
+            shader_warm_dialog->raise();
+            shader_warm_dialog->activateWindow();
+            return;
+        }
+        shader_warm_dialog->close();
+    }
+    if (QtCommon::emu_thread != nullptr) {
+        QMessageBox::information(this, tr("Precompile All Shaders"),
+                                 tr("The shaders are prepared when the game starts next. Close "
+                                    "the running game to prepare them now."));
+        return;
+    }
+    auto path = std::filesystem::path{std::u8string{game_path.begin(), game_path.end()}};
+    // Loose dumps are listed by their exefs folder; the loader opens its main.
+    if (std::error_code ec; std::filesystem::is_directory(path, ec)) {
+        path /= "main";
+    }
+    shader_warm_dialog = new ShaderWarmDialog(
+        *QtCommon::system, path, program_id,
+        QFileInfo(QString::fromStdString(game_path)).completeBaseName(), this);
+    connect(shader_warm_dialog, &QDialog::finished, shader_warm_dialog, &QObject::deleteLater);
+    shader_warm_dialog->show();
+    shader_warm_dialog->Start();
+}
+
+/// Deletes the game's precache files after a confirmation, showing the error when it fails.
+void MainWindow::OnGameListDeleteShaderWarm(u64 program_id) {
+    if (shader_warm_dialog && shader_warm_dialog->IsRunning() &&
+        shader_warm_dialog->TitleId() == program_id) {
+        // The builder writes this title's files: deleting them under it would lose the result.
+        QMessageBox::information(this, tr("Delete Shader Precache"),
+                                 tr("Shaders are being prepared. Try again when it is done."));
+        shader_warm_dialog->raise();
+        shader_warm_dialog->activateWindow();
+        return;
+    }
+    if (QMessageBox::question(this, tr("Delete Shader Precache"),
+                              tr("Delete the shader precache files of this game and turn off "
+                                 "Precompile All Shaders for it?"),
+                              QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+        return;
+    }
+    std::string error;
+    if (!DeleteShaderWarmFiles(program_id, error)) {
+        QMessageBox::critical(this, tr("Delete Shader Precache"),
+                              tr("The files could not be deleted: %1")
+                                  .arg(QString::fromStdString(error)));
+    }
 }
 
 void MainWindow::OnGameListRemoveFile(u64 program_id, QtCommon::Game::GameListRemoveTarget target,

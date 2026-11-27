@@ -33,7 +33,7 @@ object DiskShaderCacheProgress {
         emulationActivity.runOnUiThread {
             when (LoadCallbackStage.values()[stage]) {
                 LoadCallbackStage.Prepare -> prepareViewModel()
-                LoadCallbackStage.Build -> emulationViewModel.updateProgress(
+                LoadCallbackStage.Build, LoadCallbackStage.Warm -> emulationViewModel.updateProgress(
                     emulationActivity.getString(R.string.building_shaders),
                     progress,
                     max
@@ -46,6 +46,6 @@ object DiskShaderCacheProgress {
 
     // Equivalent to VideoCore::LoadCallbackStage
     enum class LoadCallbackStage {
-        Prepare, Build, Complete
+        Prepare, Build, Complete, Warm
     }
 }

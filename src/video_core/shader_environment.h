@@ -28,6 +28,11 @@ namespace Tegra {
 class Memorymanager;
 }
 
+namespace Shader::Ampere {
+struct Instruction;
+struct LoweredProgram;
+} // namespace Shader::Ampere
+
 namespace VideoCommon {
 
 /// A native (Switch 2) program after capture and lowering to Maxwell code. The shader cache keeps
@@ -46,6 +51,16 @@ struct LoweredNativeCode {
     /// FNV-1a of the captured native instructions (Shader::Ampere::NativeProgramKey).
     u64 native_program_key{};
 };
+
+/// Lays a captured and lowered native program out as the environments read it: the header, the
+/// instructions with a scheduling word before every fourth word, then the native address map.
+/// The shader precache builds its entries with it too, so their keys match the emulator's.
+std::shared_ptr<LoweredNativeCode> MakeLoweredNativeCode(
+    std::span<const Shader::Ampere::Instruction> native, Shader::Ampere::LoweredProgram& lowered,
+    const Shader::ProgramHeader& sph, u32 native_header_size);
+
+/// Unique hash of a native program's laid out code (the shader key part of its pipeline keys).
+u64 NativeShaderHash(std::span<const u64> code);
 
 class GenericEnvironment : public Shader::Environment {
 public:
@@ -231,10 +246,26 @@ private:
     Tegra::Engines::KeplerCompute* kepler_compute{};
 };
 
+/// Answers for reads a cache entry did not record. Only the shader precache uses them: its
+/// entries come from the game files with no reads, and are built only to fill the driver's cache.
+/// Without it a missing read is an error.
+struct GuessMissing {
+    u32 cbuf_bank0{0x10000000}; ///< Constant buffer 0 (driver constants, descriptor handles)
+    u32 cbuf_other{0};          ///< Other constant buffers (game constants)
+    Shader::TextureType texture_type{Shader::TextureType::ColorArray2D};
+    Shader::TexturePixelFormat pixel_format{static_cast<Shader::TexturePixelFormat>(16)};
+};
+
 class FileEnvironment final : public Shader::Environment {
 public:
     FileEnvironment() = default;
     ~FileEnvironment() override = default;
+
+    /// Missing reads get these answers instead of an error; the guess must outlive the
+    /// environment.
+    void SetGuessMissing(const GuessMissing* guess_) noexcept {
+        guess = guess_;
+    }
 
     FileEnvironment& operator=(FileEnvironment&&) noexcept = default;
     FileEnvironment(FileEnvironment&&) noexcept = default;
@@ -290,6 +321,7 @@ private:
     u32 read_highest{};
     u32 initial_offset{};
     u32 viewport_transform_state = 1;
+    const GuessMissing* guess{};
 };
 
 void SerializePipeline(std::span<const char> key, std::span<const GenericEnvironment* const> envs,

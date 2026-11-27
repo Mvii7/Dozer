@@ -11,6 +11,7 @@
 
 #include <filesystem>
 #include <QMainWindow>
+#include <QPointer>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTimer>
@@ -26,6 +27,7 @@
 #include "qt_common/qt_common.h"
 #include "qt_common/util/game.h"
 #include "yuzu/hotkeys.h"
+#include "yuzu/shader_warm_dialog.h"
 #include "yuzu/user_data_migration.h"
 
 #ifdef __unix__
@@ -351,6 +353,8 @@ private slots:
     void OnGameListRemoveFile(u64 program_id, QtCommon::Game::GameListRemoveTarget target,
                               const std::string& game_path);
     void OnGameListRemovePlayTimeData(u64 program_id);
+    void OnGameListPrecompileShaders(u64 program_id, const std::string& game_path, bool on);
+    void OnGameListDeleteShaderWarm(u64 program_id);
     void OnGameListSetPlayTime(u64 program_id);
     void OnGameListDumpRomFS(u64 program_id, const std::string& game_path, DumpRomFSTarget target);
     void OnGameListVerifyIntegrity(const std::string& game_path);
@@ -600,6 +604,8 @@ private:
 
     NxTools* nx_tools = nullptr;
     bool nx_metadata_write_in_progress = false;
+    /// Builds a game's shader precache file (Precompile All Shaders)
+    QPointer<ShaderWarmDialog> shader_warm_dialog;
 
     // True if TAS recording dialog is visible
     bool is_tas_recording_dialog_active{};

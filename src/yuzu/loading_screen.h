@@ -33,6 +33,7 @@ class QByteArray;
 class QGraphicsOpacityEffect;
 class QMovie;
 class QPropertyAnimation;
+class QPushButton;
 
 class LoadingScreen : public QWidget {
     Q_OBJECT
@@ -73,6 +74,7 @@ private:
     std::unique_ptr<QByteArray> backing_mem;
 #endif
     std::unique_ptr<Ui::LoadingScreen> ui;
+    QPushButton* skip_button{};
     std::size_t previous_total = 0;
     VideoCore::LoadCallbackStage previous_stage;
 
