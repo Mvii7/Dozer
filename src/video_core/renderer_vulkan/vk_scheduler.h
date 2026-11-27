@@ -146,6 +146,39 @@ public:
             });
     }
 
+    /// EDEN_NX2_DRAW_MERGE: an indexed draw of one instance. MergeDrawTail hands it back while
+    /// it is the last command recorded and its chunk was not dispatched, so more instances can
+    /// be added to it.
+    struct MergeDraw {
+        u32 index_count;
+        u32 instance_count;
+        u32 first_index;
+        u32 vertex_offset;
+        void operator()(vk::CommandBuffer cmdbuf, vk::CommandBuffer) const {
+            cmdbuf.DrawIndexed(index_count, instance_count, first_index, vertex_offset, 0);
+        }
+    };
+    void RecordMergeDraw(u32 index_count, u32 first_index, u32 vertex_offset) {
+        if (VideoCommon::GpuSplit::check_owner) [[unlikely]] {
+            VideoCommon::GpuSplit::CheckOwner("Scheduler::Record");
+        }
+        ++record_count;
+        MergeDraw command{index_count, 1, first_index, vertex_offset};
+        merge_draw = chunk->RecordGet(command);
+        if (merge_draw == nullptr) {
+            DispatchWork();
+            merge_draw = chunk->RecordGet(command);
+        }
+        merge_draw_record = record_count;
+        merge_draw_dispatch = dispatch_count;
+    }
+    [[nodiscard]] MergeDraw* MergeDrawTail() noexcept {
+        return merge_draw != nullptr && merge_draw_record == record_count &&
+                       merge_draw_dispatch == dispatch_count
+                   ? merge_draw
+                   : nullptr;
+    }
+
     /// Whether the recording thread submitted `tick` within 20 ms.
     [[nodiscard]] bool WaitForSubmission(u64 tick) const {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{20};
@@ -295,6 +328,10 @@ private:
             command(cmdbuf, upload_cmdbuf);
         }
 
+        T& Get() noexcept {
+            return command;
+        }
+
     private:
         T command;
     };
@@ -322,6 +359,15 @@ private:
             }
             command_offset += sizeof(FuncType);
             return true;
+        }
+
+        /// Record, and the command as stored; null when the chunk is full.
+        template <typename T>
+        T* RecordGet(T& command) {
+            if (!Record(command)) {
+                return nullptr;
+            }
+            return &static_cast<TypedCommand<T>*>(last)->Get();
         }
 
         void MarkSubmit() {
@@ -401,6 +447,9 @@ private:
 
     std::unique_ptr<CommandChunk> chunk;
     u64 record_count{}; ///< See RecordCount
+    MergeDraw* merge_draw{}; ///< See MergeDrawTail
+    u64 merge_draw_record{};
+    u32 merge_draw_dispatch{};
     u64 render_pass_begins{}; ///< See RenderPassBegins
     std::function<void()> on_submit;
 

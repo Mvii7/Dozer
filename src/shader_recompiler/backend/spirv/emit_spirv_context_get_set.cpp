@@ -131,6 +131,13 @@ Id GetCbuf(EmitContext& ctx, Id result_type, Id UniformDefinitions::*member_ptr,
     } else {
         buffer_offset = ctx.Def(offset);
     }
+    if (binding.IsImmediate() && ctx.runtime_info.instance_cbuf_stride != 0 &&
+        ctx.runtime_info.instance_cbuf_index == binding.U32() && ctx.stage == Stage::VertexB) {
+        const u32 stride_elems{ctx.runtime_info.instance_cbuf_stride / element_size};
+        const Id inst{ctx.OpLoad(ctx.U32[1], ctx.instance_index)};
+        buffer_offset = ctx.OpIAdd(ctx.U32[1], ctx.OpIMul(ctx.U32[1], inst, ctx.Const(stride_elems)),
+                                   buffer_offset);
+    }
     if (!binding.IsImmediate()) {
         return ctx.OpFunctionCall(result_type, indirect_func, ctx.Def(binding), buffer_offset);
     }

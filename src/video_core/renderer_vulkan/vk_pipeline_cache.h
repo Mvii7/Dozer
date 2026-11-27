@@ -121,6 +121,11 @@ public:
     /// texture_cache_locked: the caller holds texture_cache.mutex.
     [[nodiscard]] GraphicsPipeline* CurrentGraphicsPipeline(bool texture_cache_locked = false);
 
+    /// EDEN_NX2_DRAW_MERGE: a pipeline for `key` whose vertex shader reads constant buffer
+    /// `cbuf` at instance * stride. Null when it cannot be built. Built here, on the GPU thread.
+    [[nodiscard]] GraphicsPipeline* InstanceMergedPipeline(const GraphicsPipelineCacheKey& key,
+                                                           u32 cbuf, u32 stride);
+
     [[nodiscard]] ComputePipeline* CurrentComputePipeline(u64* native_key = nullptr);
 
     /// Gives native draws their per-frame wait budget again.
@@ -261,6 +266,15 @@ private:
 
     GraphicsPipelineCacheKey graphics_key{};
     GraphicsPipeline* current_pipeline{};
+    u32 merge_cbuf{0xffffffffu};
+    u32 merge_stride{};
+    struct InstanceMerge {
+        GraphicsPipelineCacheKey key;
+        u32 cbuf{};
+        u32 stride{};
+        std::unique_ptr<GraphicsPipeline> pipeline;
+    };
+    std::vector<InstanceMerge> instance_merges;
 
     ::Common::unordered_map<ComputePipelineCacheKey, std::unique_ptr<ComputePipeline>> compute_cache;
     ::Common::unordered_map<GraphicsPipelineCacheKey, std::unique_ptr<GraphicsPipeline>> graphics_cache;

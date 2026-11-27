@@ -122,6 +122,35 @@ public:
     bool WritesMemory() const noexcept {
         return writes_memory;
     }
+
+    /// No tessellation or geometry, no storage or image writes, no transform feedback, no
+    /// instance-rate vertex fetch, and no shader that already reads the instance index or a
+    /// constant buffer indirectly.
+    [[nodiscard]] bool CanInstanceMerge() const;
+
+    /// `index` is read as plain constant data by at least one stage.
+    [[nodiscard]] bool CanMergeCbuf(u32 index) const;
+
+    [[nodiscard]] u32 CbufUsedSize(u32 index) const;
+
+    [[nodiscard]] u32 StageCbufMask(size_t stage) const noexcept {
+        return stage < NUM_STAGES ? stage_infos[stage].constant_buffer_mask : 0;
+    }
+
+    [[nodiscard]] bool HasPipeline() const noexcept;
+
+    [[nodiscard]] bool UsesPushDescriptor() const noexcept {
+        return descriptor_set_layout && uses_push_descriptor && !uses_descriptor_buffer;
+    }
+
+    /// The push descriptor payload of the last ConfigureDraw.
+    [[nodiscard]] std::span<const DescriptorUpdateEntry> LastDescriptors() const noexcept {
+        return last_descriptor_payload;
+    }
+
+    /// EDEN_NX2_DRAW_MERGE: binds this pipeline and pushes `entries` (a push descriptor
+    /// payload), as the next draw's setup.
+    void RecordMergedBind(std::vector<DescriptorUpdateEntry> entries);
     GraphicsPipeline& operator=(GraphicsPipeline&&) noexcept = delete;
     GraphicsPipeline(GraphicsPipeline&&) noexcept = delete;
 

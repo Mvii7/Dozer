@@ -376,7 +376,8 @@ void PruneUnreadGeometryOutputs(Shader::IR::Program& geometry, const Shader::IR:
 Shader::RuntimeInfo MakeRuntimeInfo(std::span<const Shader::IR::Program> programs,
                                     const ShaderTranslationKey& key,
                                     const Shader::IR::Program& program,
-                                    const Shader::IR::Program* previous_program) {
+                                    const Shader::IR::Program* previous_program, u32 merge_cbuf,
+                                    u32 merge_stride) {
     Shader::RuntimeInfo info;
     if (previous_program) {
         info.previous_stage_stores = previous_program->info.stores;
@@ -425,6 +426,12 @@ Shader::RuntimeInfo MakeRuntimeInfo(std::span<const Shader::IR::Program> program
     info.input_topology = key.input_topology;
     info.force_early_z = key.force_early_z;
     info.y_negate = key.y_negate;
+    // EDEN_NX2_DRAW_MERGE: the instance index is a vertex shader input.
+    if (merge_cbuf != 0xffffffffu && merge_stride != 0 && program.stage == Shader::Stage::VertexB &&
+        (program.info.constant_buffer_mask & (1u << merge_cbuf)) != 0) {
+        info.instance_cbuf_index = merge_cbuf;
+        info.instance_cbuf_stride = merge_stride;
+    }
     return info;
 }
 
@@ -1414,7 +1421,8 @@ std::shared_ptr<ReusableShaders> PipelineCache::BuildGraphicsShaders(
         const size_t stage_index{index - 1};
         infos[stage_index] = &program.info;
 
-        const auto runtime_info{MakeRuntimeInfo(programs, key, program, previous_stage)};
+        const auto runtime_info{
+            MakeRuntimeInfo(programs, key, program, previous_stage, merge_cbuf, merge_stride)};
         ConvertLegacyToGeneric(program, runtime_info);
         if (index == static_cast<size_t>(Maxwell::ShaderType::Geometry)) {
             PruneUnreadGeometryOutputs(
@@ -1583,6 +1591,42 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline() {
     SerializeGraphicsPipeline(graphics_key, std::move(environments.envs));
     QueueVulkanPipelineCacheFlush();
     return pipeline;
+}
+
+GraphicsPipeline* PipelineCache::InstanceMergedPipeline(const GraphicsPipelineCacheKey& key, u32 cbuf,
+                                                        u32 stride) try {
+    for (const InstanceMerge& slot : instance_merges) {
+        if (slot.cbuf == cbuf && slot.stride == stride && slot.key == key) {
+            return slot.pipeline && slot.pipeline->HasPipeline() ? slot.pipeline.get() : nullptr;
+        }
+    }
+    merge_cbuf = cbuf;
+    merge_stride = stride;
+    SCOPE_EXIT {
+        merge_cbuf = 0xffffffffu;
+        merge_stride = 0;
+    };
+    GraphicsEnvironments environments;
+    GetGraphicsEnvironments(environments, key.unique_hashes);
+    main_pools.ReleaseContents();
+    const ShaderTranslationKey translation_key{MakeShaderTranslationKey(key, device)};
+    const std::shared_ptr<ReusableShaders> shaders{BuildGraphicsShaders(
+        main_pools, translation_key, environments.Span(), key.Hash())};
+    if (!shaders) {
+        instance_merges.push_back({key, cbuf, stride, nullptr});
+        return nullptr;
+    }
+    auto pipeline{std::make_unique<GraphicsPipeline>(
+        scheduler, buffer_cache, texture_cache, vulkan_pipeline_cache, &shader_notify, device,
+        descriptor_pool, guest_descriptor_queue, descriptor_buffer_ring, nullptr, nullptr,
+        render_pass_cache, key, shaders->modules, shaders->InfoPointers())};
+    GraphicsPipeline* const result{pipeline->HasPipeline() ? pipeline.get() : nullptr};
+    instance_merges.push_back({key, cbuf, stride, std::move(pipeline)});
+    return result;
+} catch (const Shader::Exception& exception) {
+    LOG_ERROR(Render_Vulkan, "Draw merge variant: {}", exception.what());
+    instance_merges.push_back({key, cbuf, stride, nullptr});
+    return nullptr;
 }
 
 std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipelineFromReusedShaders() {
