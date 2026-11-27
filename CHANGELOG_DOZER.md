@@ -6,11 +6,18 @@ switches (`nx2_switches_DOZER.txt`; in the source `dist/nx2_switches.txt`): the 
 off unless a launcher or the menu program's Tuning tab sets them, the per-draw shortcuts are on
 and `=0` brings back the 2.0.0 code path.
 
-## Unreleased
+## Unreleased (Dozer)
 
-- Vulkan: NVIDIA driver 580.119.2 and newer keep `VK_EXT_vertex_input_dynamic_state`. The old
-  check compared `driverVersion` as a Vulkan version, so a 621 driver was treated as older than
-  580.119.2 and vertex layout stayed in the graphics pipeline key.
+- GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
+  cores, the split back, and with the back stages the front, each take a physical core, and the
+  other threads stay off those cores. They were sharing a core with the game. The Safe launcher
+  sets 0. Mario Kart World with the pack ahead was spending the whole frame on the game thread
+  while the GPU had already finished.
+- Vulkan, NVIDIA: `VK_EXT_vertex_input_dynamic_state` is used again with driver 580.119.2 and
+  newer (Graphics settings, "Vertex Input Dynamic State", turns it off). The check built
+  its limit as a Vulkan version, which overflowed above every NVIDIA driver, so the extension was
+  always off and the vertex layout stayed in the graphics pipeline key. Pipelines are built again
+  once, since their keys change.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 
