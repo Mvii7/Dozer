@@ -23,6 +23,13 @@ and `=0` brings back the 2.0.0 code path.
   by that offset. Page invalidation still covered the tail, but `EDEN_NX2_UBO_KEEP` compares
   these ranges byte by byte and could bind the previous contents of a uniform buffer whose only
   change was in it.
+- Switch 2 video: a movie's compressed frames are accepted only until 24 are waiting; further
+  packets get nn::codec's busy result and the game sends them again when the decoder has room
+  (the submission-ready event still stops at 8 waiting, as before).
+  Taking the whole opening at once left the decoder behind the audio clock for the first moments
+  of Mario Kart World's VP9 intro (the picture stuttered, then ran evenly once frames arrived as
+  they were shown). End of stream is still taken, and a packet answered busy is kept so a client
+  that does not resend it does not lose a VP9 reference.
 - Texture cache: textures leave a few per frame instead of thousands at once. Mario Kart World
   climbed to 13 GB of device memory, then one frame deleted 4851 costly images and took 787 ms
   (Lichii stays near 8.6 GB). The expected line now stops at 5/8 of the device budget (about

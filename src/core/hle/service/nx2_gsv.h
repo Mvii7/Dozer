@@ -82,6 +82,7 @@
 #include "core/hle/service/nx2_stub_interface.h"
 #include "core/hle/service/nx2_vi2_events.h"
 #include "core/hle/service/nx2_vi2_reply.h"
+#include "core/hle/service/nx2_video_input_queue.h"
 #include "core/hle/service/sm/sm.h"
 #include "core/hle/service/server_manager.h"
 #include "core/hle/service/service.h"
@@ -3106,6 +3107,8 @@ inline bool Nx2FirstVideoCommand(std::string_view service, u32 command) {
 // with nx2:syncpt 103/201. Each decoder service owns a syncpoint that counts its finished frames.
 // FFmpeg decodes on a thread of the session's own (a 1440p VP9 frame takes milliseconds, and the
 // service thread also serves presents and syncpoint waits) into the layout gsv 961 describes.
+// Input is capped (Nx2VideoInputQueue): a client that submits a movie in one burst otherwise
+// keeps that thread behind the audio clock, and the opening stutters.
 class INx2VideoSession final : public ServiceFramework<INx2VideoSession> {
 public:
     explicit INx2VideoSession(Core::System& system_, std::shared_ptr<Nx2NativeObjects> objects_,
@@ -3155,11 +3158,6 @@ public:
     }
 
 private:
-    struct Input {
-        std::vector<u8> data;
-        u64 pts; // us
-        bool end;
-    };
     struct Decoded {
         std::optional<Tegra::Host1x::Nx2Picture> picture; // none: an empty end-of-stream frame
         u64 pts;
@@ -3178,7 +3176,6 @@ private:
     };
 
     static constexpr u32 NoSyncpoint = ~0U;
-    static constexpr size_t MaxQueuedInputs = 8;
     static constexpr size_t MaxDecodedAhead = 2; // decoded frames held while no image is free
     static constexpr u32 HostSyncpoints = 192;   // Tegra::Host1x::SyncpointManager
 
@@ -3293,7 +3290,7 @@ private:
                 const char* env_value = std::getenv("EDEN_NX2_VDEC_EOS_RELEASE_NOW");
                 return env_value != nullptr && env_value[0] != '0';
             }();
-            if (release_now && release_fence && m_stream_ended && m_inputs.empty() &&
+            if (release_now && release_fence && m_stream_ended && m_inputs.Empty() &&
                 m_decoded.empty()) {
                 const u32 reached = static_cast<u32>(
                     system.Host1x().GetSyncpointManager().GetGuestSyncpointValue(m_syncpoint));
@@ -3338,16 +3335,24 @@ private:
         const u64 pts = u64{w[5]} | (u64{w[6]} << 32);
         const bool end = (w[7] & 0xFF) != 0;
         Log(ctx, "submit");
-        Input input{{}, pts, end};
+        Nx2VideoInputQueue::Input input{{}, pts, end};
         if (!ctx.BufferDescriptorA().empty()) {
             const auto data = ctx.ReadBufferA(0);
             input.data.assign(data.begin(), data.end());
         }
         {
             std::scoped_lock lk{m_mutex};
-            m_inputs.push_back(std::move(input));
+            // Busy (nn::codec 3603, module HwOpus): the client retries after the ready event.
+            // Accepting the burst let the opening pictures lag the audio.
+            if (!m_inputs.Submit(std::move(input))) {
+                m_ready->room.store(false, std::memory_order_relaxed);
+                constexpr Result ResultDecoderBusy{ErrorModule::HwOpus, 3603};
+                IPC::ResponseBuilder rb{ctx, 2};
+                rb.PushRaw<u32>(ResultDecoderBusy.raw);
+                return;
+            }
             m_stream_ended = false;
-            m_ready->room.store(m_inputs.size() < MaxQueuedInputs, std::memory_order_relaxed);
+            m_ready->room.store(m_inputs.HasRoom(), std::memory_order_relaxed);
         }
         m_cv.notify_one();
         const u64 id = ++m_submitted;
@@ -3360,7 +3365,7 @@ private:
         Log(ctx, ctx.GetCommand() == 8 ? "flush" : "stop");
         {
             std::scoped_lock lk{m_mutex};
-            m_inputs.clear();
+            m_inputs.Clear();
             m_flush = true;
             m_stream_ended = false;
             m_ready->room.store(true, std::memory_order_relaxed);
@@ -3431,7 +3436,7 @@ private:
         while (true) {
             m_cv.wait(lk, [&] {
                 return m_quit || m_flush || (!m_decoded.empty() && !m_free.empty()) ||
-                       (!m_inputs.empty() && m_decoded.size() < MaxDecodedAhead);
+                       (!m_inputs.Empty() && m_decoded.size() < MaxDecodedAhead);
             });
             if (m_quit) {
                 return;
@@ -3476,9 +3481,8 @@ private:
                 }
                 continue;
             }
-            Input input = std::move(m_inputs.front());
-            m_inputs.pop_front();
-            m_ready->room.store(m_inputs.size() < MaxQueuedInputs, std::memory_order_relaxed);
+            Nx2VideoInputQueue::Input input = m_inputs.Pop();
+            m_ready->room.store(m_inputs.HasRoom(), std::memory_order_relaxed);
             const std::string codec = m_codec;
             lk.unlock();
             if (!decoder || decoder->Name() != codec) {
@@ -3638,7 +3642,7 @@ private:
     u32 m_height{};
     u32 m_handed{}; ///< Output images handed out (registered or released) so far
     u64 m_frames_out{};
-    std::deque<Input> m_inputs;
+    Nx2VideoInputQueue m_inputs;
     std::deque<Decoded> m_decoded;     ///< Waiting for a free output image
     std::deque<u32> m_free;            ///< Output images, in the order the client acquires them
     std::map<u32, Fence> m_release_fences;
