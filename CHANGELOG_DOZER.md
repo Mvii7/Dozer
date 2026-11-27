@@ -8,16 +8,17 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased
 
-- Texture cache: the expected line stops at 9 GB on a large card, and costly images unused for
-  150 frames leave a few per frame past that line, including after the critical line
-  (`EDEN_NX2_TC_STALE_COSTLY`, `=0` keeps them until the age-10 wipe,
-  `EDEN_NX2_TC_EXPECTED_MIB` overrides the 9 GB cap). A gigabyte past 9 GB that grace is 90
-  frames. The collector's time budget is no longer dropped a gigabyte past the critical line:
-  Mario Kart World climbed to 13 GB of device memory, then one frame deleted 4851 costly images
-  and took 787 ms. Lichii stays near 8.6 GB. A skipped image was also using up one of the few
-  delete slots, so old render targets at the front of the list kept the walk from reaching the
-  textures behind them until that wipe. Each pass looks through the list on its own, so the
-  first pass skipping costly images cannot use up the looks of the pass that deletes them.
+- Texture cache: textures leave a few per frame instead of thousands at once. Mario Kart World
+  climbed to 13 GB of device memory, then one frame deleted 4851 costly images and took 787 ms
+  (Lichii stays near 8.6 GB). The expected line now stops at 5/8 of the device budget (about
+  9 GB on a 16 GB card), and costly images unused for 150 frames leave a few per frame past it,
+  including after the critical line (`EDEN_NX2_TC_STALE_COSTLY`, `=0` keeps them until the
+  critical line; `EDEN_NX2_TC_EXPECTED_MIB` overrides the line). A gigabyte past the expected
+  line that grace is 90 frames. A gigabyte past the critical line the collector's time limit is
+  four times the usual instead of none. A skipped image was also using up one of the few delete
+  slots, so old render targets at the front of the list kept the walk from reaching the textures
+  behind them, and the first pass, which skips costly images, could use up the looks of the pass
+  that deletes them.
 
 ## Dozer 0.2.1 (`v0.2.1`)
 

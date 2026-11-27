@@ -268,12 +268,15 @@ void TextureCache<P>::RunGarbageCollector() {
     // Evicting a GPU-modified image downloads it and waits for the GPU: a few per frame at most.
     size_t downloads_left = 1;
     // EDEN_NX2_TC_GC_BUDGET_US: a pass stops after this long (default 1500, 0 = no limit), so a
-    // burst of evictions is spread over frames. This used to be ignored a gigabyte past the
-    // critical line, and one frame then deleted thousands of images.
+    // burst of evictions is spread over frames. A gigabyte past the critical line the limit is
+    // four times that, so memory still comes back quickly. It used to be no limit there, and one
+    // frame then deleted thousands of images.
     static const u64 budget_us = [] {
         const char* value = std::getenv("EDEN_NX2_TC_GC_BUDGET_US");
         return value != nullptr ? std::strtoull(value, nullptr, 10) : 1500ULL;
     }();
+    const u64 pass_budget_us =
+        total_used_memory >= critical_memory + 1_GiB ? budget_us * 4 : budget_us;
     const auto start_time = std::chrono::steady_clock::now();
     defer_view_removal = true;
     const auto Configure = [&](bool allow_aggressive) {
@@ -304,12 +307,13 @@ void TextureCache<P>::RunGarbageCollector() {
     // used those looks up before the pass that is allowed to delete them.
     size_t examined = 0;
     const auto Cleanup = [this, &num_iterations, &examined, &high_priority_mode, &aggressive_mode,
-                          &allow_costly, &downloads_left, &start_time, &gc_deleted_any](ImageId image_id) {
+                          &allow_costly, &downloads_left, &start_time, &gc_deleted_any,
+                          pass_budget_us](ImageId image_id) {
         if (num_iterations == 0 || examined >= 512) {
             return true;
         }
-        if (budget_us != 0 &&
-            std::chrono::steady_clock::now() - start_time > std::chrono::microseconds{budget_us}) {
+        if (pass_budget_us != 0 && std::chrono::steady_clock::now() - start_time >
+                                       std::chrono::microseconds{pass_budget_us}) {
             return true;
         }
         ++examined;
@@ -462,13 +466,10 @@ void TextureCache<P>::TickFrame() {
                     // A 16 GB card leaves this line near 10 GB, and the critical line near 12 GB.
                     // Mario Kart World then keeps every image touched in the last 150 frames until
                     // that higher line, and one frame of the race deletes thousands of costly ones.
-                    // Hold the expected line at 9 GB so those images leave steadily first. A gigabyte
-                    // past it their grace is 90 frames, and the collector stays time-boxed after
-                    // the critical line. EDEN_NX2_TC_EXPECTED_MIB still overrides.
-                    constexpr u64 steady_expected = 9_GiB;
-                    if (expected_memory > steady_expected) {
-                        expected_memory = steady_expected;
-                    }
+                    // Hold the expected line at 5/8 of the budget (about 9 GB there) so those
+                    // images leave steadily first. A gigabyte past it their grace is 90 frames.
+                    // EDEN_NX2_TC_EXPECTED_MIB still overrides.
+                    expected_memory = (std::min)(expected_memory, budget / 8 * 5);
                     // Recently used images stay while the heap itself (usage plus the block slack
                     // measured now, uncapped) is a margin under the budget: the heavy part of a
                     // Mario Kart World race sits at the critical line, where the collector deleted
