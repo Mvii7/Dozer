@@ -358,6 +358,16 @@ bool DmaPusher::Step() {
     return true;
 }
 
+// EDEN_NX2_FRONT_MACRO_RUNS=0: a macro call sent increasing once goes to the split front as its
+// first word, then the rest (ProcessCommands), as before.
+static bool FrontMacroRunsEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_FRONT_MACRO_RUNS");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
 size_t DmaPusher::ProcessCommands(std::span<const CommandHeader> commands, size_t word_offset) {
     // Front diag (EDEN_NX2_GPU_PROFILE): each method call timed for whom it went to.
     namespace Diag = VideoCommon::Nx2FrontDiag;
@@ -405,6 +415,38 @@ size_t DmaPusher::ProcessCommands(std::span<const CommandHeader> commands, size_
                         index += amount;
                         continue;
                     }
+                }
+            }
+            // A macro call sent increasing once (its start method, then its parameters on the
+            // next one): its words in this entry go to the split front in one call, not the
+            // first apart from the rest.
+            if (dma_increment_once && !dma_state.non_incrementing &&
+                dma_state.method >= MacroRegistersStart && FrontMacroRunsEnabled()) {
+                if (auto* const maxwell3d = FrontRunTarget()) {
+                    const u32 amount = static_cast<u32>(
+                        std::min<size_t>(dma_state.method_count, commands.size() - index));
+                    const u32* const words = &commands[index].argument;
+                    const u32 pending = dma_state.method_count;
+                    const auto run = [&] {
+                        Diag::SetSendKind(Diag::SendKind::Front3D);
+                        maxwell3d->FrontCallMultiMethod(system, VideoCommon::GpuSplit::Get(),
+                                                        dma_state.method, words, amount, pending);
+                    };
+                    dma_state.dma_word_offset = u64((word_offset + index + amount - 1) * sizeof(u32));
+                    dma_state.is_last_call = amount == pending;
+                    if (diag) [[unlikely]] {
+                        Diag::TimedSend(run);
+                    } else {
+                        run();
+                    }
+                    dma_state.method += 1;
+                    dma_state.non_incrementing = true;
+                    dma_state.method_count -= amount;
+                    index += amount;
+                    if (puller.HasPendingAcquire()) {
+                        return index;
+                    }
+                    continue;
                 }
             }
             auto const command_header = commands[index]; //can copy
