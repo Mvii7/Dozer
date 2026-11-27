@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "common/logging.h"
+#include "common/nx2_slow_frame.h"
 
 namespace Vulkan::PipelineStats {
 
@@ -97,6 +98,11 @@ public:
         c.count[static_cast<size_t>(stage)].fetch_add(1, std::memory_order_relaxed);
         c.nanos[static_cast<size_t>(stage)].fetch_add(static_cast<uint64_t>(nanos),
                                                        std::memory_order_relaxed);
+        if (stage == Stage::Lower || stage == Stage::Driver) {
+            namespace Slow = Common::Nx2SlowFrame;
+            Slow::Add(stage == Stage::Lower ? Slow::Counter::LowerNs : Slow::Counter::DriverNs,
+                      static_cast<uint64_t>(nanos));
+        }
         MaybeReport();
     }
 
@@ -105,6 +111,7 @@ public:
         const Role role = CurrentRole();
         Cell& c = CellOf(role, kind);
         c.pipelines.fetch_add(1, std::memory_order_relaxed);
+        Common::Nx2SlowFrame::Add(Common::Nx2SlowFrame::Counter::Pipelines, 1);
         bool inserted;
         {
             std::scoped_lock lock{sets_mutex};

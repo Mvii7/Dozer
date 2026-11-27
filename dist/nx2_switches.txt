@@ -34,6 +34,17 @@
 # AMD drivers (they sample black or fault on unbound memory, which left Mario Kart World's terrain
 # dark): those images are backed normally. =1 allows unbound images on every GPU, =0 on none.
 #EDEN_NX2_SPARSE_UNBACKED=0
+# JIT_BLOCK_LIST (on; =0 off): the CPU JIT's compiled blocks are saved per game
+# (<cache>/nx2_jit/<title id>.bin, every 30 s and when emulation stops, as offsets from where the
+# game's code loaded), and after the game loads, before it runs, every core compiles the saved
+# ones in parallel. Code reached in an earlier session is then not compiled in the frame that
+# first runs it, once by each core (x64 only). Boot takes a few seconds longer. A game update
+# starts a new list; the newest blocks that fit in 3/4 of a core's code cache are kept.
+#EDEN_NX2_JIT_BLOCK_LIST=0
+# JIT_IDLE_COMPILE (on with JIT_BLOCK_LIST; =0 off): a block one core compiles for the first time
+# is compiled by the other cores while they have nothing to run, instead of by each one in the
+# frame it first runs it (x64 only).
+#EDEN_NX2_JIT_IDLE_COMPILE=0
 
 # --- GPU thread shortcuts (on by default; =0 as before; added by Dozer) ---
 # =2 keeps them on and logs what they would get wrong: VERTEX_CLEAN, LIGHT_SYNC_SKIP,
@@ -46,13 +57,24 @@
 #EDEN_NX2_FAST_PRIORITY_SCAN=0
 #EDEN_NX2_DESC_XLAT=0
 #EDEN_NX2_DIRTY_THUNK_SKIP=0
+# ZERO_UPLOAD: an image whose guest memory is all zeros (most new render targets) is uploaded
+# as zeros without unswizzling it on the CPU. =2 also runs the unswizzle it skips (same time
+# spent) and logs any image whose result differs ("EDEN_NX2_ZERO_UPLOAD=2" lines).
+#EDEN_NX2_ZERO_UPLOAD=0
 
 # --- limits / tuning ---
 #EDEN_NX2_VRAM_LIMIT_MIB=8192
 #EDEN_NX2_GPU_PROFILE=0
 #EDEN_NX2_FRAMES_AHEAD=2
+# TC_EXPECTED_MIB / TC_CRITICAL_MIB: collector lines, in MiB. Without these the expected line
+# follows the device budget but stops at 5/8 of it. Costly images unused for TC_STALE_COSTLY
+# frames (default 150, 0 = keep them until the critical line) leave a few per frame, including
+# past the critical line. A gigabyte past the expected line that grace is 90 frames. The
+# collector's time limit always applies (four times it a gigabyte past the critical line), so a
+# backlog cannot land in one frame.
 #EDEN_NX2_TC_EXPECTED_MIB=21322
 #EDEN_NX2_TC_CRITICAL_MIB=22346
+#EDEN_NX2_TC_STALE_COSTLY=150
 
 # --- experiments (off by default; NX2_NOTES.md; added by Dozer) ---
 #EDEN_NX2_PACE_GUEST_SLEEP=1
@@ -91,10 +113,11 @@
 #EDEN_NX2_BACK_STAGES_LIGHT=0
 # GEOMETRY_MIRROR=0: with cut c, B does not mirror vertex and index binds to C (default on).
 #EDEN_NX2_GEOMETRY_MIRROR=0
-# BACK_CPU: the split back on a physical core of its own (Windows CPU Sets). 0 off (default),
-# 1 pinned, 2 pinned and logged, 3 not pinned, logged. BACK_CORE / FRONT_CORE=<n> pick the
-# cores by Windows' CoreIndex (default: the second core of group 0 / the next one).
-#EDEN_NX2_BACK_CPU=1
+# BACK_CPU: the split back, and with the back stages the front, each on a physical core of
+# its own (Windows CPU Sets), so a guest core does not share that core. Unset: on with at least
+# 8 cores. 0 off, 1 on from 4 cores (the front from 6), 2 as 1 and logged, 3 not pinned, logged. BACK_CORE / FRONT_CORE=<n> pick the cores by Windows'
+# CoreIndex (default: the second core of group 0 / the next one).
+#EDEN_NX2_BACK_CPU=0
 #EDEN_NX2_BACK_CORE=2
 #EDEN_NX2_FRONT_CORE=4
 # WRITE_BATCH=0: every macro write is a ring entry of its own (default: batched).
@@ -292,6 +315,17 @@
 # EDEN_NX2_MODE_GOV_<NAME> (MODE_GOV=1): HOLD=10 UP=36 DOWN=34 SPIKE=70 TO60=17 FROM60=19.5
 #   TO30=31 FROM30=36, and UP_FRAMES, DOWN_FRAMES, COOLDOWN (video_core/nx2_mode_gov.h).
 #EDEN_NX2_MODE_PACE21_DOWN_HOLD=37
+# SLOW_FRAME_MS=<ms> (diagnostic, off unless set): one "nx2 slow frame:" log line for each
+# present more than <ms> after the previous one, with what happened in between: images created
+# and deleted and their time, MB uploaded and its time, pipelines built and their lowering and
+# driver time, waits for the split's back, read trap flushes, the game's file reads and the
+# time IStorage reads were held to EDEN_NX2_FS_READ_MBPS, and the CPU JIT's compiles (how many
+# the same core or another core compiled before, the code ranges invalidated and the fastmem
+# faults that recompiled a block; none on NCE builds, which have no JIT).
+#EDEN_NX2_SLOW_FRAME_MS=100
+# FS_READ_MBPS=<MB/s>: the rate game data (IStorage) reads are held to, 40 unless set; =0 no
+# limit (each read is charged at most 64 KiB).
+#EDEN_NX2_FS_READ_MBPS=0
 
 # --- Donkey Kong Bananza dynamic frame rate (game-specific; core/loader/nx2_dk_dynamic_fps.h) ---
 # DK_DYN=1: while Bananza's main module loads, patch its frame rate controller in memory (a
@@ -311,12 +345,15 @@
 # DK_FOLIAGE_DENSITY=<1-99>: the % of the foliage kept. Each stage's foliage placed ahead of time
 # (ClusteredRendering/StageData/*.ProceduralPlacement.byml) is thinned in patches as it is read,
 # and the foliage placed while playing is scaled too.
+# DK_FOLIAGE_THORN_DENSITY=<1-100>: the same for the thorns (the foliage on Thorn ground); unset,
+# they follow DK_FOLIAGE_DENSITY.
 # DK_FOLIAGE_DISTANCE=<20-700>: the farthest any foliage is drawn, in units: each model's own far
 # clip (80-700) above it comes down to it; under 100, so does the code's default of 100 for the
 # models without one.
-# The Performance and Experimental presets and launchers set 10 and 200 (the Tuning tab's Low;
-# Medium is 50 and 400); Quality and Safe leave the foliage as the game makes it.
+# The Performance and Experimental presets and launchers set 10, 50 and 200 (the Tuning tab's Low;
+# Medium is 50, 75 and 400); Quality and Safe leave the foliage as the game makes it.
 #EDEN_NX2_DK_FOLIAGE_DENSITY=10
+#EDEN_NX2_DK_FOLIAGE_THORN_DENSITY=50
 #EDEN_NX2_DK_FOLIAGE_DISTANCE=200
 
 # --- Donkey Kong Bananza shadow quality (game-specific; core/loader/nx2_dk_shadow.h) ---
@@ -354,13 +391,17 @@
 # Performance and Quality leave this unset; Experimental and Safe set 0
 # (start-reactive-experimental.bat, start-safe.bat). With Bananza's foliage off, on is faster.
 #EDEN_NX2_READ_TRAPS=0
-# READ_TRAP_BUDGET_US=<n> (unset: 1000, 0: off; the Tuning tab's "Read trap budget" box, off
-# in Safe): with read traps, reads of GPU-written buffer memory wait for its data at most n
-# microseconds in each 1/60 s; past that a read goes on with what memory holds, as with read
-# traps off, and a copy back on its way still lands (one is waited for at most what is left of
-# the budget). Scenes that read little stay exact; bursts (Bananza's destruction, Mario Kart
-# World's races) stop waiting. A line every 10 s counts the waits and the reads that went on.
-#EDEN_NX2_READ_TRAP_BUDGET_US=0
+# READ_TRAP_BUDGET_US=<n> (test switch; unset or 0: off): with read traps, reads of GPU-written
+# buffer memory wait for its data at most n microseconds in each 1/60 s; past that a read goes on
+# with what memory holds, as with read traps off, and a copy back on its way still lands (one is
+# waited for at most what is left of the budget). Scenes that read little stay exact; bursts
+# (Bananza's destruction, Mario Kart World's races) stop waiting. What a 1/60 s leaves unused
+# carries over, up to 4 budgets, so one wait a little over n does not leave the rest of that frame's
+# reads without their data; after a quiet stretch one wait (or download) may take up to 4n. A line
+# every 10 s counts the waits and the reads that went on. Off by default: a read that goes on finds
+# older data (Mario Kart World could hang in a cutscene, Bananza lagged at the first hit of a vein),
+# and with read traps fixed it saved ~1% of Bananza's time.
+#EDEN_NX2_READ_TRAP_BUDGET_US=1000
 # READ_TRAP_BUDGET_PREDICT=0: with the budget, a download (no copy back on its way) starts
 # even when what is left is less than downloads have been taking, and overshoots the budget.
 # Unset (on): such a read goes on without it; the budget line counts "downloads skipped".
@@ -371,6 +412,11 @@
 # faults more than 1000 times in a second leaves fastmem anyway. Only with read traps on; the
 # reactive stats line shows "fastmem read fallbacks" and "read faults kept".
 #EDEN_NX2_TRAP_FASTMEM=0
+# MEMORY_QUERY_MS=<n> (unset: 50; 0: every call, Safe): the texture and buffer caches ask the
+# driver how much device memory is in use at most every n milliseconds and reuse the answer in
+# between. With NVIDIA's driver on Windows each query goes to the kernel driver and opens
+# registry keys: ~0.3 ms a frame on the GPU thread in Donkey Kong Bananza.
+#EDEN_NX2_MEMORY_QUERY_MS=0
 # TRAP_REARM=0: a buffer page's read trap is armed by the GPU's first write there only; after
 # the guest's first read, later GPU writes reach it only through the copies back at fences, so a
 # read before the next fence can find older data. Unset (on): each read lets the next GPU write
@@ -382,6 +428,19 @@
 # changes cost the fence thread more than those faults (Mario Kart World: ~0.2 s per 10 s, and
 # reads waited longer for the copies back behind them).
 #EDEN_NX2_TRAP_POP_DISARM=1
+# TRAP_SET_CHECK=1 (diagnostic): "Trap set check" log lines name changes to the buffer cache's
+# set of armed read trap pages made without its lock, odd ranges handed to it for arming (empty,
+# overflowing or over 4 GiB), and pieces of the set returned outside the range asked for, with
+# the set's pieces nearby. The first 16 of each kind, then at each power of two.
+#EDEN_NX2_TRAP_SET_CHECK=1
+# TRAP_CHECK=1 (diagnostic, slow): a page a read disarms stays unreadable until a GPU write arms
+# it again, and each read of it in between (one read traps let through without a flush) asks the
+# GPU whether it holds newer data there. "Read trap check" warnings name the reads that may find
+# older data, and say whether the buffer cache holds newer bytes of them, elsewhere on their page,
+# or the page holds an image or a query; the summary lines count each kind. =1: those reads are
+# flushed as trapped ones; =2: none is, they read what memory holds as without the check (it shows
+# what reads were stale when something looks wrong); =3: only those that may find older data are.
+#EDEN_NX2_TRAP_CHECK=1
 # COPYBACK_WAIT=0: a read trap that finds GPU writes not in guest memory yet always sync flushes
 # (the CPU waits for the GPU thread to reach it and for a new download). Unset (on): when all of
 # them are in copies back already committed at a fence, it waits for those to land instead

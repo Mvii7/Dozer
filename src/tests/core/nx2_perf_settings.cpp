@@ -33,6 +33,7 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_DK_DYN", "1"},
     {"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"},
     {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"},
+    {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "50"},
     {"EDEN_NX2_DK_SHADOW_CASCADES", "2"},
     {"EDEN_NX2_DK_CUBEMAP_INTERVAL", "240"},
     {"EDEN_NX2_PRESENT_INTERVAL_WORD", "12:16:4"},
@@ -40,7 +41,7 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_PACE_SPIN_US", "1500"},
 };
 // Of those, the ones Bananza gets that another game does not.
-constexpr std::size_t BalancedBananzaOwn = 8;
+constexpr std::size_t BalancedBananzaOwn = 9;
 
 // The game-specific variables Bananza gets whatever the preset (Safe's: foliage, very high
 // shadows and reflections as the game's).
@@ -76,6 +77,7 @@ const std::set<std::string_view> BananzaOnly{
     "EDEN_NX2_DK_FOLIAGE_OFF",
     "EDEN_NX2_DK_FOLIAGE_DENSITY",
     "EDEN_NX2_DK_FOLIAGE_DISTANCE",
+    "EDEN_NX2_DK_FOLIAGE_THORN_DENSITY",
     "EDEN_NX2_DK_SHADOW_CASCADES",
     "EDEN_NX2_DK_CUBEMAP_INTERVAL",
 };
@@ -243,11 +245,6 @@ TEST_CASE("Nx2PerfSettings: a box changed by hand makes it Custom", "[core]") {
         old.Write(FromPreset(preset, Performance()));
         old.values.erase("read_traps");
         REQUIRE(old.Read() == FromPreset(preset, Performance()));
-        // The same for a file from before read_trap_budget: Safe keeps it off.
-        Ini before_budget;
-        before_budget.Write(FromPreset(preset, Performance()));
-        before_budget.values.erase("read_trap_budget");
-        REQUIRE(before_budget.Read() == FromPreset(preset, Performance()));
     }
     Ini stored_performance;
     stored_performance.preset = static_cast<int>(Preset::Performance);
@@ -271,19 +268,17 @@ TEST_CASE("Nx2PerfSettings: presets set the launchers' variables", "[core]") {
     for (const Game game : {Game::Bananza, Game::MarioKartWorld, Game::Other}) {
         const auto safe = Wanted(AllOff(), game);
         const auto own = GameVars(game);
-        REQUIRE(safe.size() == own.size() + SafeOff.size() + 2);
+        REQUIRE(safe.size() == own.size() + SafeOff.size() + 1);
         REQUIRE(std::vector<Var>(safe.begin(), safe.begin() + own.size()) == own);
         REQUIRE(safe[own.size()] == Var{"EDEN_NX2_READ_TRAPS", "0"});
-        REQUIRE(safe[own.size() + 1] == Var{"EDEN_NX2_READ_TRAP_BUDGET_US", "0"});
         for (std::size_t i = 0; i < SafeOff.size(); ++i) {
-            REQUIRE(safe[own.size() + 2 + i] == Var{SafeOff[i], "0"});
+            REQUIRE(safe[own.size() + 1 + i] == Var{SafeOff[i], "0"});
         }
     }
-    // Custom with everything off sets read traps and their budget off only; Custom with the boxes
-    // on: only the boxes' (read traps on sets nothing for that switch).
+    // Custom with everything off sets read traps off only; Custom with the boxes on: only the
+    // boxes' (read traps on sets nothing for that switch).
     auto only_traps = BananzaVars;
     only_traps.push_back({"EDEN_NX2_READ_TRAPS", "0"});
-    only_traps.push_back({"EDEN_NX2_READ_TRAP_BUDGET_US", "0"});
     REQUIRE(Wanted(Custom(AllOff()), Game::Bananza) == only_traps);
     REQUIRE(Wanted(Custom(Performance()), Game::Bananza) == BalancedBananza);
 }
@@ -372,9 +367,9 @@ TEST_CASE("Nx2PerfSettings: a variable set outside the program wins", "[core]") 
     off.jit_same = false;
     REQUIRE(Plan(AfterBoxChange(off), Game::Bananza, is_outside) == plan);
 
-    // Safe's shortcuts set outside: theirs too (READ_TRAPS and READ_TRAP_BUDGET_US =0 besides).
+    // Safe's shortcuts set outside: theirs too (READ_TRAPS=0 besides).
     const auto light = [](std::string_view name) { return name == "EDEN_NX2_LIGHT_DRAW"; };
-    REQUIRE(Plan(AllOff(), Game::Bananza, light).size() == SafeOff.size() + 1 + BananzaVars.size());
+    REQUIRE(Plan(AllOff(), Game::Bananza, light).size() == SafeOff.size() + BananzaVars.size());
 
     // Everything set outside: nothing to set.
     REQUIRE(Plan(Performance(), Game::Bananza, [](std::string_view) { return true; }).empty());
@@ -683,6 +678,7 @@ TEST_CASE("Nx2PerfSettings: Bananza's foliage, shadows and reflections follow th
                                  [](const Var& var) {
                                      return var.name == "EDEN_NX2_DK_FOLIAGE_DENSITY" ||
                                             var.name == "EDEN_NX2_DK_FOLIAGE_DISTANCE" ||
+                                            var.name == "EDEN_NX2_DK_FOLIAGE_THORN_DENSITY" ||
                                             var.name == "EDEN_NX2_DK_SHADOW_CASCADES" ||
                                             var.name == "EDEN_NX2_DK_CUBEMAP_INTERVAL";
                                  }),
@@ -741,10 +737,12 @@ TEST_CASE("Nx2PerfSettings: Bananza's foliage", "[core]") {
     REQUIRE(foliage(switches) == std::vector<Var>{{"EDEN_NX2_DK_FOLIAGE_OFF", "1"}});
     switches.dk_foliage = FoliageLow;
     REQUIRE(foliage(switches) == std::vector<Var>{{"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"},
-                                                  {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"}});
+                                                  {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"},
+                                                  {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "50"}});
     switches.dk_foliage = FoliageMedium;
     REQUIRE(foliage(switches) == std::vector<Var>{{"EDEN_NX2_DK_FOLIAGE_DENSITY", "50"},
-                                                  {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "400"}});
+                                                  {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "400"},
+                                                  {"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "75"}});
     switches.dk_foliage = FoliageHigh;
     REQUIRE(foliage(switches).empty());
     for (const Var& var : Wanted(Performance(), Game::Bananza)) {

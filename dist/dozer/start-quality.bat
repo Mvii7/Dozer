@@ -69,13 +69,14 @@ set EDEN_NX2_FLUSH_FIRST_READ=
 set EDEN_NX2_READ_LATCH_AGE=
 rem Read traps stay on when this is unset.
 set EDEN_NX2_READ_TRAPS=
-rem Read trap budget: 1000 microseconds per 1/60 s when unset, 0 turns it off.
+rem Read trap budget (a test switch): off when unset.
 set EDEN_NX2_READ_TRAP_BUDGET_US=
 set EDEN_NX2_RX_ONE_SUBMIT=
 set EDEN_NX2_RX_COALESCE=
 set EDEN_NX2_WRITTEN_AGE=
 set EDEN_NX2_ASYNC_READBACK=
 set EDEN_NX2_ACQUIRE_SUSPEND=
+set EDEN_NX2_MEMORY_QUERY_MS=
 set EDEN_NX2_RX_PITCH_FORCED=
 set EDEN_NX2_RX_MASKED_TARGETS=
 set EDEN_NX2_REACTIVE_STATS=
@@ -98,6 +99,7 @@ set EDEN_NX2_DK_DYN=%DK_DYN%
 rem Donkey Kong Bananza as the game makes it: foliage, very high shadows, reflections (README).
 set EDEN_NX2_DK_FOLIAGE_OFF=
 set EDEN_NX2_DK_FOLIAGE_DENSITY=
+set EDEN_NX2_DK_FOLIAGE_THORN_DENSITY=
 set EDEN_NX2_DK_FOLIAGE_DISTANCE=
 set EDEN_NX2_DK_SHADOW_CASCADES=
 set EDEN_NX2_DK_CUBEMAP_INTERVAL=

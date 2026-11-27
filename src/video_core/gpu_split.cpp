@@ -17,6 +17,7 @@
 #include <cstdio>
 
 #include "common/logging.h"
+#include "common/nx2_slow_frame.h"
 #include "common/settings.h"
 #include "common/thread.h"
 #include "core/core.h"
@@ -91,29 +92,50 @@ void GpuSplit::CheckOwner(const char* where) {
 
 GpuSplit GpuSplit::instance;
 
-void GpuSplit::MaybeStart(Core::System& system_) {
+namespace {
+
+char SplitMode() {
     static const char mode = [] {
         const char* value = std::getenv("EDEN_NX2_SPLIT");
         return value != nullptr ? value[0] : '2';
     }();
-    const bool wanted = mode == '1' || mode == '2';
-    if (!wanted || !Tegra::g_nx2_ampere.load(std::memory_order_relaxed)) {
-        return;
-    }
-    // The front reads command lists straight from guest memory; a read that flushes the caches
-    // first (safe DMA, accurate GPU) would touch back-owned state. The settings can change
-    // mid-game: hand the engines back to the front (and start again when they allow it).
+    return mode;
+}
+
+bool SplitWanted() {
+    const char mode = SplitMode();
+    return (mode == '1' || mode == '2') && Tegra::g_nx2_ampere.load(std::memory_order_relaxed);
+}
+
+// The front reads command lists straight from guest memory; a read that flushes the caches
+// first (safe DMA, accurate GPU) would touch back-owned state.
+bool SplitAllowed() {
     const bool safe_reads = Settings::IsDMALevelDefault() ? Settings::IsGPULevelHigh()
                                                           : Settings::IsDMALevelSafe();
-    const bool allowed = !safe_reads && !Settings::IsGPULevelHigh() &&
-                         Settings::values.renderer_backend.GetValue() == Settings::RendererBackend::Vulkan;
-    if (active && !allowed) {
+    return !safe_reads && !Settings::IsGPULevelHigh() &&
+           Settings::values.renderer_backend.GetValue() == Settings::RendererBackend::Vulkan;
+}
+
+} // Anonymous namespace
+
+bool GpuSplit::CanStart() const {
+    return SplitWanted() && SplitAllowed();
+}
+
+void GpuSplit::MaybeStart(Core::System& system_) {
+    if (!SplitWanted()) {
+        return;
+    }
+    // The settings can change mid-game: hand the engines back to the front (and start again
+    // when they allow it).
+    const bool allowed = SplitAllowed();
+    if (Active() && !allowed) {
         Drain();
         Stop();
         LOG_INFO(HW_GPU, "GPU thread split: stopped, the accuracy settings need the caches on the front");
         return;
     }
-    if (active || !allowed) {
+    if (Active() || !allowed) {
         return;
     }
     system = &system_;
@@ -137,11 +159,11 @@ void GpuSplit::MaybeStart(Core::System& system_) {
     // front yet); the back thread then runs as stage A (BackLoop).
     Nx2Stages::Start(system_);
     back_thread = std::jthread([this](std::stop_token stop_token) { BackLoop(stop_token); });
-    active = true;
+    active.store(true, std::memory_order_relaxed);
 #ifdef ARCHITECTURE_x86_64
     // Front macros run compiled (macro_turing_jit.h) only.
     const char* jit = std::getenv("EDEN_NX2_MME_JIT");
-    front_macros = mode == '2' && (jit == nullptr || jit[0] != '0');
+    front_macros = SplitMode() == '2' && (jit == nullptr || jit[0] != '0');
 #endif
     LOG_INFO(HW_GPU, "GPU thread split: engine methods run on a second thread{}",
              front_macros ? ", macros on the first" : "");
@@ -159,7 +181,7 @@ void GpuSplit::Stop() {
     Nx2Stages::Stop();
     // EDEN_NX2_BACK_CPU: the core the back had is the process's again.
     Nx2BackCpu::StopBack();
-    active = false;
+    active.store(false, std::memory_order_relaxed);
     // The split is static and outlives the emulation session. The next session's back thread
     // starts reading at 0: with the old positions kept it skipped through the new, empty ring a
     // wrap at a time and never reached the old write position (the next game's first GPU work
@@ -249,10 +271,14 @@ bool GpuSplit::Drain() {
     Publish();
     Nx2BackCpu::NoteFront();
     Nx2Profile::Scope scope{Nx2Profile::Zone::SplitDrain};
+    namespace Slow = Common::Nx2SlowFrame;
+    const s64 slow_ns = Slow::Enabled() ? Slow::NowNs() : 0;
     for (u32 spins = 0;; ++spins) {
         consumed_cache = consumed.load(std::memory_order_acquire);
         if (consumed_cache == write_position) {
             publish_every = 8;
+            Slow::AddWait(Slow::Counter::Drains, Slow::Counter::DrainNs, Slow::Counter::DrainMaxNs,
+                          slow_ns);
             return true;
         }
         if (spins < 16384) {

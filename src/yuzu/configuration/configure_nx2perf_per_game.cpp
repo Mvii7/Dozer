@@ -38,7 +38,6 @@ const Entry* EntryOf(std::size_t key) {
     using S = Perf::Switches;
     static const Entry entries[Perf::KeyCount] = {
         {&S::read_traps, Perf::Game::Other, QT_TR_NOOP("Read traps")},
-        {&S::read_trap_budget, Perf::Game::Other, QT_TR_NOOP("Read trap budget")},
         {&S::split_gpu_thread, Perf::Game::Other, QT_TR_NOOP("Split GPU thread")},
         {&S::acquire_peek, Perf::Game::Other, QT_TR_NOOP("Acquire peek")},
         {&S::jit_same, Perf::Game::Other, QT_TR_NOOP("Same-value filter in the macro JIT")},
@@ -171,10 +170,10 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         foliage->addItem(tr("Medium"));
         foliage->addItem(tr("High"));
         foliage->setToolTip(
-            tr("The grass, flowers and plants. Off: none. Low: 10% of them, thinned in patches, "
-               "drawn up to 200 units. Medium: 50%, drawn up to 400 units. High: as the game "
-               "makes them. Fewer plants and a shorter distance mean fewer draws. Needs a "
-               "restart."));
+            tr("The grass, flowers and plants. Off: none. Low: 10% of them (50% of the thorns), "
+               "thinned in patches, drawn up to 200 units. Medium: 50% (thorns 75%), drawn up to "
+               "400 units. High: as the game makes them. Fewer plants and a shorter distance "
+               "mean fewer draws. Needs a restart."));
         form->addRow(tr("Foliage"), foliage);
         connect(foliage, &QComboBox::activated, this, [this](int index) {
             const int chosen = Perf::FoliageOff + index;

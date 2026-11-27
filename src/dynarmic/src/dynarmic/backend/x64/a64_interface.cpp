@@ -6,9 +6,11 @@
  * SPDX-License-Identifier: 0BSD
  */
 
+#include <chrono>
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 
 #include <boost/icl/interval_set.hpp>
 #include "common/assert.h"
@@ -30,6 +32,12 @@
 namespace Dynarmic::A64 {
 
 using namespace Backend::X64;
+
+namespace {
+std::mutex compiled_any_mutex;
+std::unordered_set<u64> compiled_any; ///< Emptied when the last JIT is destroyed
+std::size_t live_jits = 0;            ///< Guarded by compiled_any_mutex
+} // namespace
 
 static RunCodeCallbacks GenRunCodeCallbacks(A64::UserCallbacks* cb, CodePtr (*LookupBlock)(void* lookup_block_arg), void* arg, const A64::UserConfig& conf) {
     return RunCodeCallbacks{
@@ -118,6 +126,39 @@ public:
         PerformRequestedCacheInvalidation(hr);
         is_executing = false;
         return hr;
+    }
+
+    std::size_t Precompile(const u64* descriptors, std::size_t count) {
+        // Room for what the run compiles: a full cache is emptied at the next new block. A
+        // quarter of the room at the first call (the boot's, into an empty cache), whatever the
+        // size of later calls; the far code region, a quarter of the cache, runs out first.
+        if (precompile_reserve == 0) {
+            precompile_reserve = block_of_code.SpaceRemaining() / 4;
+        }
+        const std::size_t reserve = precompile_reserve;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (block_of_code.SpaceRemaining() < reserve) {
+                return i;
+            }
+            const IR::LocationDescriptor descriptor{descriptors[i]};
+            if (!A64::LocationDescriptor{descriptor}.SingleStepping()) {
+                GetBlock(descriptor);
+            }
+        }
+        return count;
+    }
+
+    bool PrecompileOne(u64 descriptor) {
+        // A fixed reserve: the run's own compiles keep their room, and the cache is never filled
+        // to the point GetBlock empties it.
+        if (block_of_code.SpaceRemaining() < conf.code_cache_size / 16) {
+            return false;
+        }
+        const IR::LocationDescriptor location{descriptor};
+        if (!A64::LocationDescriptor{location}.SingleStepping()) {
+            GetBlock(location);
+        }
+        return true;
     }
 
     void ClearCache() {
@@ -273,13 +314,30 @@ private:
         block_of_code.EnsureMemoryCommitted(MINIMUM_REMAINING_CODESIZE);
 
         // JIT Compile
+        const bool track = compile_stats.track.load(std::memory_order_relaxed);
+        const auto start = track ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         const auto get_code = [this](u64 vaddr) { return conf.callbacks->MemoryReadCode(vaddr); };
         // LocationDescriptor ctor() does important ops (like tflags) do not skip
         auto const arch_descriptor = A64::LocationDescriptor{descriptor};
         ir_block.Reset(arch_descriptor);
         A64::Translate(ir_block, arch_descriptor, get_code, {conf.define_unpredictable_behaviour, conf.wall_clock_cntpct});
         Optimization::Optimize(ir_block, conf, polyfill_options);
-        return emitter.Emit(ir_block).entrypoint;
+        const CodePtr entrypoint = emitter.Emit(ir_block).entrypoint;
+        if (track) {
+            compile_stats.blocks.fetch_add(1, std::memory_order_relaxed);
+            compile_stats.ns.fetch_add(static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()), std::memory_order_relaxed);
+            const u64 key = descriptor.Value();
+            if (!compiled_here.insert(key).second) {
+                compile_stats.again.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                std::scoped_lock lock{compiled_any_mutex};
+                if (!compiled_any.insert(key).second) {
+                    compile_stats.other_jit.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        }
+        conf.callbacks->BlockCompiled(descriptor.Value());
+        return entrypoint;
     }
 
     void PerformRequestedCacheInvalidation(HaltReason hr) {
@@ -294,9 +352,15 @@ private:
 
             jit_state.ResetRSB();
             if (invalidate_entire_cache) {
+                if (compile_stats.track.load(std::memory_order_relaxed)) {
+                    compile_stats.clears.fetch_add(1, std::memory_order_relaxed);
+                }
                 block_of_code.ClearCache();
                 emitter.ClearCache();
             } else {
+                if (compile_stats.track.load(std::memory_order_relaxed)) {
+                    compile_stats.ranges.fetch_add(invalid_cache_ranges.iterative_size(), std::memory_order_relaxed);
+                }
                 emitter.InvalidateCacheRanges(invalid_cache_ranges);
             }
             invalid_cache_ranges.clear();
@@ -308,18 +372,28 @@ private:
     const UserConfig conf;
     A64JitState jit_state;
     BlockOfCode block_of_code;
+    std::size_t precompile_reserve = 0; ///< Precompile's, set at its first call
     A64EmitX64 emitter;
     Optimization::PolyfillOptions polyfill_options;
     bool is_executing = false;
     bool invalidate_entire_cache = false;
     boost::icl::interval_set<u64> invalid_cache_ranges;
     std::mutex invalidation_mutex;
+    std::unordered_set<u64> compiled_here;
 };
 
 Jit::Jit(UserConfig conf)
-        : impl(std::make_unique<Jit::Impl>(this, conf)) {}
+        : impl(std::make_unique<Jit::Impl>(this, conf)) {
+    std::scoped_lock lock{compiled_any_mutex};
+    ++live_jits;
+}
 
-Jit::~Jit() = default;
+Jit::~Jit() {
+    std::scoped_lock lock{compiled_any_mutex};
+    if (--live_jits == 0) {
+        compiled_any = {};
+    }
+}
 
 HaltReason Jit::Run() {
     return impl->Run();
@@ -331,6 +405,14 @@ HaltReason Jit::Step() {
 
 void Jit::ClearCache() {
     impl->ClearCache();
+}
+
+std::size_t Jit::Precompile(const u64* descriptors, std::size_t count) {
+    return impl->Precompile(descriptors, count);
+}
+
+bool Jit::PrecompileOne(u64 descriptor) {
+    return impl->PrecompileOne(descriptor);
 }
 
 void Jit::InvalidateCacheRange(u64 start_address, size_t length) {

@@ -16,14 +16,17 @@
 #include <utility>
 #include <vector>
 
+#include "common/alignment.h"
 #include "common/assert.h"
 #include "common/nx2_reactive.h"
+#include "common/nx2_slow_frame.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "common/nx2_sync_serial.h"
 #include "common/settings_enums.h"
 #include "core/core.h"
 #include "core/core_timing.h"
+#include "core/device_memory_manager.h"
 #include "core/frontend/emu_window.h"
 #include "core/gpu_dirty_memory_manager.h"
 #include "core/frontend/graphics_context.h"
@@ -43,6 +46,7 @@
 #include "video_core/host1x/host1x.h"
 #include "video_core/host1x/syncpoint_manager.h"
 #include "video_core/memory_manager.h"
+#include "video_core/nx2.h"
 #include "video_core/nx2_async_readback.h"
 #include "video_core/rasterizer_download_area.h"
 #include "video_core/nx2_profile.h"
@@ -108,6 +112,12 @@ struct GPU::Impl {
     }
 
     void InitChannel(Control::ChannelState& to_init, u64 program_id) {
+        // The GPU thread split takes over a channel that exists when it starts unreliably (the
+        // front ran macros it never saw uploaded, or the game's first list never ran): start it
+        // first.
+        if (g_nx2_ampere.load(std::memory_order_relaxed)) {
+            gpu_thread.StartSplit();
+        }
         to_init.Init(system, program_id);
         VideoCommon::Nx2Stages::BindNewChannel(to_init, *renderer->ReadRasterizer());
         renderer->ReadRasterizer()->InitializeChannel(to_init);
@@ -361,8 +371,8 @@ struct GPU::Impl {
         gpu_thread.SubmitList(channel, std::move(entries), is_async);
     }
 
-    void RunInOrder(std::function<void()>&& func) {
-        gpu_thread.Run(std::move(func), is_async);
+    void RunInOrder(std::function<void()>&& func, bool front_waits) {
+        gpu_thread.Run(std::move(func), is_async, front_waits);
     }
 
     /// Notify rasterizer that any caches of the specified region should be flushed to Switch memory
@@ -397,6 +407,8 @@ struct GPU::Impl {
                      reads.load(std::memory_order_relaxed));
         }
         const s64 flush_ns = stats ? Common::Nx2Reactive::NowNs() : 0;
+        namespace Slow = Common::Nx2SlowFrame;
+        const s64 slow_ns = Slow::Enabled() ? Slow::NowNs() : 0;
         // Only a read-trapped buffer flush counts against the read trap budget.
         const s64 budget_ns = raster_area.read_trap && VideoCommon::Nx2ReadBudget::Enabled()
                                   ? VideoCommon::Nx2ReadBudget::NowNs()
@@ -441,6 +453,8 @@ struct GPU::Impl {
             AsyncReadback::NoteRead();
         }
         VideoCommon::Nx2ReadBudget::AddSince(budget_ns, true);
+        Slow::AddWait(Slow::Counter::ReadFlushes, Slow::Counter::ReadFlushNs,
+                      Slow::Counter::ReadFlushMaxNs, slow_ns);
         if (stats) [[unlikely]] {
             const u64 wait_us = Common::Nx2Reactive::MicrosecondsSince(flush_ns);
             Common::Nx2Reactive::Add(Common::Nx2Reactive::Counter::SyncFlushes, 1);
@@ -765,12 +779,29 @@ VideoCore::RasterizerDownloadArea GPU::OnCPURead(PAddr addr, u64 size) {
     return impl->OnCPURead(addr, size);
 }
 
+u32 GPU::Nx2NewerDataHeld(DAddr addr, u64 size) {
+    auto* const rasterizer = impl->renderer->ReadRasterizer();
+    u32 held = 0;
+    if (rasterizer->MustFlushRegion(addr, size, VideoCommon::CacheType::BufferCache)) {
+        held |= 1;
+    }
+    if (rasterizer->HoldsGpuWrittenData(addr, size)) {
+        held |= 2;
+        const DAddr page = Common::AlignDown(addr, Core::DEVICE_PAGESIZE);
+        const u64 span = Common::AlignUp(addr + size, Core::DEVICE_PAGESIZE) - page;
+        if (rasterizer->MustFlushRegion(page, span, VideoCommon::CacheType::BufferCache)) {
+            held |= 4;
+        }
+    }
+    return held;
+}
+
 void GPU::FlushRegion(DAddr addr, u64 size) {
     impl->FlushRegion(addr, size);
 }
 
-void GPU::RunInOrder(std::function<void()>&& func) {
-    impl->RunInOrder(std::move(func));
+void GPU::RunInOrder(std::function<void()>&& func, bool front_waits) {
+    impl->RunInOrder(std::move(func), front_waits);
 }
 
 void GPU::InvalidateRegion(DAddr addr, u64 size, bool preserve_gpu_writes) {

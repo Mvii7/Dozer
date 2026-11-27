@@ -145,3 +145,40 @@ TEST_CASE("ReadTraps: completing part of a batch does not consume other pages",
     REQUIRE(Armed(traps) == std::vector<u64>{9, 12});
     REQUIRE_FALSE(traps.Empty());
 }
+
+TEST_CASE("ReadTraps: the lock-free filter never misses an armed page", "[core][read_traps]") {
+    ReadTraps traps;
+    // Pages 7 and 7 + 2^15 share a filter slot (page & FilterMask).
+    constexpr u64 a = 7;
+    constexpr u64 b = 7 + (u64{1} << 15);
+    REQUIRE_FALSE(traps.MayAny(a, a + 1));
+    const u64 generation = traps.NewGeneration();
+    traps.Arm(a, generation);
+    traps.Arm(b, generation);
+    // Arming an armed page again moves its generation, not its count.
+    traps.Arm(a, traps.NewGeneration());
+    REQUIRE(traps.MayAny(a, a + 1));
+    REQUIRE(traps.MayAny(b, b + 1));
+    REQUIRE(traps.Any(a, a + 1));
+    // a disarmed: the shared slot still holds b.
+    REQUIRE(Disarmed(traps, a, a + 1, traps.Generation()) == std::vector<u64>{a});
+    REQUIRE_FALSE(traps.Any(a, a + 1));
+    REQUIRE(traps.MayAny(a, a + 1));
+    REQUIRE(traps.MayAny(b, b + 1));
+    // Disarming an unarmed page changes nothing.
+    REQUIRE(Disarmed(traps, a, a + 1, traps.Generation()).empty());
+    REQUIRE(traps.MayAny(b, b + 1));
+    // b dropped: the slot is empty again.
+    traps.Drop(b, b + 1);
+    REQUIRE_FALSE(traps.MayAny(a, a + 1));
+    REQUIRE_FALSE(traps.MayAny(b, b + 1));
+    // A range wider than the filter is always "may".
+    REQUIRE(traps.MayAny(0, (u64{1} << 15) + 1));
+    // Clear empties every slot.
+    traps.Arm(a, traps.NewGeneration());
+    traps.Arm(100, traps.Generation());
+    traps.Clear();
+    REQUIRE_FALSE(traps.MayAny(a, a + 1));
+    REQUIRE_FALSE(traps.MayAny(100, 101));
+    REQUIRE(traps.Empty());
+}

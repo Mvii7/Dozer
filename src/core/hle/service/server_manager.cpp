@@ -100,7 +100,18 @@ ServerManager::~ServerManager() {
     m_wakeup_event->Signal(m_system.Kernel());
 
     // Wait for processing to stop.
-    m_stopped.Wait();
+    if (!m_stopped.WaitFor(std::chrono::seconds{2})) {
+        std::string names;
+        for (const auto& name : m_names) {
+            names += names.empty() ? name : ", " + name;
+        }
+        LOG_WARNING(Service, "Shutdown: the server of [{}] has not stopped after 2 s ({})", names,
+                    m_busy.load(std::memory_order_relaxed) != 0
+                        ? fmt::format("in command {}",
+                                      m_busy_command.load(std::memory_order_relaxed))
+                        : std::string{"not in a request"});
+        m_stopped.Wait();
+    }
     m_threads.clear();
 
     // Clean up ports.
@@ -153,6 +164,7 @@ Result ServerManager::RegisterSession(Kernel::KServerSession* server_session,
 Result ServerManager::RegisterNamedService(const std::string& service_name,
                                            SessionRequestHandlerFactory&& handler_factory,
                                            u32 max_sessions) {
+    m_names.push_back(service_name);
     // Add the new server to sm: and get the moved server port.
     Kernel::KServerPort* server_port{};
     R_ASSERT(m_system.ServiceManager().RegisterService(std::addressof(server_port), service_name,
@@ -186,6 +198,7 @@ Result ServerManager::RegisterNamedService(const std::string& service_name,
 Result ServerManager::ManageNamedPort(const std::string& service_name,
                                       SessionRequestHandlerFactory&& handler_factory,
                                       u32 max_sessions) {
+    m_names.push_back(service_name);
     // Create a new port.
     auto* port = Kernel::KPort::Create(m_system.Kernel());
     port->Initialize(m_system.Kernel(), max_sessions, false, 0);
@@ -379,8 +392,11 @@ Result ServerManager::CompleteSyncRequest(Session* session) {
 
     // Complete the request. We have exclusive access to this session.
     auto* server_session = static_cast<Kernel::KServerSession*>(session->GetNativeHandle());
+    m_busy_command.store(session->GetContext()->GetCommand(), std::memory_order_relaxed);
+    m_busy.fetch_add(1, std::memory_order_relaxed);
     service_res =
         session->GetManager()->CompleteSyncRequest(server_session, *session->GetContext());
+    m_busy.fetch_sub(1, std::memory_order_relaxed);
 
     // If we've been deferred, we're done.
     if (session->GetContext()->GetIsDeferred()) {

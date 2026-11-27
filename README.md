@@ -21,7 +21,7 @@ Dozer runs on its own: unzip it into a new, empty folder (see "Install"). It shi
 - **`dozer-cli.exe`**, the program without menus (SDL), with launchers (`start-*.bat`) that start
   it with the same settings.
 
-- This is a preview release (0.1.6). The program does not show the version number: the commit is
+- This is a preview release (0.2.1). The program does not show the version number: the commit is
   in the window title and the log.
 - Source: https://github.com/Mvii7/Dozer (GPLv3, see "License").
 - Changes: `CHANGELOG_DOZER.md`. Every switch: `dist/nx2_switches.txt`. Building from source:
@@ -86,9 +86,10 @@ files in `Games`, and the `user` folder (your keys, firmware and saves).
 - **Use `.nx` instead of `.nup`.** It usually stutters less. Right-click a game in the list and
   choose **Convert to NX...** (see "Game files"). Dozer also offers to convert a `.nup` the first
   time you start it.
-- **Performance is the default preset.** Read traps are on, and Donkey Kong Bananza runs
-  without foliage, with medium shadows and very low reflection updates. To see Bananza as the game
-  makes it, pick **Quality** in its **Properties > Tuning**.
+- **Performance is the default preset.** Read traps are on, and Donkey Kong Bananza runs with low
+  foliage (thinned, drawn closer), medium shadows and very low reflection updates. To see Bananza
+  as the game makes it, pick **Quality** in its **Properties > Tuning**, or set **Foliage** to
+  Off there for the most speed.
 - **If your system is struggling, try handheld mode.** It trades resolution for performance. It
   made little difference on the maintainer's machine, so it mainly helps weaker systems.
 - **Keep asynchronous presentation and asynchronous shader compilation on** (Graphics > Extras).
@@ -185,8 +186,9 @@ changes them (not even Safe), and they have no global setting. For Bananza the
 program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`,
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
 it steers the game when the patch is unticked or finds nothing to patch. Bananza also has a
-**Foliage** (Off, Low, Medium, High: none (`DK_FOLIAGE_OFF=1`), 10% of the foliage drawn up to
-200 units (`DK_FOLIAGE_DENSITY=10`, `DK_FOLIAGE_DISTANCE=200`), 50% up to 400, High the game's own),
+**Foliage** (Off, Low, Medium, High: none (`DK_FOLIAGE_OFF=1`), 10% of the foliage and 50% of
+the thorns drawn up to 200 units (`DK_FOLIAGE_DENSITY=10`, `DK_FOLIAGE_THORN_DENSITY=50`,
+`DK_FOLIAGE_DISTANCE=200`), 50% and 75% up to 400, High the game's own),
 **Reflection updates**
 (Very low, Low, Medium, High: the reflection cube map captured every 240, 32, 16 or 8 frames,
 High the game's own; `DK_CUBEMAP_INTERVAL=240` / `32` / `16`) and
@@ -247,7 +249,7 @@ The game starts in full screen; dozer-cli has no menu. **Quit with Alt+F4.**
 
 | Launcher | When to use it |
 |---|---|
-| `start-performance.bat` | **Performance (the default).** The fastest settings, read traps on, reactive flushing off. Bananza without foliage, with medium shadows and very low reflection updates. |
+| `start-performance.bat` | **Performance (the default).** The fastest settings, read traps on, reactive flushing off. Bananza with low foliage, medium shadows and very low reflection updates. |
 | `start-quality.bat` | **Quality.** The performance settings with Bananza as the game makes it: foliage, reflections, very high shadows. |
 | `start-reactive-experimental.bat` | **Experimental.** The performance settings with Reactive Flushing instead of read traps. |
 | `start-safe.bat` | The GPU shortcuts Dozer keeps on by default off, read traps off, the opt-in switches that change play cleared; Dozer's fixes and its changes without a switch stay in: for troubleshooting and for games other than Bananza. |
@@ -285,7 +287,8 @@ error. Take the launchers from the release zip: they need Windows line endings (
   and only prints a note when an existing one has it on. Read traps stay
   on: the launcher clears `EDEN_NX2_READ_TRAPS`, and unset means on. For Bananza, low foliage,
   very low reflection updates and medium shadows (`DK_FOLIAGE_DENSITY=10`,
-  `DK_FOLIAGE_DISTANCE=200`, `DK_CUBEMAP_INTERVAL=240`, `DK_SHADOW_CASCADES=2`).
+  `DK_FOLIAGE_THORN_DENSITY=50`, `DK_FOLIAGE_DISTANCE=200`, `DK_CUBEMAP_INTERVAL=240`,
+  `DK_SHADOW_CASCADES=2`).
 - **`start-quality.bat`** - the same as `start-performance.bat`, with Bananza as the game makes
   it: foliage, reflections and very high shadows (those three lines cleared).
 - **`start-safe.bat`** - for troubleshooting and for games other than Bananza: Dozer's shortcut
@@ -369,16 +372,19 @@ the same way (foliage off wins over both):
   clumps stay with bare ground between them. The plants removed are moved far below the stage and
   scaled to 0, so the file keeps its counts. Gold is kept. The foliage placed while playing is
   scaled too (its chance, its number per patch and per frame).
+- `EDEN_NX2_DK_FOLIAGE_THORN_DENSITY=<1-100>`: the same for the thorns, the foliage on Thorn
+  ground (`Thorn000`-`Thorn011`, about 220,000 placed, most in the Core and Forest levels), which
+  look odd as thin as grass can be. Unset, they follow `DK_FOLIAGE_DENSITY`; 100 keeps them all.
 - `EDEN_NX2_DK_FOLIAGE_DISTANCE=<20-700>`: the farthest any foliage is drawn, in units. Each
   model's own far clip in `ModelSettings` (80 to 700) above it is brought down to it, so all
   foliage ends at the same line. The 174 of 418 models without one (a third of the placed foliage)
   take the code's default of 100, which a distance under 100 brings down too (in the code, only
   when nothing else there reads that value).
 
-`start-performance.bat` and `start-reactive-experimental.bat` set the Low level (10% kept, drawn up
-to 200 units); `start-quality.bat` and `start-safe.bat` leave the foliage as the game makes it. In
+`start-performance.bat` and `start-reactive-experimental.bat` set the Low level (10% kept, 50% of
+the thorns, drawn up to 200 units); `start-quality.bat` and `start-safe.bat` leave the foliage as the game makes it. In
 the menu program it is the **Foliage** dropdown in Bananza's Properties > Tuning: Off, Low,
-Medium (50%, 400 units) and High. The Performance and Experimental presets choose Low, Quality and
+Medium (50%, thorns 75%, 400 units) and High. The Performance and Experimental presets choose Low, Quality and
 Safe High. A game's Foliage off box from before the dropdown is read as Off when ticked, High
 when unticked. It applies when the game starts.
 

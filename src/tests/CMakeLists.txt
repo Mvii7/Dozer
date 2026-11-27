@@ -14,6 +14,7 @@ add_executable(tests
     common/page_table.cpp
     common/param_package.cpp
     common/range_map.cpp
+    common/range_sets.cpp
     common/ring_buffer.cpp
     common/scratch_buffer.cpp
     common/undefined_fix.cpp
@@ -38,6 +39,7 @@ add_executable(tests
     core/nx2_present_rate.cpp
     core/nx2_vi2_reply.cpp
     core/nx2_vi2_events.cpp
+    core/nx2_video_input_queue.cpp
     core/nx_archive.cpp
     core/read_traps.cpp
     core/system_test_context.h

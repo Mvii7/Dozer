@@ -7,22 +7,338 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdlib>
+#include <deque>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <string>
+#include <thread>
+#include <unordered_set>
+#include <vector>
 #if defined(_M_X64) || defined(__x86_64__)
 #include <immintrin.h>
 #endif
+#include "common/fs/path_util.h"
 #include "common/nx2_reactive.h"
+#include "common/nx2_slow_frame.h"
 #include "common/settings.h"
 #include "core/arm/dynarmic/arm_dynarmic.h"
 #include "core/arm/dynarmic/arm_dynarmic_64.h"
 #include "core/arm/dynarmic/dynarmic_exclusive_monitor.h"
 #include "core/core_timing.h"
+#include "core/hardware_properties.h"
 #include "core/hle/kernel/k_process.h"
+#include "dynarmic/interface/A64/a64.h"
 #include "dynarmic/interface/A64/config.h"
 
 namespace Core {
+
+namespace {
+// EDEN_NX2_SLOW_FRAME_MS: the JIT's compiles for the slow frame line. The switch is read at the
+// first present, not here: the menu program sets it when the game starts.
+const bool slow_frame_jit_hook = [] {
+    Common::Nx2SlowFrame::g_take_jit = [] {
+        auto& stats = Dynarmic::A64::compile_stats;
+        stats.track.store(true, std::memory_order_relaxed);
+        return Common::Nx2SlowFrame::JitCounts{
+            stats.blocks.exchange(0, std::memory_order_relaxed),
+            stats.ns.exchange(0, std::memory_order_relaxed),
+            stats.clears.exchange(0, std::memory_order_relaxed),
+            stats.again.exchange(0, std::memory_order_relaxed),
+            stats.other_jit.exchange(0, std::memory_order_relaxed),
+            stats.ranges.exchange(0, std::memory_order_relaxed)};
+    };
+    return true;
+}();
+
+// EDEN_NX2_JIT_BLOCK_LIST (on; =0 off): the blocks the JIT compiles are saved per title
+// (<cache>/nx2_jit/<title id>.bin, every 30 s and when emulation stops), as offsets from the
+// process's code address (the loader moves it every boot). After the game is loaded and before it
+// runs, every core's JIT compiles the saved blocks in executable memory, in parallel, so code
+// reached in an earlier session is not compiled in the frame that first runs it, once by each core.
+namespace JitBlockList {
+
+constexpr u64 Magic = 0x33304C424A32584EULL; // "NX2JBL03"
+constexpr size_t MaxBlocks = 4'000'000;
+constexpr u64 PcMask = (u64{1} << 56) - 1;
+constexpr u64 Invalid = ~u64{0};
+
+using BuildId = std::array<u8, 0x20>;
+
+bool Enabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_JIT_BLOCK_LIST");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+// EDEN_NX2_JIT_IDLE_COMPILE (on with the block list; =0 off): a block one core compiles is
+// compiled by the other cores while they idle, instead of in the frame each one first runs it.
+bool IdleCompileEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_JIT_IDLE_COMPILE");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+
+constexpr size_t MaxPending = 1 << 18; ///< Per core
+
+struct State {
+    std::mutex mutex;
+    const Kernel::KProcess* process = nullptr; ///< Recorded, until it ends
+    u64 base = 0;                              ///< Its code address
+    BuildId build_id{};                        ///< Its main module's; the list is for that build
+    std::filesystem::path path;
+    std::unordered_set<u64> known; ///< Saved and compiled blocks, relative
+    std::vector<u64> order;        ///< The same, oldest first
+    size_t first_kept = 0;         ///< order's first saved block (older ones did not fit)
+    size_t saved_count = 0;        ///< order.size() at the last save
+    /// The process's JIT on each core, while it lives. Its core_mutex is held to use it.
+    std::array<ArmDynarmic64*, Hardware::NUM_CPU_CORES> cores{};
+    std::array<std::mutex, Hardware::NUM_CPU_CORES> core_mutex;
+    /// Absolute descriptors of new blocks other cores compiled, for this core's idle time
+    std::array<std::deque<u64>, Hardware::NUM_CPU_CORES> pending;
+    std::array<std::atomic<size_t>, Hardware::NUM_CPU_CORES> pending_size{};
+    std::atomic<u64> idle_compiled = 0;
+    std::atomic<u64> pending_dropped = 0;
+    std::jthread saver; // last: stopped (and the list saved) before the rest goes
+};
+
+State& Get() {
+    static State state;
+    return state;
+}
+
+u64 ToRelative(u64 descriptor, u64 base) {
+    const u64 pc = descriptor & PcMask;
+    return pc < base ? Invalid : (descriptor & ~PcMask) | (pc - base);
+}
+
+u64 ToAbsolute(u64 relative, u64 base) {
+    return (relative & ~PcMask) | (((relative & PcMask) + base) & PcMask);
+}
+
+void Record(const Kernel::KProcess* process, size_t core, u64 descriptor) {
+    auto& state = Get();
+    std::scoped_lock lock{state.mutex};
+    if (process != state.process) {
+        return;
+    }
+    const u64 relative = ToRelative(descriptor, state.base);
+    if (relative == Invalid || state.known.size() >= MaxBlocks ||
+        !state.known.insert(relative).second) {
+        return;
+    }
+    state.order.push_back(relative);
+    if (!IdleCompileEnabled()) {
+        return;
+    }
+    for (size_t other = 0; other < state.cores.size(); ++other) {
+        if (other == core || state.cores[other] == nullptr) {
+            continue;
+        }
+        if (state.pending[other].size() >= MaxPending) {
+            ++state.pending_dropped;
+            continue;
+        }
+        state.pending[other].push_back(descriptor);
+        state.pending_size[other].store(state.pending[other].size(), std::memory_order_relaxed);
+    }
+}
+
+void ClearPending(State& state, size_t core) {
+    state.pending[core].clear();
+    state.pending_size[core].store(0, std::memory_order_relaxed);
+}
+
+/// The process's JIT on this core (nullptr: none). Takes the core's mutex, then the state's.
+void SetCore(size_t core, ArmDynarmic64* arm, const ArmDynarmic64* replaced) {
+    auto& state = Get();
+    std::scoped_lock lock{state.core_mutex[core], state.mutex};
+    if (replaced == nullptr || state.cores[core] == replaced) {
+        state.cores[core] = arm;
+        ClearPending(state, core);
+    }
+}
+
+/// Writes the blocks from first_kept on; the header holds the build they are for.
+void Save() {
+    auto& state = Get();
+    std::vector<u64> list;
+    std::filesystem::path path;
+    BuildId build_id{};
+    size_t count = 0;
+    {
+        std::scoped_lock lock{state.mutex};
+        count = state.order.size();
+        if (state.process == nullptr || count == state.saved_count) {
+            return;
+        }
+        list.assign(state.order.begin() + static_cast<std::ptrdiff_t>(state.first_kept),
+                    state.order.end());
+        path = state.path;
+        build_id = state.build_id;
+    }
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    auto temporary = path;
+    temporary += ".tmp";
+    bool written = false;
+    {
+        std::ofstream file{temporary, std::ios::binary | std::ios::trunc};
+        const u64 header[2]{Magic, list.size()};
+        file.write(reinterpret_cast<const char*>(header), sizeof(header));
+        file.write(reinterpret_cast<const char*>(build_id.data()), build_id.size());
+        file.write(reinterpret_cast<const char*>(list.data()),
+                   static_cast<std::streamsize>(list.size() * sizeof(u64)));
+        written = static_cast<bool>(file);
+    }
+    if (written) {
+        std::filesystem::rename(temporary, path, error);
+        written = !error;
+    }
+    if (!written) {
+        std::filesystem::remove(temporary, error);
+        return;
+    }
+    std::scoped_lock lock{state.mutex};
+    if (state.path == path) {
+        state.saved_count = (std::max)(state.saved_count, count);
+    }
+}
+
+/// Loads the process's list (dropped when it is for another build of the game) and records the
+/// blocks its JITs compile from now on.
+void Load(const Kernel::KProcess& process, const BuildId& build_id) {
+    auto& state = Get();
+    Save(); // a previous game's
+    std::scoped_lock lock{state.mutex};
+    state.process = &process;
+    state.base = GetInteger(process.GetEntryPoint());
+    state.build_id = build_id;
+    state.path = Common::FS::GetEdenPath(Common::FS::EdenPath::CacheDir) / "nx2_jit" /
+                 fmt::format("{:016X}.bin", process.GetProgramId());
+    state.known.clear();
+    state.order.clear();
+    state.first_kept = 0;
+    std::ifstream file{state.path, std::ios::binary};
+    u64 header[2]{};
+    BuildId saved_build{};
+    if (file.read(reinterpret_cast<char*>(header), sizeof(header)) && header[0] == Magic &&
+        header[1] <= MaxBlocks &&
+        file.read(reinterpret_cast<char*>(saved_build.data()), saved_build.size()) &&
+        saved_build == build_id) {
+        state.order.resize(header[1]);
+        if (!file.read(reinterpret_cast<char*>(state.order.data()),
+                       static_cast<std::streamsize>(header[1] * sizeof(u64)))) {
+            state.order.clear();
+        }
+    }
+    state.known.insert(state.order.begin(), state.order.end());
+    state.saved_count = state.order.size();
+    if (!state.saver.joinable()) {
+        state.saver = std::jthread([](std::stop_token stop) {
+            std::mutex wait_mutex;
+            std::condition_variable_any wake;
+            while (!stop.stop_requested()) {
+                std::unique_lock wait_lock{wait_mutex};
+                wake.wait_for(wait_lock, stop, std::chrono::seconds{30}, [] { return false; });
+                Save();
+                const u64 compiled = Get().idle_compiled.exchange(0);
+                const u64 dropped = Get().pending_dropped.exchange(0);
+                if (compiled != 0 || dropped != 0) {
+                    LOG_INFO(Core_ARM,
+                             "nx2 jit idle compile: {} blocks compiled by idle cores in 30 s, {} "
+                             "not queued (queue full)",
+                             compiled, dropped);
+                }
+            }
+        });
+    }
+}
+
+/// Saves the list and stops recording when the process ends.
+void End(const Kernel::KProcess* process) {
+    auto& state = Get();
+    {
+        std::scoped_lock lock{state.mutex};
+        if (process == nullptr || process != state.process) {
+            return;
+        }
+    }
+    Save();
+    std::scoped_lock lock{state.mutex};
+    if (state.process == process) {
+        state.process = nullptr;
+    }
+}
+
+struct ReadyBlocks {
+    std::vector<u64> descriptors; ///< Absolute, newest first
+    std::vector<size_t> order_at; ///< Each one's index in State::order
+};
+
+/// The saved blocks whose code is in executable memory of the process.
+ReadyBlocks Ready(Kernel::KProcess& process) {
+    auto& state = Get();
+    std::scoped_lock lock{state.mutex};
+    // By address for the memory queries; the result in the list's order.
+    std::vector<std::pair<u64, size_t>> by_pc;
+    by_pc.reserve(state.order.size());
+    for (size_t i = 0; i < state.order.size(); ++i) {
+        by_pc.emplace_back(ToAbsolute(state.order[i], state.base) & PcMask, i);
+    }
+    std::sort(by_pc.begin(), by_pc.end());
+    std::vector<bool> executable_at(state.order.size());
+    u64 region_start = 0;
+    u64 region_end = 0;
+    bool executable = false;
+    for (const auto& [pc, index] : by_pc) {
+        if (pc < region_start || pc >= region_end) {
+            Kernel::KMemoryInfo info{};
+            Kernel::Svc::PageInfo page_info{};
+            if (process.GetPageTable().QueryInfo(&info, &page_info, pc) != ResultSuccess) {
+                region_start = region_end = 0;
+                executable = false;
+            } else {
+                region_start = info.GetAddress();
+                region_end = info.GetEndAddress();
+                executable = True(info.GetPermission() & Kernel::KMemoryPermission::UserExecute);
+            }
+        }
+        executable_at[index] = executable && pc + sizeof(u32) <= region_end;
+    }
+    ReadyBlocks ready;
+    ready.descriptors.reserve(state.order.size());
+    ready.order_at.reserve(state.order.size());
+    for (size_t i = state.order.size(); i-- > 0;) {
+        if (executable_at[i]) {
+            ready.descriptors.push_back(ToAbsolute(state.order[i], state.base));
+            ready.order_at.push_back(i);
+        }
+    }
+    return ready;
+}
+
+/// The cores compiled only the newest `fitted` ready blocks before their code caches were too
+/// full: the older ones are no longer saved.
+void Fit(const ReadyBlocks& ready, size_t fitted) {
+    if (fitted >= ready.descriptors.size()) {
+        return;
+    }
+    auto& state = Get();
+    std::scoped_lock lock{state.mutex};
+    state.first_kept = ready.order_at[fitted] + 1;
+    state.saved_count = 0;
+}
+
+} // namespace JitBlockList
+} // namespace
 
 using namespace Common::Literals;
 
@@ -82,6 +398,12 @@ u64 DynarmicCallbacks64::MemoryRead(u64 vaddr, size_t size) {
 Dynarmic::A64::Vector DynarmicCallbacks64::MemoryRead128(u64 vaddr) {
     CheckMemoryAccess(vaddr, 16, Kernel::DebugWatchpointType::Read);
     return {m_memory.Read64(vaddr), m_memory.Read64(vaddr + 8)};
+}
+
+void DynarmicCallbacks64::BlockCompiled(u64 descriptor) {
+    if (JitBlockList::Enabled()) {
+        JitBlockList::Record(m_process, m_parent.m_core_index, descriptor);
+    }
 }
 
 std::optional<u32> DynarmicCallbacks64::MemoryReadCode(u64 vaddr) {
@@ -507,7 +829,87 @@ ArmDynarmic64::ArmDynarmic64(System& system, bool uses_wall_clock, Kernel::KProc
     MakeJit(&page_table_impl, page_table.GetAddressSpaceWidth());
 }
 
-ArmDynarmic64::~ArmDynarmic64() = default;
+ArmDynarmic64::~ArmDynarmic64() {
+    if (JitBlockList::Enabled()) {
+        if (m_core_index < Hardware::NUM_CPU_CORES) {
+            JitBlockList::SetCore(m_core_index, nullptr, this);
+        }
+        JitBlockList::End(m_cb->m_process);
+    }
+}
+
+void ArmDynarmic64::CompileForOtherCores(std::size_t core, const std::atomic<bool>& interrupted) {
+    if (!JitBlockList::Enabled() || !JitBlockList::IdleCompileEnabled() ||
+        core >= Hardware::NUM_CPU_CORES) {
+        return;
+    }
+    auto& state = JitBlockList::Get();
+    while (state.pending_size[core].load(std::memory_order_relaxed) != 0 && !interrupted) {
+        std::scoped_lock core_lock{state.core_mutex[core]};
+        ArmDynarmic64* arm = nullptr;
+        u64 descriptor = 0;
+        {
+            std::scoped_lock lock{state.mutex};
+            arm = state.cores[core];
+            if (arm == nullptr || state.pending[core].empty()) {
+                JitBlockList::ClearPending(state, core);
+                return;
+            }
+            descriptor = state.pending[core].front();
+            state.pending[core].pop_front();
+            state.pending_size[core].store(state.pending[core].size(), std::memory_order_relaxed);
+        }
+        // This core's thread is idle, so its JIT is not running. When the code cache is too full
+        // the rest is left to the run.
+        if (!arm->m_jit->PrecompileOne(descriptor)) {
+            std::scoped_lock lock{state.mutex};
+            JitBlockList::ClearPending(state, core);
+            return;
+        }
+        ++state.idle_compiled;
+    }
+}
+
+void ArmDynarmic64::PrecompileBlockList(System& system, Kernel::KProcess& process) {
+#ifdef HAS_NCE
+    if (Settings::IsNceEnabled()) {
+        return;
+    }
+#endif
+    if (!JitBlockList::Enabled() || !process.IsApplication() || !process.Is64Bit()) {
+        return;
+    }
+    JitBlockList::Load(process, system.GetApplicationProcessBuildID());
+    const auto start = std::chrono::steady_clock::now();
+    const auto ready = JitBlockList::Ready(process);
+    std::atomic<size_t> fitted{ready.descriptors.size()};
+    {
+        // Before the process runs. (No RTTI: a 64-bit process's interfaces are this class unless
+        // NCE runs it.)
+        std::vector<std::jthread> workers;
+        for (size_t core = 0; core < Hardware::NUM_CPU_CORES; ++core) {
+            ArmInterface* const core_interface = process.GetArmInterface(core);
+            if (core_interface != nullptr &&
+                core_interface->GetArchitecture() == Architecture::AArch64) {
+                auto* const arm = static_cast<ArmDynarmic64*>(core_interface);
+                JitBlockList::SetCore(core, arm, nullptr);
+                workers.emplace_back([arm, &ready, &fitted] {
+                    const size_t done = arm->m_jit->Precompile(ready.descriptors.data(),
+                                                               ready.descriptors.size());
+                    for (size_t seen = fitted.load(); done < seen &&
+                                                      !fitted.compare_exchange_weak(seen, done);) {
+                    }
+                });
+            }
+        }
+    }
+    JitBlockList::Fit(ready, fitted.load());
+    LOG_INFO(Core_ARM, "nx2 jit block list: {} of {} saved blocks compiled on every core in {} ms",
+             fitted.load(), ready.descriptors.size(),
+             std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now() - start)
+                 .count());
+}
 
 void ArmDynarmic64::SetTpidrroEl0(u64 value) {
     m_cb->m_tpidrro_el0 = value;

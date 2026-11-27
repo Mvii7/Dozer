@@ -13,31 +13,136 @@ and `=0` brings back the 2.0.0 code path.
   wait in full again (`EDEN_NX2_ASYNC_SKIP_COMPUTE=1` skips them as before, now under the same
   rule). Since the bounded waits, an object's texture in the Mario Kart World intro was seen
   filling in: a target or image drawn once, or cleared and then filled, passed the old test.
+- GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
+  cores, the split back, and with the back stages the front, each take a physical core, and the
+  other threads stay off those cores. They were sharing a core with the game. The Safe launcher
+  sets 0. Mario Kart World with the pack ahead was spending the whole frame on the game thread
+  while the GPU had already finished.
+- Vulkan, NVIDIA: `VK_EXT_vertex_input_dynamic_state` is used with driver 580.119.2 and
+  newer (Graphics settings, "Vertex Input Dynamic State", turns it off). The check built
+  its limit as a Vulkan version, which overflowed above every NVIDIA driver, so the extension was
+  always off and the vertex layout stayed in the graphics pipeline key. Pipelines are built again
+  once, since their keys change.
+- Cache invalidation: a write that did not start on a 32-byte boundary is recorded through its
+  aligned end. The size was measured before the start was pulled down, so the range ended short
+  by that offset. Page invalidation still covered the tail, but `EDEN_NX2_UBO_KEEP` compares
+  these ranges byte by byte and could bind the previous contents of a uniform buffer whose only
+  change was in it.
+- Switch 2 video: a movie's compressed frames are accepted only until 24 are waiting; further
+  packets get nn::codec's busy result and the game sends them again when the decoder has room
+  (the submission-ready event still stops at 8 waiting, as before).
+  Taking the whole opening at once left the decoder behind the audio clock for the first moments
+  of Mario Kart World's VP9 intro (the picture stuttered, then ran evenly once frames arrived as
+  they were shown). End of stream is still taken, and a packet answered busy is kept so a client
+  that does not resend it does not lose a VP9 reference.
+- Texture cache: textures leave a few per frame instead of thousands at once. Mario Kart World
+  climbed to 13 GB of device memory, then one frame deleted 4851 costly images and took 787 ms
+  (Lichii stays near 8.6 GB). The expected line now stops at 5/8 of the device budget (about
+  9 GB on a 16 GB card), and costly images unused for 150 frames leave a few per frame past it,
+  including after the critical line (`EDEN_NX2_TC_STALE_COSTLY`, `=0` keeps them until the
+  critical line; `EDEN_NX2_TC_EXPECTED_MIB` overrides the line). A gigabyte past the expected
+  line that grace is 90 frames. A gigabyte past the critical line the collector's time limit is
+  four times the usual instead of none. A skipped image was also using up one of the few delete
+  slots, so old render targets at the front of the list kept the walk from reaching the textures
+  behind them, and the first pass, which skips costly images, could use up the looks of the pass
+  that deletes them.
+
+## Dozer 0.2.1 (`v0.2.1`)
+
+- GPU thread split: a Switch 2 GPU map, and a new sparse region, is applied before the front
+  parses the command lists submitted after it. Before, those lists could be read through the page
+  table while the map, or an unmap queued ahead of it, had not run, so the uploaded data stayed
+  wrong: terrain broken from a level load on until the level reloads (seen rarely in Donkey Kong
+  Bananza after quick level transitions). A burst of maps waits once, before the next command
+  list, and that wait counts in the GPU profile as "mapping change".
+- CPU JIT idle compile (x64, with the block list; `EDEN_NX2_JIT_IDLE_COMPILE=0` turns it off): a
+  block one core compiles for the first time is queued for the other cores, and each compiles
+  its queue while it has nothing to run, stopping as soon as it has work. Code reached for the
+  first time (no saved list yet, or a new part of a stage) was compiled in game once by each
+  core that ran it, up to 6 times; now mostly once. Every 30 s the log says how many blocks idle
+  cores compiled.
+
+## Dozer 0.2.0 (`v0.2.0`)
+
+- Range sets: an empty range, or one whose end wraps, no longer reaches boost::icl's searches,
+  which need non-empty intervals. Asked about an empty range, they returned every stored range from the first on, cut
+  into pieces that end before they start. Donkey Kong Bananza hands the read trap set many empty
+  ranges a frame (null written storage buffers): the pieces made "armed" page counts impossible,
+  and arming only unarmed pages walked billions of pages. A written range of size 0 now queues
+  nothing.
+- `EDEN_NX2_TRAP_SET_CHECK=1` (diagnostic): logs changes to the set of armed read trap pages
+  made without the buffer cache's lock, odd ranges handed to it, and pieces of it returned outside
+  the range asked for. Such a piece no longer counts toward deciding that a range is already
+  armed.
+- Read traps: a trapped read always flushes through the rasterizer. A read of an armed page that
+  fell inside an area cached from an earlier read (an image's) skipped it, so the page was
+  disarmed while the buffer cache still counted it as armed: later GPU writes there never trapped
+  again and the guest read old data (flickering rocks, foliage and thorns in Donkey Kong Bananza,
+  whose culling reads indirect draw arguments the GPU writes).
+- Read traps: a guest CPU write to a buffer page drops its read trap (the page stops being cached);
+  the buffer cache now forgets it too, so the next GPU write there arms it again. Before, the
+  page stayed untrapped while the buffer cache counted it as trapped.
+- Read traps: a slow-path read checks a lock-free filter of the trapped pages before taking the
+  read trap lock (Mario Kart World takes 5-10 million slow reads per 10 s). With the two fixes
+  above its races run as in 0.1.7 (~48-50 fps).
+- `EDEN_NX2_READ_TRAP_BUDGET_US=<us>` (test switch, off unless set): with read traps, reads of
+  GPU-written buffer memory wait for its data at most `<us>` in each 1/60 s (up to 4x that after
+  a quiet stretch), then go on with what memory holds. Not for play: a read that goes on finds
+  older data. Mario Kart World could hang in a cutscene with it at 1000, never without it, and
+  Bananza lagged at the first hit of a gold vein; with the read trap fixes it saved ~1% of
+  Bananza's time.
+- `EDEN_NX2_TRAP_CHECK=<1|2|3>` (diagnostic, slow): pages a read disarms stay unreadable, and each
+  later read of one before a GPU write arms it again asks whether the GPU holds newer data there.
+  "Read trap check" lines name those reads and say whether the newer data is the read's own
+  buffer bytes, other buffer bytes on its page, or an image or query there. `=1` flushes every
+  such read, `=2` none (reads behave as without the check), `=3` only those that may find older
+  data.
+- Vulkan: the device memory in use is asked of the driver at most every 50 ms instead of twice a
+  frame (`EDEN_NX2_MEMORY_QUERY_MS`, `=0` every call, Safe), and the buffer cache no longer asks
+  with Switch 2 titles, which collect by their buffers' own size. With NVIDIA's driver on Windows
+  each query goes to the kernel driver and opens registry keys: in Donkey Kong Bananza 0.55 s of
+  the GPU thread's 56 s in a recording, about 0.3 ms a frame.
+- Texture uploads (`EDEN_NX2_ZERO_UPLOAD=0` turns it off): an image whose guest memory is all
+  zeros is uploaded as zeros without the CPU unswizzle. Donkey Kong Bananza's spikes on entering
+  new areas unswizzled 230-317 MB on the CPU, nearly all of it new render targets over all-zero
+  memory; their uploads took 78-97 ms, now 24-55 ms (most of it checking the memory for zeros).
+- `EDEN_NX2_SLOW_FRAME_MS=<ms>` (diagnostic, off unless set): one "nx2 slow frame:" log line
+  for each frame longer than `<ms>`, with the images created and deleted, MB uploaded,
+  pipelines built, waits for the split's back, read trap flushes, game file reads and CPU JIT
+  compiles in it.
+- `EDEN_NX2_FS_READ_MBPS=<MB/s>`: the rate game data reads are held to (40 unless set, `=0` no
+  limit).
+- GPU thread split: it now starts before the game creates its first Switch 2 GPU channel. When the
+  channel came first, the split took it over unreliably: the boot hung (the game's first command
+  list never ran) or the front ran macros it never saw uploaded and crashed. Donkey Kong Bananza
+  hit it about half the time with the JIT block list, which makes its boot faster.
+- CPU JIT block list (x64; `EDEN_NX2_JIT_BLOCK_LIST=0` turns it off): the blocks the JIT
+  compiles are saved per game and compiled by every core, in parallel, after the game loads and
+  before it runs. Donkey Kong Bananza's spikes on entering new parts of a stage were the JIT
+  compiling 10,000-55,000 blocks in a frame (up to 0.65 s of compiling), 45-90% of them blocks
+  another core had compiled already; with the list only code never reached before is compiled in
+  game. Boot takes about 4 s longer (Donkey Kong Bananza, ~400,000 blocks) and loading screens
+  are shorter. A list is for one build of the game (a game update starts a new one), and it
+  keeps the newest blocks that fit in three quarters of the room a core's code cache has for them
+  (its slow-path region, a quarter of the cache, fills first). (Fixed: it stopped after one
+  block, because that region is only a quarter of the cache, and then cut the saved list down to
+  that session's blocks.)
 - Donkey Kong Bananza: the Foliage off box is now a **Foliage** dropdown: Off (as before), Low
-  (10% of the foliage, thinned in patches, drawn up to 200 units), Medium (50%, 400 units) and
-  High (the game's own). `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of
-  time (its ProceduralPlacement files, as they are read) and the foliage placed while playing;
+  (10% of the foliage and 50% of the thorns, thinned in patches, drawn up to 200 units), Medium
+  (50%, thorns 75%, 400 units) and High (the game's own). The thorns have their own density,
+  `EDEN_NX2_DK_FOLIAGE_THORN_DENSITY`, as they look odd as thin as grass can be.
+  `EDEN_NX2_DK_FOLIAGE_DENSITY` thins each stage's foliage placed ahead of time (its
+  ProceduralPlacement files, as they are read) and the foliage placed while playing;
   `EDEN_NX2_DK_FOLIAGE_DISTANCE` brings every model's draw distance down to one line (under 100,
-  the code's default for the models without one too). Performance and Experimental choose Low instead of
-  Off, Quality and Safe High; the launchers set the same. A game's Foliage off box is read as Off.
+  the code's default for the models without one too). Performance and Experimental choose Low
+  instead of Off, Quality and Safe High; the launchers set the same. A game's Foliage off box is
+  read as Off.
 - Read traps: a copy back at a fence no longer disarms the traps of its pages
   (`EDEN_NX2_TRAP_POP_DISARM=1` brings it back); a page read again faults once instead. The
   fence thread spent 0.15-0.25 s per 10 s on those page protection changes in Mario Kart World
   and Donkey Kong Bananza, and reads waited for copies back behind it. With it gone Bananza's
-  destruction waits 0.07-0.17 s per 10 s instead of 0.3-0.4 s, and far fewer reads run out of
-  the read trap budget. The reactive stats line splits the copy back pops by part.
-- Read trap budget (Tuning tab, on; `EDEN_NX2_READ_TRAP_BUDGET_US`, 1000 unless set, `=0` off,
-  off in Safe): with read traps, the guest CPU's reads of GPU-written buffer memory wait for its
-  data at most 1 ms in each 1/60 s, then go on with what memory holds, as with read traps off. A
-  download that would not fit in what is left is skipped (`EDEN_NX2_READ_TRAP_BUDGET_PREDICT=0`
-  starts it anyway). Donkey Kong Bananza's destruction waited 0.5-0.8 s per 10 s for those reads,
-  Mario Kart World's races 1.1-2.3 s; with the budget 0.15-0.4 s and 0.6-1 s.
-- MME DMA reads drain the split's back again by default (`EDEN_NX2_DMA_READ_PEEK`, now `=1` to
-  go on without one). With `EDEN_NX2_ACQUIRE_SUSPEND` a channel the latch resumes may read
-  before the back ran the draws sent ahead of the release, and the peek let such reads go on:
-  rocks in Donkey Kong Bananza flickered. The front also no longer notes every write it sends
-  for the peek, which cost it more than the drains it saved. With `=1`, every acquire a latch
-  resumes drains first.
+  destruction waits 0.07-0.17 s per 10 s instead of 0.3-0.4 s. The reactive stats line splits
+  the copy back pops by part.
 - Shader cache (Vulkan and OpenGL): a cache whose last record was cut off (the emulator crashed
   or was closed while appending a pipeline) keeps the records before it; before, the whole cache
   file was deleted and every pipeline was built again. A zero-filled tail no longer crashes the
@@ -93,23 +198,6 @@ and `=0` brings back the 2.0.0 code path.
   does its job without a second patch path.
 - Donkey Kong Bananza's presets: Performance and Experimental turn foliage off, set Very low
   reflection updates and Medium shadows; Quality and Safe leave the game's own. The launchers set the same.
-- Frame generation (LSFG and Optical Flow) now runs while HDR output is active instead of turning off.
-  LSFG takes its HDR mode on an scRGB swapchain (as lsfg-vk's); HDR10's PQ frames go through it
-  like SDR ones. Not tried on an HDR display yet.
-- Frame generation: switching between LSFG and Optical Flow during play rebuilds the chain for
-  the new type, a missing Lossless.dll no longer keeps Optical Flow off afterwards, and Optical
-  Flow no longer loads the LSFG shaders. From Lichii #1493.
-- Status bar: an **FG** button next to the others. Click turns frame generation on and off,
-  also during play; right click picks Optical Flow or LSFG. It shows the type and multiplier
-  ("FG OPTICAL FLOW 2X", "AUTO" with a target frame rate), and "(IDLE)" while a game runs and
-  no frames were generated in the last half second. The frames frame generation presents through
-  are made at start for the most it can use and parked until needed, so turning it on during
-  play gets the frames it needs instead of the count the game started with. From Lichii #537.
-- Renamed to what they do (labels only; settings and configs keep their values): frame
-  generation type "FSR 3" is now **Optical Flow Interpolation**, Eglantine's own optical-flow
-  interpolation and not AMD's FSR 3; the window filter "AMD FidelityFX Super Resolution 3" is
-  now **FSR 1, softer sharpening** (it runs FSR 1's EASU and RCAS at 0.8x sharpness), and the
-  plain FSR filter is **FSR 1**. From Lichii.
 - Buffer cache, `EDEN_NX2_ASYNC_READBACK` (on by default, `=0` turns it off; a port of Lichii's
   read-back): a guest CPU read of GPU-written buffer memory (a read trap, or reactive flushing)
   no longer has the GPU thread wait for the host GPU. It submits the download and goes on; the
@@ -137,12 +225,33 @@ and `=0` brings back the 2.0.0 code path.
   4 KiB page instead of a tree, so each change costs its pages instead of a tree walk (about 10%
   of the memory stage went to the tree). `EDEN_NX2_PAGE_RANGES=0` brings back the tree;
   start-safe.bat does.
-- Split GPU thread, with `EDEN_NX2_ACQUIRE_PEEK=1` (the Balanced, Performance and Experimental
-  presets, every game): an MME DMA read no longer drains the back when no write the front sent
-  and the back has not run reaches its words, no work but draws is queued and the buffer cache
-  holds no newer data. In Donkey Kong Bananza 76-84% of them go on without one.
-  `EDEN_NX2_DMA_READ_PEEK=0` drains as before, `=2` drains and logs the reads the drain changed
-  (none of 55,084 in Donkey Kong Bananza).
+- Split GPU thread, `EDEN_NX2_DMA_READ_PEEK=1` (with `EDEN_NX2_ACQUIRE_PEEK=1`; off by default):
+  an MME DMA read goes on without draining the back when no write the front sent and the back
+  has not run reaches its words, no work but draws is queued and the buffer cache holds no newer
+  data. In Donkey Kong Bananza 55-84% of them go on without one, but the front then notes the
+  methods that write memory or start work other than draws, which costs it about what the
+  drains save, and every acquire a latch resumes drains first; neither game ran faster with it.
+  `=2` drains and logs the reads the drain changed (none of 55,084 in Donkey Kong Bananza).
+
+## Dozer 0.1.7 (`v0.1.7`)
+
+- Frame generation (LSFG and Optical Flow) now runs while HDR output is active instead of turning off.
+  LSFG takes its HDR mode on an scRGB swapchain (as lsfg-vk's); HDR10's PQ frames go through it
+  like SDR ones. Not tried on an HDR display yet.
+- Frame generation: switching between LSFG and Optical Flow during play rebuilds the chain for
+  the new type, a missing Lossless.dll no longer keeps Optical Flow off afterwards, and Optical
+  Flow no longer loads the LSFG shaders. From Lichii #1493.
+- Status bar: an **FG** button next to the others. Click turns frame generation on and off,
+  also during play; right click picks Optical Flow or LSFG. It shows the type and multiplier
+  ("FG OPTICAL FLOW 2X", "AUTO" with a target frame rate), and "(IDLE)" while a game runs and
+  no frames were generated in the last half second. The frames frame generation presents through
+  are made at start for the most it can use and parked until needed, so turning it on during
+  play gets the frames it needs instead of the count the game started with. From Lichii #537.
+- Renamed to what they do (labels only; settings and configs keep their values): frame
+  generation type "FSR 3" is now **Optical Flow Interpolation**, Eglantine's own optical-flow
+  interpolation and not AMD's FSR 3; the window filter "AMD FidelityFX Super Resolution 3" is
+  now **FSR 1, softer sharpening** (it runs FSR 1's EASU and RCAS at 0.8x sharpness), and the
+  plain FSR filter is **FSR 1**. From Lichii.
 
 ## Dozer 0.1.6 (`v0.1.6`)
 

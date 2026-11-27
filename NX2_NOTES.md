@@ -264,7 +264,7 @@ Shifted QMD layout (no switch: it only changes a QMD that was rejected before; s
 `EDEN_NX2_TICK_SKIP=0` (default on: GPU::TickWork returns without its lock when every queued sync request has run; 0 always locks),
 `EDEN_NX2_LAYOUT_MEMO=0` (default on: EstimateIndexBufferSize keeps the last start address's layout size per thread until MappingEpoch changes; 0 looks it up every time),
 `EDEN_NX2_RESET_LAST=0` (default on: the indirect draw reset program lookup keeps the last program's answer; 0 searches the map every time),
-`EDEN_NX2_BACK_CPU=1/2/3` (off by default: the split's back on a physical core of its own through CPU Sets, the process's other threads off that core; 2 also logs where the back and the front ran, 3 only logs; `EDEN_NX2_BACK_CORE=<n>` picks the core; NX2_GPU_THREAD_SPLIT.md),
+`EDEN_NX2_BACK_CPU=0/1/2/3` (unset: on with at least 8 cores; 0 off; 1 on from 4 cores: the split's back on a physical core of its own through CPU Sets, the process's other threads off that core; 2 also logs where the back and the front ran, 3 only logs; `EDEN_NX2_BACK_CORE=<n>` picks the core; NX2_GPU_THREAD_SPLIT.md),
 `EDEN_NX2_BACK_STAGES=1/2/3` (off by default: the split's back as stages A | BC; 2 lockstep with replica checks, `EDEN_NX2_BACK_STAGES_EVERY=<n>` every n-th record; 3 pass-through; `EDEN_NX2_BACK_CUTS=ac` cut 2, plumbing only; `EDEN_NX2_STAGE_CHECK=1` owner checks; row 154, NX2_GPU_THREAD_SPLIT.md),
 `EDEN_NX2_FRAME_CAPTURE=<dir>` (every 120th presented frame as TGA), `EDEN_NX2_PB_CHECK`
 (pushbuffer entries changed between submit and execution), `EDEN_NX2_QUERY_TRACE` (every GPU

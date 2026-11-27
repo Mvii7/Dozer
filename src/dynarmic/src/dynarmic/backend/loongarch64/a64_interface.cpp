@@ -165,6 +165,14 @@ void Jit::ClearCache() {
     impl->ClearCache();
 }
 
+std::size_t Jit::Precompile(const std::uint64_t*, std::size_t) {
+    return 0;
+}
+
+bool Jit::PrecompileOne(std::uint64_t) {
+    return false;
+}
+
 void Jit::InvalidateCacheRange(u64 start_address, std::size_t length) {
     impl->InvalidateCacheRange(start_address, length);
 }

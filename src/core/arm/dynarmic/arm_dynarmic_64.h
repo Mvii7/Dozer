@@ -40,6 +40,7 @@ public:
     u64 MemoryRead(u64 vaddr, size_t size) override;
     Dynarmic::A64::Vector MemoryRead128(u64 vaddr) override;
     std::optional<u32> MemoryReadCode(u64 vaddr) override;
+    void BlockCompiled(u64 descriptor) override;
     void InstructionSynchronizationBarrierRaised() override {
         last_code_addr = u64(-1); //reset back, force refetch
     }
@@ -97,6 +98,14 @@ public:
     void SignalInterrupt(Kernel::KThread* thread) override;
     void ClearInstructionCache() override;
     void InvalidateCacheRange(u64 addr, std::size_t size) override;
+
+    /// EDEN_NX2_JIT_BLOCK_LIST: every core's JIT compiles the process's saved blocks, in
+    /// parallel, before the process starts (after it is loaded).
+    static void PrecompileBlockList(System& system, Kernel::KProcess& process);
+
+    /// EDEN_NX2_JIT_IDLE_COMPILE: on a core with nothing to run, its JIT compiles the new blocks
+    /// other cores compiled, one at a time, until it is interrupted.
+    static void CompileForOtherCores(std::size_t core, const std::atomic<bool>& interrupted);
 
 protected:
     const Kernel::DebugWatchpoint* HaltedWatchpoint() const override;

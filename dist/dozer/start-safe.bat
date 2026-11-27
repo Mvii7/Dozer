@@ -52,6 +52,7 @@ set EDEN_NX2_MODE_GOV=
 set EDEN_NX2_DK_DYN=
 set EDEN_NX2_DK_FOLIAGE_OFF=
 set EDEN_NX2_DK_FOLIAGE_DENSITY=
+set EDEN_NX2_DK_FOLIAGE_THORN_DENSITY=
 set EDEN_NX2_DK_FOLIAGE_DISTANCE=
 set EDEN_NX2_DK_SHADOW_CASCADES=
 set EDEN_NX2_DK_CUBEMAP_INTERVAL=
@@ -59,7 +60,6 @@ set EDEN_NX2_DK_DYN_MIN_FPS=
 set EDEN_NX2_MKW_DYN=
 set EDEN_NX2_FG_TIMED=
 set EDEN_NX2_OSD=
-set EDEN_NX2_BACK_CPU=
 set EDEN_NX2_SEMEXEC_DEFER=
 set EDEN_NX2_SKIP_EMPTY_DRAWS=
 set EDEN_NX2_ASYNC_SKIP=
@@ -85,6 +85,7 @@ set EDEN_NX2_RX_COALESCE=
 set EDEN_NX2_WRITTEN_AGE=
 set EDEN_NX2_ASYNC_READBACK=
 set EDEN_NX2_ACQUIRE_SUSPEND=
+set EDEN_NX2_MEMORY_QUERY_MS=
 set EDEN_NX2_RX_PITCH_FORCED=
 set EDEN_NX2_RX_MASKED_TARGETS=
 set EDEN_NX2_REACTIVE_STATS=
@@ -93,8 +94,10 @@ set EDEN_NX2_RX_NO_RT_LATCH=
 set EDEN_NX2_RX_COALESCE_LOOSE=
 rem Read traps are on unless this is 0. Safe turns them off.
 set EDEN_NX2_READ_TRAPS=0
-rem Read trap budget off: every read waits for its data.
-set EDEN_NX2_READ_TRAP_BUDGET_US=0
+rem Read trap budget (a test switch): off when unset.
+set EDEN_NX2_READ_TRAP_BUDGET_US=
+rem GPU threads on cores of their own (Windows) are on unless this is 0. Safe turns them off.
+set EDEN_NX2_BACK_CPU=0
 rem Shortcuts that are on by default: off (=0, the code path of 2.0.0).
 set EDEN_NX2_LIGHT_DRAW=0
 set EDEN_NX2_LIGHT_UNIFORM=0
@@ -167,6 +170,7 @@ set EDEN_NX2_RX_COALESCE=0
 set EDEN_NX2_WRITTEN_AGE=0
 set EDEN_NX2_ASYNC_READBACK=0
 set EDEN_NX2_ACQUIRE_SUSPEND=0
+set EDEN_NX2_MEMORY_QUERY_MS=0
 if defined CONFIG goto withconfig
 "%HERE%dozer-cli.exe" %FULLSCREEN% -g "%GAME%"
 goto ran

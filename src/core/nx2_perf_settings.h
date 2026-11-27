@@ -59,11 +59,11 @@ inline constexpr int ShadowMedium = 2;
 inline constexpr int ShadowVeryHigh = 4;
 
 /// Bananza's foliage steps: Off (EDEN_NX2_DK_FOLIAGE_OFF=1), Low and Medium (the foliage kept,
-/// EDEN_NX2_DK_FOLIAGE_DENSITY, and how far it is drawn, EDEN_NX2_DK_FOLIAGE_DISTANCE), High the
-/// game's own.
+/// EDEN_NX2_DK_FOLIAGE_DENSITY, the thorns kept, EDEN_NX2_DK_FOLIAGE_THORN_DENSITY, and how far it
+/// is drawn, EDEN_NX2_DK_FOLIAGE_DISTANCE), High the game's own.
 inline constexpr int FoliageOff = 1;
-inline constexpr int FoliageLow = 2;    ///< 10% kept, drawn up to 200 units
-inline constexpr int FoliageMedium = 3; ///< 50% kept, drawn up to 400 units
+inline constexpr int FoliageLow = 2;    ///< 10% kept (thorns 50%), drawn up to 200 units
+inline constexpr int FoliageMedium = 3; ///< 50% kept (thorns 75%), drawn up to 400 units
 inline constexpr int FoliageHigh = 4;
 
 /// Bananza's reflection update steps: how often the reflection cube map is captured again.
@@ -74,7 +74,6 @@ inline constexpr int ReflectionsHigh = 4;   ///< every 8 frames, the game's own
 
 struct Switches {
     bool read_traps = true;        ///< on leaves EDEN_NX2_READ_TRAPS unset; off sets it to 0
-    bool read_trap_budget = true;  ///< off sets EDEN_NX2_READ_TRAP_BUDGET_US=0
     bool split_gpu_thread = true;  ///< EDEN_NX2_BACK_STAGES=1 + EDEN_NX2_BACK_CUTS=a
     bool acquire_peek = true;      ///< EDEN_NX2_ACQUIRE_PEEK=1
     bool jit_same = true;          ///< EDEN_NX2_JIT_SAME=1
@@ -126,7 +125,6 @@ constexpr Switches FirstStart() {
 constexpr Switches AllOff() {
     return Switches{
         .read_traps = false,
-        .read_trap_budget = false,
         .split_gpu_thread = false,
         .acquire_peek = false,
         .jit_same = false,
@@ -145,9 +143,8 @@ struct Key {
     std::string_view name;
     bool Switches::*field;
 };
-inline constexpr std::array<Key, 8> Keys{{
+inline constexpr std::array<Key, 7> Keys{{
     {"read_traps", &Switches::read_traps},
-    {"read_trap_budget", &Switches::read_trap_budget},
     {"split_gpu_thread", &Switches::split_gpu_thread},
     {"acquire_peek", &Switches::acquire_peek},
     {"jit_same", &Switches::jit_same},
@@ -426,14 +423,14 @@ template <typename Read, typename ReadPreset>
 Switches Load(Read&& read, ReadPreset&& read_preset) {
     const Preset preset =
         PresetFromInt(read_preset("preset", static_cast<int>(Preset::Performance)));
-    // read_traps and read_trap_budget were added after the other boxes: a file without the key
+    // read_traps was added after the other boxes: a file without the key
     // keeps the preset's own value (read traps: Performance and Quality on, Experimental and Safe
     // off, Custom on) instead of being read as Custom. Performance had read traps off before: a
     // stored Performance takes the preset's.
     const Switches preset_switches = FromPreset(preset, Performance());
     Switches switches{};
     for (const Key& key : Keys) {
-        const bool by_preset = key.name == "read_traps" || key.name == "read_trap_budget";
+        const bool by_preset = key.name == "read_traps";
         const bool fallback = by_preset ? preset_switches.*key.field : Performance().*key.field;
         switches.*key.field = read(key.name, fallback);
     }
@@ -520,7 +517,7 @@ struct Var {
 
 /// The per-draw shortcuts this fork keeps on by default; the Safe preset turns them off (=0), as
 /// start-safe.bat does.
-inline constexpr std::array<std::string_view, 72> SafeOff{
+inline constexpr std::array<std::string_view, 73> SafeOff{
     "EDEN_NX2_LIGHT_DRAW",       "EDEN_NX2_LIGHT_UNIFORM",     "EDEN_NX2_LIGHT_UNIFORM_VALUES",
     "EDEN_NX2_LIGHT_STORAGE",    "EDEN_NX2_UNIFORM_SYNC_SKIP", "EDEN_NX2_STORAGE_KEEP",
     "EDEN_NX2_UBO_REUSE",        "EDEN_NX2_UBO_DIRECT",        "EDEN_NX2_UBO_STAGE",
@@ -545,6 +542,7 @@ inline constexpr std::array<std::string_view, 72> SafeOff{
     "EDEN_NX2_RX_ONE_SUBMIT",    "EDEN_NX2_ADD_MEMO",          "EDEN_NX2_PAGE_RANGES",
     "EDEN_NX2_DMA_READ_PEEK",    "EDEN_NX2_ACQUIRE_NODRAIN_EQUAL", "EDEN_NX2_RX_COALESCE",
     "EDEN_NX2_WRITTEN_AGE",      "EDEN_NX2_ASYNC_READBACK",    "EDEN_NX2_ACQUIRE_SUSPEND",
+    "EDEN_NX2_MEMORY_QUERY_MS",
 };
 
 /// The variables a setting or preset can set, besides SafeOff, in the order they are set.
@@ -557,8 +555,9 @@ inline constexpr std::array<std::string_view, 20> Names{
     "EDEN_NX2_PACE_SPIN_US",  "EDEN_NX2_MKW_DYN",
     "EDEN_NX2_READ_TRAPS",    "EDEN_NX2_RX_RT_FIT",
     "EDEN_NX2_DK_FOLIAGE_OFF", "EDEN_NX2_DK_SHADOW_CASCADES",
-    "EDEN_NX2_DK_CUBEMAP_INTERVAL", "EDEN_NX2_READ_TRAP_BUDGET_US",
+    "EDEN_NX2_DK_CUBEMAP_INTERVAL",
     "EDEN_NX2_DK_FOLIAGE_DENSITY", "EDEN_NX2_DK_FOLIAGE_DISTANCE",
+    "EDEN_NX2_DK_FOLIAGE_THORN_DENSITY",
 };
 
 /// Calls `f(name)` for every variable the settings can set (Names, then SafeOff).
@@ -605,9 +604,11 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
         } else if (switches.dk_foliage == FoliageLow) {
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"});
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"});
+            vars.push_back({"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "50"});
         } else if (switches.dk_foliage == FoliageMedium) {
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_DENSITY", "50"});
             vars.push_back({"EDEN_NX2_DK_FOLIAGE_DISTANCE", "400"});
+            vars.push_back({"EDEN_NX2_DK_FOLIAGE_THORN_DENSITY", "75"});
         }
         if (switches.dk_shadow >= ShadowLow && switches.dk_shadow < ShadowVeryHigh) {
             static constexpr std::array<std::string_view, 3> Cascades{"1", "2", "3"};
@@ -631,9 +632,6 @@ inline std::vector<Var> Wanted(const Switches& switches, Game game) {
     // On by default (unset). Off is the only value the program sets.
     if (!switches.read_traps) {
         vars.push_back({"EDEN_NX2_READ_TRAPS", "0"});
-    }
-    if (!switches.read_trap_budget) {
-        vars.push_back({"EDEN_NX2_READ_TRAP_BUDGET_US", "0"});
     }
     if (switches.preset == Preset::Reactive) {
         vars.push_back({"EDEN_NX2_RX_RT_FIT", "3"});
