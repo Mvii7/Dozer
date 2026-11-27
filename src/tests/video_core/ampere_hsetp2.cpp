@@ -99,6 +99,22 @@ TEST_CASE("Ampere HSETP2 register form keeps every modifier", "[video_core][ampe
     REQUIRE(Fields(lowered.instructions[1]) == expected);
 }
 
+TEST_CASE("Ampere HSETP2 with a constant buffer B reads it into R250", "[video_core][ampere]") {
+    // Rejected as an unsupported opcode in Mario Kart World's map change: bank 7, offset 0xfc.
+    const Instruction insn{{0xff007634, 0x31c03f00, 0x04f24800, 0x000fca00}};
+    const std::array<Instruction, 2> code{insn, EXIT};
+    const auto lowered = LowerToMaxwell(code);
+    REQUIRE(static_cast<bool>(lowered));
+    REQUIRE(lowered.instructions.size() == 3);
+    REQUIRE((lowered.instructions[0] >> 52) == 0x4c9);
+    REQUIRE(MaxwellOpcode(lowered.instructions[1]) == "HSETP2_reg");
+    const auto fields = Fields(lowered.instructions[1]);
+    REQUIRE(fields.reg_b == 250);
+    REQUIRE(fields.swizzle_b == 3);
+    REQUIRE(fields.abs_b == 0);
+    REQUIRE(fields.neg_b == 0);
+}
+
 TEST_CASE("Ampere HSETP2 register form rejects unknown bits", "[video_core][ampere]") {
     const Instruction valid{{0x34007234, 0x30000034, 0x00702800, 0x000fe400}};
     // Bit 40, bit 64, bit 91, combine 3 (bits 69-70).
