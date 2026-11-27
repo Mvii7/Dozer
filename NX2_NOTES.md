@@ -422,7 +422,7 @@ Offline shader check: `nx2work/lowertest/lowertest.exe C:/dev/shaders_title1 [-a
 
 ## b-hiz: back-thread cost per draw (perf/b-hiz)
 
-Each switch below is on by default; `=0` restores the previous code path, `=2`
+Each switch below is on by default (ASYNC_SKIP off); `=0` restores the previous code path, `=2`
 (where listed) runs the old way too and logs a difference. Offline tests:
 `src/tests/video_core/nx2_draw_memo.cpp` (shim; not in CMake).
 
@@ -438,7 +438,7 @@ Each switch below is on by default; `=0` restores the previous code path, `=2`
 | `EDEN_NX2_USAGE_RESET_SKIP`, `EDEN_NX2_SLOT_SKIP` | untouched usage trackers, empty slot words (Selevet d8c95fef47) | — |
 | `EDEN_NX2_KEY_CMP` | pipeline key: hashes, then state bytes (elBart0 0017) | both, logs |
 | `EDEN_NX2_INLINE_FIX` | inline index buffer deleted through DeleteBuffer (Duck912 4a6b890171; correctness) | — |
-| `EDEN_NX2_ASYNC_SKIP` | native depth-tested draws (and dispatches whose outputs hold GPU writes) wait up to `EDEN_NX2_ASYNC_DRAW_WAIT_MS` (8) per frame for an unbuilt pipeline, then are skipped; `=0` waits in full, `=1` skips at once (Selevet 8b076b167f) | — |
+| `EDEN_NX2_ASYNC_SKIP=1` | native draws with an unbuilt pipeline skipped (Selevet 8b076b167f; pop-in) | — |
 
 Log lines: "Buffer sync memo: X of Y synchronizations skipped" (hit rate), "GPU-written ranges: ..."
 (range count, share answered by the summary), "Uniform buffer binds: X of Y to the binding already

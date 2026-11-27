@@ -911,30 +911,18 @@ void Device::SaveStaticPipelineCache() const {
     }
     data.resize(size);
     static_pipeline_cache.Read(&size, data.data());
-    // Written beside the cache and renamed over it, so a crash or full disk while saving keeps the
-    // previous cache.
-    auto temporary = filename;
-    temporary += ".tmp";
     try {
-        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+        std::ofstream file(filename, std::ios::binary | std::ios::trunc);
+        file.exceptions(std::ofstream::failbit);
         if (!file.is_open()) {
             return;
         }
-        file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
         file.write(STATIC_CACHE_MAGIC_NUMBER.data(), STATIC_CACHE_MAGIC_NUMBER.size())
             .write(reinterpret_cast<const char*>(&STATIC_CACHE_VERSION),
                    sizeof(STATIC_CACHE_VERSION))
             .write(data.data(), static_cast<std::streamsize>(size));
-        file.close();
-    } catch (const std::ios_base::failure&) {
-        Common::FS::RemoveFile(temporary);
-        return;
-    }
-    std::error_code error;
-    std::filesystem::rename(temporary, filename, error);
-    if (error) {
-        LOG_WARNING(Render_Vulkan, "Static pipeline cache was not saved: {}", error.message());
-        Common::FS::RemoveFile(temporary);
+    } catch (const std::ios_base::failure& e) {
+        Common::FS::RemoveFile(filename);
     }
 }
 

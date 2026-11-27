@@ -125,8 +125,6 @@ struct ImageBase {
     VAddr cpu_addr_end = 0;
 
     u64 modification_tick = 0;
-    /// frame_tick + 1 of the first GPU write since the image last took guest data (0: none).
-    u64 first_gpu_write_frame = 0;
     size_t lru_index = SIZE_MAX;
     /// frame_tick of the last LRU Touch through PrepareImage: never newer than the LRU item's own
     /// tick (EDEN_NX2_TEX_TOUCH_SKIP).

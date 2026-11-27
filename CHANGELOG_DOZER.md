@@ -261,16 +261,6 @@ and `=0` brings back the 2.0.0 code path.
 - The GPU split's published and consumed counters sit on separate cache lines.
 - A macro DMA read copies its words in one read.
 - A draw or dispatch keeps room for 160 image views and 96 samplers without a heap allocation.
-- Ported from Lichii build 341: fewer shader freezes. Switch 2 draws and compute dispatches no
-  longer wait in full for a pipeline that is still compiling. They wait within 8 ms per frame in
-  all (`EDEN_NX2_ASYNC_DRAW_WAIT_MS`; translation waits count too), then are skipped and catch up
-  once the pipeline is built. A draw is skipped only when it is depth-tested and every color target
-  it writes was drawn in an earlier frame (Mario Kart World bakes its terrain once with depth-tested
-  draws), a dispatch only when everything it writes already holds GPU writes, images from an
-  earlier frame (a skip leaves last frame's results, never garbage); other ones still wait.
-  `EDEN_NX2_ASYNC_SKIP=0` waits in full as before, `=1` skips at once. The driver's pipeline cache
-  is written to a temporary file and renamed over the old one, so a crash while saving keeps the
-  previous cache.
 
 - Switch 2 semaphore acquires that wait for a word to reach a value are checked without draining
   the GPU split first: a release still queued for the back decides them, else the word in memory
