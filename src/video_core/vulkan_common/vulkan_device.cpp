@@ -514,7 +514,9 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
         .pNext = first_next,
         .overallocationBehavior = VK_MEMORY_OVERALLOCATION_BEHAVIOR_ALLOWED_AMD,
     };
-    if (is_amd_driver &&
+    // EDEN_NX2_AMD_OVERALLOC=0: leave overallocation off (diagnostics).
+    const char* const overalloc_env = std::getenv("EDEN_NX2_AMD_OVERALLOC");
+    if (is_amd_driver && (overalloc_env == nullptr || overalloc_env[0] != '0') &&
         supported_extensions.contains(VK_AMD_MEMORY_OVERALLOCATION_BEHAVIOR_EXTENSION_NAME)) {
         loaded_extensions.insert(VK_AMD_MEMORY_OVERALLOCATION_BEHAVIOR_EXTENSION_NAME);
         first_next = &overallocation_amd;
@@ -658,8 +660,10 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
             has_broken_cube_compatibility = true;
         }
 
-        // AMD drivers (2026+) have broken float16 math on DKCR
-        if (features.shader_float16_int8.shaderFloat16) {
+        // AMD drivers (2026+) have broken float16 math on DKCR. EDEN_NX2_AMD_FP16=1 keeps it.
+        const char* const fp16_env = std::getenv("EDEN_NX2_AMD_FP16");
+        if (features.shader_float16_int8.shaderFloat16 &&
+            (fp16_env == nullptr || fp16_env[0] != '1')) {
             LOG_WARNING(Render_Vulkan,
                         "AMD drivers (2026+) have broken float16 math");
             features.shader_float16_int8.shaderFloat16 = false;
