@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_COND_DIAG=1` (diagnostics, off): every 10 s, NVN's render enable macro on the split
+  front, which reads two counters the GPU writes and sets `render_enable.mode` by whether they
+  differ (Donkey Kong Bananza: 670-820 calls a second in its first boss fight, each draining the
+  back first): its calls, the modes it set, how often its read waited or downloaded and the time,
+  and the draws and clears the back skipped for a False mode.
 - GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
   cores, the split back, and with the back stages the front, each take a physical core, and the
   other threads stay off those cores. They were sharing a core with the game. The Safe launcher

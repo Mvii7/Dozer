@@ -26,6 +26,7 @@
 #include "video_core/memory_manager.h"
 #include "video_core/nx2.h"
 #include "video_core/nx2_front_diag_hooks.h"
+#include "video_core/nx2_cond_diag.h"
 #include "video_core/nx2_front_same.h"
 #include "video_core/nx2_indirect_diag.h"
 #include "video_core/nx2_mode_diag.h"
@@ -1442,6 +1443,9 @@ struct Maxwell3D::FrontState {
     bool hle_indirect{};
     bool front_verify{};
     bool indirect_batch{};
+    /// EDEN_NX2_COND_DIAG: the macro running is NVN's render enable macro (FrontDmaRead counts
+    /// its read).
+    bool cond_call{};
     struct DecidedCheck {
         u32 key{}; ///< The macro's start + 1 (0: none; a start of ~0 is never kept)
         bool indirect{}; ///< NVN's indexed indirect draw (else not)
@@ -2178,6 +2182,12 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
             }
             return true;
         };
+        const bool cond_diag =
+            VideoCommon::Nx2CondDiag::On() &&
+            VideoCommon::Nx2CondDiag::Get().IsMacro(engine.native_code,
+                                                    engine.native_code_generation, start);
+        const u32 cond_parameter = cond_diag && !fs.parameters.empty() ? fs.parameters[0] : 0;
+        fs.cond_call = cond_diag;
         const std::span<u32> data_ram{native_data_ram};
         const auto result = [&] {
             if (fs.same.mode == 2) [[unlikely]] {
@@ -2222,6 +2232,11 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
             return jit->Execute(start, fs.parameters, data_ram, read, write,
                                 fs.same.mode == 1 ? &fs.same.ctx : nullptr);
         }();
+        if (cond_diag) [[unlikely]] {
+            fs.cond_call = false;
+            VideoCommon::Nx2CondDiag::Get().NoteCall(
+                cond_parameter, fs.regs[MAXWELL3D_REG_INDEX(render_enable.mode)]);
+        }
         if (fs.same.mode != 0) [[unlikely]] {
             // The writes dropped, as FrontWrite would have counted them.
             namespace Profile = VideoCommon::Nx2Profile;
@@ -2291,6 +2306,8 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
 void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 method,
                              u32 count) {
     namespace Diag = VideoCommon::Nx2FrontDiag;
+    const auto cond_start = fs.cond_call ? std::chrono::steady_clock::now()
+                                         : std::chrono::steady_clock::time_point{};
     const GPUVAddr source = (GPUVAddr{fs.regs[0x154] & 0x1ffffff} << 32) | fs.regs[0x155];
     const u32 ram = fs.regs[0x156];
     const u32 words = std::min<u32>(count, 0x1000);
@@ -2351,6 +2368,12 @@ void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 m
     if (diag) [[unlikely]] {
         Diag::DmaReadAfter(probe, memory_manager, source, words, method == 0x158, waited,
                            gpu_dirty);
+    }
+    if (fs.cond_call) [[unlikely]] {
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - cond_start);
+        VideoCommon::Nx2CondDiag::Get().NoteRead(waited, gpu_dirty,
+                                                 static_cast<u64>(ns.count()));
     }
 }
 

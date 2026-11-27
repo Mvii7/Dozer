@@ -10,6 +10,7 @@
 #include "common/settings.h"
 #include "video_core/dirty_flags.h"
 #include "video_core/engines/maxwell_3d.h"
+#include "video_core/nx2_cond_diag.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/rasterizer_interface.h"
 
@@ -71,6 +72,8 @@ void Maxwell3D::DrawManager::ProcessMethodCall(Maxwell3D& maxwell3d, u32 method,
 void Maxwell3D::DrawManager::Clear(Maxwell3D& maxwell3d, u32 layer_count) {
     if (maxwell3d.ShouldExecute()) {
         maxwell3d.rasterizer->Clear(layer_count);
+    } else {
+        VideoCommon::Nx2CondDiag::NoteSkippedClear();
     }
 }
 
@@ -321,6 +324,8 @@ void Maxwell3D::DrawManager::ProcessDraw(Maxwell3D& maxwell3d, bool draw_indexed
     UpdateTopology(maxwell3d);
     if (maxwell3d.ShouldExecute()) {
         maxwell3d.rasterizer->Draw(draw_indexed, instance_count);
+    } else {
+        VideoCommon::Nx2CondDiag::NoteSkippedDraw();
     }
 }
 
@@ -329,6 +334,8 @@ void Maxwell3D::DrawManager::ProcessDrawIndirect(Maxwell3D& maxwell3d) {
     UpdateTopology(maxwell3d);
     if (maxwell3d.ShouldExecute()) {
         maxwell3d.rasterizer->DrawIndirect();
+    } else {
+        VideoCommon::Nx2CondDiag::NoteSkippedDraw();
     }
 }
 } // namespace Tegra::Engines

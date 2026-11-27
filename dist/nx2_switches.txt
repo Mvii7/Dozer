@@ -560,6 +560,10 @@
 #EDEN_NX2_INDIRECT_DIAG=1
 #EDEN_NX2_FRONT_DIAG=0
 #EDEN_NX2_FRONT_DIAG_REGS=0
+# COND_DIAG=1: every 10 s, NVN's render enable macro (it reads two GPU counters and sets
+# render_enable.mode): its calls, the modes it set, its reads' waits and downloads, and the draws
+# skipped for a False mode. Logging only.
+#EDEN_NX2_COND_DIAG=1
 #EDEN_NX2_PROFILE_FINE=0
 #EDEN_NX2_PROFILE_LEAN=1
 #EDEN_NX2_PROFILE_TSC=0
