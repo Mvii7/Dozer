@@ -32,21 +32,23 @@ ConfigureNx2Perf::ConfigureNx2Perf(QWidget* parent)
         {ui->front_macro_lean, &S::front_macro_lean, {"EDEN_NX2_FRONT_MACRO_LEAN"}},
         {ui->fg_timed, &S::fg_timed, {"EDEN_NX2_FG_TIMED"}},
         {ui->osd, &S::osd, {"EDEN_NX2_OSD"}},
+        // The shortcuts are many variables; they are not listed as set outside.
+        {ui->safe_off, &S::safe_off, {}},
+        {ui->rt_fit, &S::rt_fit, {"EDEN_NX2_RX_RT_FIT"}},
     };
 
     SetConfiguration();
     MarkSetOutside();
 
-    // The combo's order is Perf::PresetOrder (configure_nx2perf.ui), not the stored numbers.
-    connect(ui->preset, &QComboBox::activated, this, [this](int index) {
-        if (index < 0 || static_cast<std::size_t>(index) >= Perf::PresetOrder.size()) {
-            return;
+    // The combo's items are a hint, then Perf::Setup in order.
+    connect(ui->setup, &QComboBox::activated, this, [this](int index) {
+        if (index > 0 && index <= static_cast<int>(Perf::Setup::Safe) + 1) {
+            ApplySetup(static_cast<Perf::Setup>(index - 1));
         }
-        ChoosePreset(Perf::PresetOrder[static_cast<std::size_t>(index)]);
+        const QSignalBlocker blocker{ui->setup};
+        ui->setup->setCurrentIndex(0);
     });
-    for (const Row& row : rows) {
-        connect(row.box, &QCheckBox::toggled, this, [this] { BoxChanged(); });
-    }
+    ShowSetups();
     // The item order is Perf::FrameGen's; "Other" only shows the Graphics tab's own setup.
     if (auto* model = qobject_cast<QStandardItemModel*>(ui->frame_gen->model())) {
         model->item(static_cast<int>(Perf::FrameGen::Other))->setEnabled(false);
@@ -75,7 +77,7 @@ void ConfigureNx2Perf::changeEvent(QEvent* event) {
 
 void ConfigureNx2Perf::RetranslateUI() {
     ui->retranslateUi(this);
-    ShowPreset();
+    ShowSetups();
     ShowFrameGen();
     MarkSetOutside();
 }
@@ -96,7 +98,6 @@ Perf::Switches ConfigureNx2Perf::Current() const {
     for (const Row& row : rows) {
         switches.*row.field = row.box->isChecked();
     }
-    switches.preset = preset;
     return switches;
 }
 
@@ -105,47 +106,20 @@ void ConfigureNx2Perf::Show(const Perf::Switches& switches) {
         const QSignalBlocker blocker{row.box};
         row.box->setChecked(switches.*row.field);
     }
-    preset = switches.preset;
-    ShowPreset();
 }
 
-void ConfigureNx2Perf::ShowPreset() {
-    {
-        const QSignalBlocker blocker{ui->preset};
-        ui->preset->setCurrentIndex(Perf::IndexOf(preset));
-    }
-    switch (preset) {
-    case Perf::Preset::Performance:
-        ui->preset_text->setText(tr("The fastest settings: all on, read traps too, Reactive "
-                                    "Flushing off (Graphics, Advanced). Donkey Kong Bananza: "
-                                    "low foliage, very low reflection updates, medium "
-                                    "shadows. Like start-performance.bat."));
-        break;
-    case Perf::Preset::Quality:
-        ui->preset_text->setText(tr("Performance's settings with Donkey Kong Bananza as the game "
-                                    "makes it: foliage, reflections and very high shadows. Like "
-                                    "start-quality.bat."));
-        break;
-    case Perf::Preset::Reactive:
-        ui->preset_text->setText(
-            tr("The performance settings with Reactive Flushing instead of read traps (barrier "
-               "feedback loops on, RX_RT_FIT=3). Like start-reactive-experimental.bat."));
-        break;
-    case Perf::Preset::Safe:
-        ui->preset_text->setText(tr("All settings below off, and the GPU shortcuts that are on by "
-                                    "default off too (the variables start-safe.bat sets to 0). "
-                                    "Frame generation off; other graphics settings such as "
-                                    "Reactive Flushing stay as they are."));
-        break;
-    case Perf::Preset::Custom:
-        ui->preset_text->setText(tr("Your own choice of the settings below."));
-        break;
-    }
+void ConfigureNx2Perf::ShowSetups() {
+    ui->setup_text->setText(
+        tr("Fills in the boxes below once; nothing is kept but the boxes. Defaults: the "
+           "fastest settings, all on, Reactive Flushing off (Graphics, Advanced), like "
+           "start-performance.bat. Experimental: read traps off and Reactive Flushing on, like "
+           "start-reactive-experimental.bat. Safe: everything off and frame generation off, like "
+           "start-safe.bat. Games follow these unless a game's Properties says otherwise."));
 }
 
-void ConfigureNx2Perf::ChoosePreset(Perf::Preset chosen) {
+void ConfigureNx2Perf::ApplySetup(Perf::Setup chosen) {
     ui->status->clear();
-    Show(Perf::FromPreset(chosen, Current()));
+    Show(Perf::Apply(chosen, Current()));
     if (const auto frame_gen = Perf::FrameGenFor(chosen)) {
         ChooseFrameGen(*frame_gen);
     }
@@ -163,14 +137,6 @@ void ConfigureNx2Perf::ChoosePreset(Perf::Preset chosen) {
     if (!reactive_flushing || !reactive_flushing(*reactive, barrier_on)) {
         ui->status->setText(tr("Reactive Flushing (Graphics, Advanced) can only be changed with no "
                                "game running; set it there afterwards."));
-    }
-}
-
-void ConfigureNx2Perf::BoxChanged() {
-    const Perf::Switches switches = Perf::AfterBoxChange(Current());
-    if (switches.preset != preset) {
-        preset = switches.preset;
-        ShowPreset();
     }
 }
 
@@ -234,6 +200,9 @@ void ConfigureNx2Perf::ApplyConfiguration() {
 
 void ConfigureNx2Perf::MarkSetOutside() {
     for (const Row& row : rows) {
+        if (row.names.empty()) {
+            continue;
+        }
         QStringList outside;
         for (const std::string_view name : row.names) {
             if (Nx2PerfSession::SetOutside(name)) {

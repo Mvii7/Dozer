@@ -8,6 +8,15 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Tuning: the global tab has no preset any more. It is the boxes, frame generation, and a **Fill in**
+  box (Defaults, Experimental, Safe) that ticks them once and keeps nothing. Every game follows the
+  boxes unless its Properties changes one, shown as **Changed** with the cross. Before, a game whose
+  preset differed from the global one (Donkey Kong Bananza always did) ran that preset's boxes and
+  ignored yours, so turning the RTSS overlay off for all games left it on there. Safe's shortcuts and
+  Experimental's `RX_RT_FIT=3` are boxes now. Bananza has a **Graphics preset** (Performance,
+  Quality) for its foliage, reflection and shadow levels. An older `qt-config.ini` is carried over:
+  a global Safe or Experimental becomes its boxes, and a game's own preset becomes the boxes and
+  levels it changed.
 - GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
   cores, the split back, and with the back stages the front, each take a physical core, and the
   other threads stay off those cores. They were sharing a core with the game. The Safe launcher

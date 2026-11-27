@@ -92,7 +92,7 @@ const char* GameName(Perf::Game game) {
 Perf::Switches SwitchesFor(u64 program_id) {
     const auto& games = UISettings::values.nx2perf_games;
     const auto it = games.find(program_id);
-    return Perf::ForGame(UISettings::values.nx2perf, Perf::GameOf(program_id),
+    return Perf::ForGame(UISettings::values.nx2perf,
                          it == games.end() ? Perf::Overrides{} : it->second);
 }
 

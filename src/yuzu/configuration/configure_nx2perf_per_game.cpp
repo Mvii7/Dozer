@@ -44,26 +44,12 @@ const Entry* EntryOf(std::size_t key) {
         {&S::front_macro_lean, Perf::Game::Other, QT_TR_NOOP("Lean front macro path")},
         {&S::fg_timed, Perf::Game::Other, QT_TR_NOOP("Timed frame generation")},
         {&S::osd, Perf::Game::Other, QT_TR_NOOP("FPS overlay in RivaTuner")},
+        {&S::safe_off, Perf::Game::Other, QT_TR_NOOP("Turn off the per-draw shortcuts")},
+        {&S::rt_fit, Perf::Game::Other, QT_TR_NOOP("Render target fit for Reactive Flushing")},
         {&S::dk_dyn, Perf::Game::Bananza, QT_TR_NOOP("Dynamic frame rate")},
         {&S::mkw_dyn, Perf::Game::MarioKartWorld, QT_TR_NOOP("Dynamic frame rate")},
     };
     return &entries[key];
-}
-
-QString PresetName(Perf::Preset preset) {
-    switch (preset) {
-    case Perf::Preset::Performance:
-        return QObject::tr("Performance");
-    case Perf::Preset::Reactive:
-        return QObject::tr("Experimental");
-    case Perf::Preset::Safe:
-        return QObject::tr("Safe");
-    case Perf::Preset::Quality:
-        return QObject::tr("Quality");
-    case Perf::Preset::Custom:
-        break;
-    }
-    return QObject::tr("Custom");
 }
 
 // The cross next to a changed setting: the other tabs' own restore button (hidden until shown).
@@ -89,10 +75,10 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     auto* intro = new QLabel(
-        tr("These settings are the Tuning tab's, as this game runs them. A cross next to one resets "
-           "it to the Tuning tab's. Donkey Kong Bananza starts with the Performance preset instead "
-           "of the Tuning tab's. They take effect when the game starts. If a game has already run "
-           "since Dozer was opened, Dozer will ask to restart before a change applies."),
+        tr("These settings are the Tuning tab's, as this game runs them: a setting follows the "
+           "Tuning tab until you change it here. A cross next to one resets it to the Tuning "
+           "tab's. They take effect when the game starts. If a game has already run since Dozer "
+           "was opened, Dozer will ask to restart before a change applies."),
         this);
     intro->setWordWrap(true);
     layout->addWidget(intro);
@@ -100,33 +86,6 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
     auto* form = new QFormLayout;
     layout->addLayout(form);
     layout->addStretch();
-
-    // Preferred, like the other tabs' boxes: the box grows to the cross's height.
-    preset = new QComboBox(this);
-    preset->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    for (const Perf::Preset choice : Order()) {
-        preset->addItem(PresetName(choice));
-    }
-    // Custom is what changing a box of the Tuning tab makes; it is only shown.
-    if (auto* model = qobject_cast<QStandardItemModel*>(preset->model())) {
-        model->item(static_cast<int>(Order().size()) - 1)->setEnabled(false);
-    }
-    preset_reset = CreateResetButton(this);
-    auto* preset_row = new QHBoxLayout;
-    preset_row->addWidget(preset, 1);
-    preset_row->addWidget(preset_reset);
-    form->addRow(tr("Preset"), preset_row);
-    connect(preset, &QComboBox::activated, this, [this](int index) {
-        const auto order = Order();
-        if (index >= 0 && static_cast<std::size_t>(index) < order.size()) {
-            ChoosePreset(order[static_cast<std::size_t>(index)]);
-        }
-    });
-    connect(preset_reset, &QPushButton::clicked, this, [this] {
-        own.preset.reset();
-        own.global_preset = Perf::GamePreset(game).has_value();
-        Refresh();
-    });
 
     bool separated = false;
     for (std::size_t key = 0; key < Perf::KeyCount; ++key) {
@@ -143,15 +102,17 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
             separated = true;
         }
         auto* box = new QCheckBox(this);
+        auto* source = new QLabel(this);
         auto* reset = CreateResetButton(this);
         auto* row_layout = new QHBoxLayout;
         row_layout->addWidget(box, 1);
+        row_layout->addWidget(source);
         row_layout->addWidget(reset);
         if (entry->tip != nullptr) {
             box->setToolTip(tr(entry->tip));
         }
         form->addRow(tr(entry->label), row_layout);
-        rows.push_back({box, reset, key});
+        rows.push_back({box, source, reset, key});
         const std::size_t index = rows.size() - 1;
         connect(box, &QCheckBox::toggled, this,
                 [this, index](bool checked) { ChooseBox(rows[index], checked); });
@@ -161,8 +122,39 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
         });
     }
 
-    // Bananza's foliage, under its boxes: off, two levels between, and the game's own
+    // Bananza's levels, under its boxes: a preset that sets the three below, then each of them
     if (game == Perf::Game::Bananza) {
+        preset = new QComboBox(this);
+        preset->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        preset->addItem(tr("Performance"));
+        preset->addItem(tr("Quality"));
+        preset->addItem(tr("Custom"));
+        // Custom is what changing a level makes; it is only shown.
+        if (auto* model = qobject_cast<QStandardItemModel*>(preset->model())) {
+            model->item(PresetCustom)->setEnabled(false);
+        }
+        preset->setToolTip(
+            tr("Performance: low foliage, very low reflection updates, medium shadows. Quality: "
+               "all as the game makes them. Sets the three below."));
+        preset_reset = CreateResetButton(this);
+        auto* preset_row = new QHBoxLayout;
+        preset_row->addWidget(preset, 1);
+        preset_row->addWidget(preset_reset);
+        form->addRow(tr("Graphics preset"), preset_row);
+        connect(preset, &QComboBox::activated, this, [this](int index) {
+            if (index == PresetPerformance) {
+                ChooseLevels(Perf::BananzaPerformance);
+            } else if (index == PresetQuality) {
+                ChooseLevels(Perf::BananzaQuality);
+            }
+        });
+        connect(preset_reset, &QPushButton::clicked, this, [this] {
+            own.dk_foliage.reset();
+            own.dk_shadow.reset();
+            own.dk_reflections.reset();
+            Refresh();
+        });
+
         foliage = new QComboBox(this);
         foliage->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         foliage->addItem(tr("Off"));
@@ -179,7 +171,7 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
             const int chosen = Perf::FoliageOff + index;
             Perf::Overrides without = own;
             without.dk_foliage.reset();
-            const int base = Perf::ForGame(UISettings::values.nx2perf, game, without).dk_foliage;
+            const int base = Perf::ForGame(UISettings::values.nx2perf, without).dk_foliage;
             own.dk_foliage = chosen == base ? std::nullopt : std::optional<int>{chosen};
             Refresh();
         });
@@ -200,7 +192,7 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
             const int chosen = Perf::ShadowLow + index;
             Perf::Overrides without = own;
             without.dk_shadow.reset();
-            const int base = Perf::ForGame(UISettings::values.nx2perf, game, without).dk_shadow;
+            const int base = Perf::ForGame(UISettings::values.nx2perf, without).dk_shadow;
             own.dk_shadow = chosen == base ? std::nullopt : std::optional<int>{chosen};
             Refresh();
         });
@@ -223,7 +215,7 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
             Perf::Overrides without = own;
             without.dk_reflections.reset();
             const int base =
-                Perf::ForGame(UISettings::values.nx2perf, game, without).dk_reflections;
+                Perf::ForGame(UISettings::values.nx2perf, without).dk_reflections;
             own.dk_reflections = chosen == base ? std::nullopt : std::optional<int>{chosen};
             Refresh();
         });
@@ -234,32 +226,27 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
 
 ConfigureNx2PerfPerGame::~ConfigureNx2PerfPerGame() = default;
 
-std::span<const Perf::Preset> ConfigureNx2PerfPerGame::Order() const {
-    return Perf::PresetOrder;
-}
-
 void ConfigureNx2PerfPerGame::Refresh() {
     const Perf::Switches& global = UISettings::values.nx2perf;
-    const Perf::Switches now = Perf::ForGame(global, game, own);
-    {
-        const QSignalBlocker blocker{preset};
-        const auto order = Order();
-        int index = static_cast<int>(order.size()) - 1;
-        for (std::size_t i = 0; i < order.size(); ++i) {
-            if (order[i] == now.preset) {
-                index = static_cast<int>(i);
-            }
-        }
-        preset->setCurrentIndex(index);
-    }
-    ShowReset(preset_reset, now.preset != global.preset);
+    const Perf::Switches now = Perf::ForGame(global, own);
     for (const Row& row : rows) {
         {
             const QSignalBlocker blocker{row.box};
             row.box->setChecked(now.*EntryOf(row.key)->field);
         }
         // The game's own boxes have no global setting to go back to.
-        ShowReset(row.reset, row.key < Perf::Keys.size() && own.boxes[row.key].has_value());
+        const bool changed = row.key < Perf::Keys.size() && own.boxes[row.key].has_value();
+        row.source->setText(changed ? tr("Changed") : tr("Tuning tab"));
+        row.source->setEnabled(changed);
+        ShowReset(row.reset, changed);
+    }
+    if (preset != nullptr) {
+        const Perf::BananzaLevels levels{now.dk_foliage, now.dk_reflections, now.dk_shadow};
+        const QSignalBlocker blocker{preset};
+        preset->setCurrentIndex(levels == Perf::BananzaPerformance ? PresetPerformance
+                                : levels == Perf::BananzaQuality   ? PresetQuality
+                                                                   : PresetCustom);
+        ShowReset(preset_reset, own.dk_foliage || own.dk_shadow || own.dk_reflections);
     }
     if (foliage != nullptr) {
         const QSignalBlocker blocker{foliage};
@@ -275,22 +262,15 @@ void ConfigureNx2PerfPerGame::Refresh() {
     }
 }
 
-void ConfigureNx2PerfPerGame::ChoosePreset(Perf::Preset chosen) {
-    const Perf::Preset global = UISettings::values.nx2perf.preset;
-    own.preset.reset();
-    own.global_preset = false;
-    // Bananza's foliage, reflections and shadows are the preset's again
-    own.dk_foliage.reset();
-    own.dk_shadow.reset();
-    own.dk_reflections.reset();
-    // Only what differs from where the game starts is kept.
-    if (chosen != Perf::PresetFor(global, game, own)) {
-        if (chosen == global) {
-            own.global_preset = true;
-        } else {
-            own.preset = chosen;
-        }
-    }
+void ConfigureNx2PerfPerGame::ChooseLevels(const Perf::BananzaLevels& levels) {
+    // Only what differs from the Tuning tab's is kept.
+    const Perf::BananzaLevels base = Perf::BananzaDefault(UISettings::values.nx2perf);
+    const auto kept = [](int chosen, int base_level) {
+        return chosen == base_level ? std::nullopt : std::optional<int>{chosen};
+    };
+    own.dk_foliage = kept(levels.foliage, base.foliage);
+    own.dk_reflections = kept(levels.reflections, base.reflections);
+    own.dk_shadow = kept(levels.shadow, base.shadow);
     Refresh();
 }
 
@@ -298,7 +278,7 @@ void ConfigureNx2PerfPerGame::ChooseBox(const Row& row, bool checked) {
     Perf::Overrides without = own;
     without.boxes[row.key].reset();
     const bool base =
-        Perf::ForGame(UISettings::values.nx2perf, game, without).*EntryOf(row.key)->field;
+        Perf::ForGame(UISettings::values.nx2perf, without).*EntryOf(row.key)->field;
     own.boxes[row.key] = checked == base ? std::nullopt : std::optional<bool>{checked};
     Refresh();
 }

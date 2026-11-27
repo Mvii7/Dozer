@@ -359,31 +359,52 @@ void QtConfig::ReadMultiplayerValues() {
 // sharing this file leaves as it is.
 void QtConfig::ReadNx2PerfValues() {
     BeginGroup("Anka");
-    // No [Anka] preset yet: Anka's first start on this file.
-    const bool first_start = ReadStringSetting("preset\\default").empty();
+    // Neither a version nor an older preset: Anka's first start on this file.
+    const bool first_start =
+        ReadStringSetting("version\\default").empty() && ReadStringSetting("preset\\default").empty();
+    const auto read_int = [this](std::string_view key, int def) {
+        return static_cast<int>(
+            ReadIntegerSetting(std::string{key}, std::make_optional(static_cast<s64>(def))));
+    };
+    // A file from before the presets went away: its game overrides carry the preset over.
+    const bool older = read_int("version", 0) < Core::Nx2PerfSettings::FormatVersion;
     UISettings::values.nx2perf = Core::Nx2PerfSettings::Load(
         [this](std::string_view key, bool def) {
             return ReadBooleanSetting(std::string{key}, std::make_optional(def));
         },
-        [this](std::string_view key, int def) {
-            return static_cast<int>(
-                ReadIntegerSetting(std::string{key}, std::make_optional(static_cast<s64>(def))));
-        });
+        read_int);
     EndGroup();
     UISettings::values.nx2perf_games.clear();
+    bool bananza_stored = false;
     const int games = BeginArray("AnkaGames");
     for (int i = 0; i < games; ++i) {
         SetArrayIndex(i);
         const u64 program_id = std::strtoull(ReadStringSetting("program_id").c_str(), nullptr, 16);
-        const auto overrides = Core::Nx2PerfSettings::LoadOverrides([this](std::string_view key) {
+        const auto read = [this](std::string_view key) {
             return static_cast<int>(
                 ReadIntegerSetting(std::string{key}, std::make_optional<s64>(-1)));
-        });
+        };
+        auto overrides = Core::Nx2PerfSettings::LoadOverrides(read);
+        bananza_stored = bananza_stored || program_id == Loader::Nx2DkDynamicFps::ProgramId;
+        if (older && program_id != 0) {
+            Core::Nx2PerfSettings::CarryOverPreset(overrides,
+                                                   Core::Nx2PerfSettings::GameOf(program_id),
+                                                   read("preset"), UISettings::values.nx2perf);
+        }
         if (program_id != 0 && !overrides.Empty()) {
             UISettings::values.nx2perf_games[program_id] = overrides;
         }
     }
     EndArray();
+    // Bananza started from Performance without a stored game: it keeps its levels.
+    if (older && !bananza_stored) {
+        auto& own = UISettings::values.nx2perf_games[Loader::Nx2DkDynamicFps::ProgramId];
+        Core::Nx2PerfSettings::CarryOverPreset(own, Core::Nx2PerfSettings::Game::Bananza, -1,
+                                               UISettings::values.nx2perf);
+        if (own.Empty()) {
+            UISettings::values.nx2perf_games.erase(Loader::Nx2DkDynamicFps::ProgramId);
+        }
+    }
     // The dynamic frame rate boxes were global once: a game that had its box off keeps it off.
     const auto keep_off = [](bool& box, u64 program_id, std::size_t slot) {
         if (!box) {
@@ -396,12 +417,13 @@ void QtConfig::ReadNx2PerfValues() {
              Core::Nx2PerfSettings::Keys.size());
     keep_off(UISettings::values.nx2perf.mkw_dyn, Loader::Nx2MkwDynamicFps::ProgramId,
              Core::Nx2PerfSettings::Keys.size() + 1);
-    // The first start selects Performance, which is measured with Reactive Flushing off (like
-    // start-performance.bat); it is saved with the other settings. An existing file keeps its preset.
+    // The first start selects the performance setup, which is measured with Reactive Flushing off
+    // (like start-performance.bat); it is saved with the other settings. An existing file keeps
+    // its own.
     if (first_start) {
         UISettings::values.nx2perf = Core::Nx2PerfSettings::FirstStart();
         if (const auto reactive =
-                Core::Nx2PerfSettings::ReactiveFlushing(UISettings::values.nx2perf.preset)) {
+                Core::Nx2PerfSettings::ReactiveFlushing(Core::Nx2PerfSettings::Setup::Defaults)) {
             Settings::values.use_reactive_flushing.SetValue(*reactive);
         }
     }
