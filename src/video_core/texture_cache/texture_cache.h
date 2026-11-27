@@ -366,7 +366,7 @@ void TextureCache<P>::RunGarbageCollector() {
     // waited for the age-10 wipe. That wipe deleted 4851 costly images in one frame.
     if (stale_costly_ticks != 0 && total_used_memory >= expected_memory) {
         const bool piled = total_used_memory >= expected_memory + 1_GiB;
-        const u64 grace = piled ? (std::min)(stale_costly_ticks, 90ULL) : stale_costly_ticks;
+        const u64 grace = piled ? (std::min)(stale_costly_ticks, u64{90}) : stale_costly_ticks;
         if (frame_tick > grace) {
             Configure(false);
             allow_costly = true;
