@@ -47,6 +47,7 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
       shader_hash{shader_hash_}, spv_module(std::move(spv_module_)) {
     if (shader_notify) {
         shader_notify->MarkShaderBuilding();
+        build_notify = shader_notify;
     }
     std::copy_n(info.constant_buffer_used_sizes.begin(), uniform_buffer_sizes.size(),
                 uniform_buffer_sizes.begin());
@@ -82,7 +83,7 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
     }
 
     const bool on_parallel_worker{thread_worker != nullptr};
-    auto func{[this, shader_notify, pipeline_statistics, on_parallel_worker] {
+    build_task = [this, pipeline_statistics, on_parallel_worker] {
         std::optional<PipelineStats::ScopedRole> stats_role;
         if (on_parallel_worker) {
             stats_role.emplace(PipelineStats::Role::Par);
@@ -124,12 +125,6 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
         } catch (const vk::Exception& exception) {
             LOG_CRITICAL(Render_Vulkan, "Adreno rejected compute shader {:016X}: {}", shader_hash,
                          exception.what());
-            std::scoped_lock lock{build_mutex};
-            is_built = true;
-            build_condvar.notify_all();
-            if (shader_notify) {
-                shader_notify->MarkShaderComplete();
-            }
             return;
         }
 
@@ -143,17 +138,33 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
         if (pipeline_statistics) {
             pipeline_statistics->Collect(device, *pipeline);
         }
-        std::scoped_lock lock{build_mutex};
-        is_built = true;
-        build_condvar.notify_all();
-        if (shader_notify) {
-            shader_notify->MarkShaderComplete();
-        }
-    }};
+    };
     if (thread_worker) {
-        thread_worker->QueueWork(std::move(func));
+        thread_worker->QueueWork([this] { RunBuild(); });
     } else {
-        func();
+        RunBuild();
+    }
+}
+
+void ComputePipeline::RunBuild() {
+    // The worker and a dispatch waiting on the build both come here; the first one builds.
+    if (build_claimed.exchange(true)) {
+        return;
+    }
+    try {
+        build_task();
+    } catch (const std::exception& exception) {
+        LOG_CRITICAL(Render_Vulkan, "Compute pipeline build {:016X} failed: {}", shader_hash,
+                     exception.what());
+    } catch (...) {
+        LOG_CRITICAL(Render_Vulkan, "Compute pipeline build {:016X} failed", shader_hash);
+    }
+    // Whatever happened above, a dispatch waiting for the build must be released.
+    std::scoped_lock lock{build_mutex};
+    is_built = true;
+    build_condvar.notify_all();
+    if (build_notify) {
+        build_notify->MarkShaderComplete();
     }
 }
 
@@ -298,8 +309,19 @@ ComputePipeline::ConfigureResult ComputePipeline::Configure(
     if (!is_built.load(std::memory_order::relaxed)) {
         // Wait for the pipeline to be built
         scheduler.Record([this](vk::CommandBuffer) {
-            std::unique_lock lock{build_mutex};
-            build_condvar.wait(lock, [this] { return is_built.load(std::memory_order::relaxed); });
+            const auto begin = std::chrono::steady_clock::now();
+            // Built here unless a worker has already started on it
+            RunBuild();
+            {
+                std::unique_lock lock{build_mutex};
+                build_condvar.wait(lock,
+                                   [this] { return is_built.load(std::memory_order::relaxed); });
+            }
+            const auto waited = std::chrono::steady_clock::now() - begin;
+            if (waited > std::chrono::milliseconds{50}) {
+                LOG_INFO(Render_Vulkan, "Compute dispatch waited {:.1f} ms for pipeline {:016x}",
+                         std::chrono::duration<double, std::milli>(waited).count(), shader_hash);
+            }
         });
     }
 
