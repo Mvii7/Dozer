@@ -372,18 +372,18 @@ size_t GpuSplit::Execute(const u64* entry, u64 published_left) {
 
 template <bool OnStage>
 size_t GpuSplit::ExecuteIn(const u64* entry, u64 published_left) {
-    Tegra::Engines::EngineInterface*& back_engine = OnStage ? stage_engine : this->back_engine;
+    Tegra::Engines::EngineInterface*& engine_slot = OnStage ? stage_engine : back_engine;
     const u64 head = entry[0];
     switch (static_cast<Kind>(head & 0xf)) {
     case Kind::Wrap:
         return 0;
     case Kind::Engine:
-        back_engine = reinterpret_cast<Tegra::Engines::EngineInterface*>(entry[1]);
+        engine_slot = reinterpret_cast<Tegra::Engines::EngineInterface*>(entry[1]);
         return 2;
     case Kind::Method: {
         const u32 method = static_cast<u32>((head >> 8) & 0xffff);
         const u32 argument = static_cast<u32>(head >> 32);
-        auto* const engine = back_engine;
+        auto* const engine = engine_slot;
         if ((head & Direct) != 0) {
             Nx2Profile::Scope method_scope{Nx2Profile::Zone::Method};
             engine->ConsumeSink(*system);
@@ -433,7 +433,7 @@ size_t GpuSplit::ExecuteIn(const u64* entry, u64 published_left) {
         const u32 method = static_cast<u32>((head >> 8) & 0xffff);
         const u32 amount = static_cast<u32>(head >> 32);
         const size_t data = (head & HasSegment) != 0 ? 3 : 2;
-        auto* const engine = back_engine;
+        auto* const engine = engine_slot;
         Nx2Profile::Scope method_scope{Nx2Profile::Zone::Method};
         engine->ConsumeSink(*system);
         if ((head & HasSegment) != 0) {
@@ -452,7 +452,7 @@ size_t GpuSplit::ExecuteIn(const u64* entry, u64 published_left) {
         // must).
         const u32 count = static_cast<u32>(head >> 32);
         const u64* const writes = entry + 1;
-        auto* const engine = back_engine;
+        auto* const engine = engine_slot;
         Nx2Profile::Scope method_scope{Nx2Profile::Zone::Method};
         engine->ConsumeSink(*system);
         if (batch_direct) {
