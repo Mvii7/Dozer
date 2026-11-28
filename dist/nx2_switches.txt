@@ -571,6 +571,9 @@
 # HLE_RENDER_ENABLE: NVN's render enable macro without the front waiting for the back (the back
 # reads the counters and sets the mode in order). =2 runs the macro and logs differences. Off.
 #EDEN_NX2_HLE_RENDER_ENABLE=1
+# COND_POST=1 (back stages): a render enable that reads no memory (always/never, True/False)
+# without parking the stages. Off.
+#EDEN_NX2_COND_POST=1
 # MACRO_DUMP=<n>: log the code of the macros called most and <n> of their calls (parameters, data
 # RAM, every write), for writing hand-made versions of them. Logging only.
 #EDEN_NX2_MACRO_DUMP=16

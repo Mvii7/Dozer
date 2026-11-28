@@ -2892,6 +2892,13 @@ bool RasterizerVulkan::AccelerateConditionalRendering() {
     return query_cache.AccelerateHostConditionalRendering();
 }
 
+void RasterizerVulkan::EndConditionalRendering() {
+    NoteLightWork();
+    VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::ConditionalRenderings, 1);
+    gpu_memory->FlushCaching();
+    query_cache.EndHostConditionalRendering();
+}
+
 bool RasterizerVulkan::HasDrawTransformFeedback() {
     return device.IsTransformFeedbackDrawSupported();
 }

@@ -1076,8 +1076,46 @@ void Maxwell3D::ProcessQueryGet() {
     }
 }
 
+namespace {
+// EDEN_NX2_COND_POST=1: with back stages, a render enable override or mode that reads no memory
+// sets execute_on on A and sends the rest of AccelerateConditionalRendering to BC in order,
+// without a join.
+bool CondPostEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_COND_POST");
+        const bool on = value != nullptr && value[0] == '1';
+        if (on) {
+            LOG_INFO(HW_GPU, "Render enable without memory reads: no join (EDEN_NX2_COND_POST=1)");
+        }
+        return on;
+    }();
+    return enabled;
+}
+} // namespace
+
 void Maxwell3D::ProcessQueryCondition() {
-    if (stage_capture && VideoCommon::Nx2Stages::Forwarding()) [[unlikely]] return StageQueryCondition();
+    if (stage_capture && VideoCommon::Nx2Stages::Forwarding()) [[unlikely]] {
+        if (CondPostEnabled()) {
+            using Override = Regs::RenderEnable::Override;
+            using Mode = Regs::RenderEnable::Mode;
+            const Override override_mode = regs.render_enable_override;
+            const Mode mode = regs.render_enable.mode;
+            const bool no_read =
+                override_mode == Override::AlwaysRender ||
+                override_mode == Override::NeverRender ||
+                (override_mode == Override::UseRenderEnable &&
+                 (mode == Mode::True || mode == Mode::False));
+            if (no_read) {
+                // AccelerateHostConditionalRendering returns false for these after ending host
+                // conditional rendering; the switch below then reads no memory.
+                rasterizer->EndConditionalRendering();
+                execute_on = override_mode == Override::AlwaysRender ||
+                             (override_mode == Override::UseRenderEnable && mode == Mode::True);
+                return;
+            }
+        }
+        return StageQueryCondition();
+    }
     if (rasterizer->AccelerateConditionalRendering()) {
         execute_on = true;
         return;

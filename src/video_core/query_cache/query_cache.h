@@ -535,6 +535,11 @@ bool QueryCacheBase<Traits>::AccelerateHostConditionalRendering() {
     }
 }
 
+template <typename Traits>
+void QueryCacheBase<Traits>::EndHostConditionalRendering() {
+    impl->runtime.EndHostConditionalRendering();
+}
+
 // Async downloads
 template <typename Traits>
 void QueryCacheBase<Traits>::CommitAsyncFlushes() {

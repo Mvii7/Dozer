@@ -157,6 +157,7 @@ public:
     void FlushCommands() override;
     void TickFrame() override;
     bool AccelerateConditionalRendering() override;
+    void EndConditionalRendering() override;
     bool HasDrawTransformFeedback() override;
     bool AccelerateSurfaceCopy(const Tegra::Engines::Fermi2D::Surface& src,
                                const Tegra::Engines::Fermi2D::Surface& dst,

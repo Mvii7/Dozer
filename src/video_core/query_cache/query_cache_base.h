@@ -113,6 +113,8 @@ public:
     void NotifyWFI();
 
     bool AccelerateHostConditionalRendering();
+    /// AccelerateHostConditionalRendering for an override or mode that reads no memory.
+    void EndHostConditionalRendering();
 
     /// The payload of the newest semaphore release to cpu_addr that the GPU processed but whose
     /// guest write still waits for the host GPU to finish the work before it (fences, and every

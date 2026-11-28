@@ -545,6 +545,15 @@ bool Nx2StageProxy::AccelerateConditionalRendering() {
     return result;
 }
 
+void Nx2StageProxy::EndConditionalRendering() {
+    if (!Forwarding()) {
+        return real.EndConditionalRendering();
+    }
+    // No memory read and no value: in order on BC.
+    Post(Ring::ToB,
+         [] { OnBc("Nx2StageProxy::EndConditionalRendering").EndConditionalRendering(); });
+}
+
 bool Nx2StageProxy::AccelerateSurfaceCopy(const Tegra::Engines::Fermi2D::Surface& src,
                                           const Tegra::Engines::Fermi2D::Surface& dst,
                                           const Tegra::Engines::Fermi2D::Config& copy_config) {

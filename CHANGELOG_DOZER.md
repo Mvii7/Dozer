@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_COND_POST=1` (back stages, off): a render enable write whose override or mode reads
+  no memory (always/never render, or mode True/False: every call of NVN's render enable macro in
+  Donkey Kong Bananza's first boss fight, ~1500 a second) no longer parks the stages: A sets the
+  result itself and sends the rest (ending host conditional rendering) to the stages in order.
+  The other modes still read their counters in a join.
 - `EDEN_NX2_HLE_RENDER_ENABLE` (split front, off): NVN's render enable macro without the front
   waiting for the back. `=1` sends the macro's writes and has the back read the two counters and
   set `render_enable.mode` at the same point of the stream (stages parked, as for a conditional

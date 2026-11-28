@@ -215,6 +215,10 @@ public:
         return false;
     }
 
+    /// AccelerateConditionalRendering where the override or mode reads no memory (it then
+    /// returns false): what it does besides.
+    virtual void EndConditionalRendering() {}
+
     /// Attempt to use a faster method to perform a surface copy
     [[nodiscard]] virtual bool AccelerateSurfaceCopy(
         const Tegra::Engines::Fermi2D::Surface& src, const Tegra::Engines::Fermi2D::Surface& dst,
