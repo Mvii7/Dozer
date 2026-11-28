@@ -88,6 +88,10 @@ enum class Zone : u32 {
     IndexBind,     ///< BindHostIndexBuffer (any draw)
     VertexBind,    ///< BindHostVertexBuffers (any draw)
     LightQueries,  ///< A light draw's query, transform feedback and counter calls
+    UniformStorage, ///< A uniform light draw's storage buffers bound again (rebind_storage)
+    UniformUpdate,  ///< A uniform light draw's UpdateGraphicsBuffers
+    UniformBinds,   ///< A uniform light draw's stage buffers bound and image entries added
+    UniformRecord,  ///< A uniform light draw's descriptor queue acquired and recorded
     Count,
 };
 
@@ -102,7 +106,8 @@ inline constexpr std::array<const char*, static_cast<size_t>(Zone::Count)> zone_
     "stage in wait", "stage out wait", "join wait", "park wait", "replica apply",
     "packet build", "list replay", "light repair", "light geometry", "light uniform",
     "mark streams", "light decide", "stage presets", "packet send", "join op", "cb data",
-    "index bind", "vertex bind", "light queries",
+    "index bind", "vertex bind", "light queries", "uniform storage", "uniform update",
+    "uniform binds", "uniform record",
 };
 
 /// Report's thread names for the back stages (nx2_stages.h): A, B (BC with cut a alone), C.

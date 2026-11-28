@@ -851,8 +851,10 @@ bool GraphicsPipeline::ConfigureUniformsImpl(bool is_indexed, bool rebind_storag
     // words read kept as config_stage keeps them (descriptor_values: later draws compare with
     // them). UpdateGraphicsBuffers below finds their buffers and segments, BindHostStageBuffers
     // synchronizes them, marks written ones and pushes their descriptors, as after ConfigureImpl.
+    namespace Profile = VideoCommon::Nx2Profile;
     if constexpr (Spec::has_storage_buffers) {
         if (rebind_storage) {
+            Profile::FineScope storage_scope{Profile::Zone::UniformStorage};
             const auto bind_stage{[&](size_t stage) LAMBDA_FORCEINLINE {
                 buffer_cache.UnbindGraphicsStorageBuffers(stage);
                 const auto& cbufs{maxwell3d->state.shader_stages[stage].const_buffers};
@@ -885,13 +887,20 @@ bool GraphicsPipeline::ConfigureUniformsImpl(bool is_indexed, bool rebind_storag
             }
         }
     }
-    buffer_cache.UpdateGraphicsBuffers(is_indexed);
+    {
+        Profile::FineScope update_scope{Profile::Zone::UniformUpdate};
+        buffer_cache.UpdateGraphicsBuffers(is_indexed);
+    }
     // EDEN_NX2_UNIFORM_SYNC_SKIP: clean streams are left as a plain light draw leaves them.
     buffer_cache.uniform_light_draw = VideoCommon::Nx2UniformSyncSkip() != 0;
     buffer_cache.BindHostGeometryBuffers(is_indexed);
     buffer_cache.uniform_light_draw = false;
-    guest_descriptor_queue.Acquire(scheduler, num_descriptor_entries, uses_descriptor_buffer);
+    {
+        Profile::FineScope record_scope{Profile::Zone::UniformRecord};
+        guest_descriptor_queue.Acquire(scheduler, num_descriptor_entries, uses_descriptor_buffer);
+    }
     const auto prepare_stage{[&](size_t stage) LAMBDA_FORCEINLINE {
+        Profile::FineScope binds_scope{Profile::Zone::UniformBinds};
         buffer_cache.BindHostStageBuffers(stage);
         const Shader::Info& info{stage_infos[stage]};
         const u32 stage_textures = Shader::NumDescriptors(info.texture_descriptors);
@@ -930,6 +939,7 @@ bool GraphicsPipeline::ConfigureUniformsImpl(bool is_indexed, bool rebind_storag
     if (buffer_cache.any_buffer_uploaded || !scheduler.IsRenderPassActive()) {
         return false;
     }
+    Profile::FineScope record_scope{Profile::Zone::UniformRecord};
     return RecordDescriptors();
 }
 
