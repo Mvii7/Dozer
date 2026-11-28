@@ -8,9 +8,20 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
-- Tuning: the global tab has no preset any more. It is the boxes, frame generation, and a **Preset**
+- `EDEN_NX2_HLE_DIRECT=1` (test switch, off): NVN's direct draw macros run in C++ instead of the
+  macro JIT: the index buffer and draw macro and the vertex attribute format and vertex stream
+  macros, which Donkey Kong Bananza calls ~1,000,000 times a second in its first boss fight. A
+  macro is taken when its code hashes to the version written here, at any position; they skip the
+  JIT's per-call setup, and a write that changes nothing is dropped by the rule `FrontWrite` drops
+  it by. Front diagnostics count them as HLE calls. `=2` checks the C++ against the
+  macro on one call in 8 and logs differences. The profile counts the calls.
+- `EDEN_NX2_MACRO_DUMP=<n>` (diagnostics, off): logs the code of the macros the split front calls
+  most and `<n>` of their calls (parameters, data RAM reads and writes, every register write,
+  marked where it changes the register), and per macro how many of its writes change a register.
+  Each logged call runs again on a copy of the data RAM; the real call is unchanged.
+- Tuning: the global tab has no preset any more. It is the boxes and a **Preset**
   box (Default, Experimental, Safe) that only ticks the boxes. Every game follows the
-  boxes unless its Properties changes one, shown as **Changed** with the cross. Before, a game whose
+  boxes unless its Properties changes one, which gets a cross to reset it. Before, a game whose
   preset differed from the global one (Donkey Kong Bananza always did) ran that preset's boxes and
   ignored yours, so turning the RTSS overlay off for all games left it on there. Safe's shortcuts and
   Experimental's `RX_RT_FIT=3` are boxes now. Bananza has a **Graphics preset** (Performance,
