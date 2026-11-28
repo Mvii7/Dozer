@@ -1253,7 +1253,12 @@ bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalid
         }
         Profile::Scope scope{Profile::Zone::LightDraw};
         std::scoped_lock lock{buffer_cache.mutex, texture_cache.mutex};
-        if (!pipeline.ConfigureUniforms(is_indexed, rebind_storage)) {
+        bool configured;
+        {
+            Profile::FineScope uniform_scope{Profile::Zone::LightUniform};
+            configured = pipeline.ConfigureUniforms(is_indexed, rebind_storage);
+        }
+        if (!configured) {
             Profile::Add(Profile::Counter::LightUniformFellBack, 1);
             if (rebind_storage) {
                 Profile::Add(Profile::Counter::LightStorageFellBack, 1);
@@ -1295,7 +1300,12 @@ bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalid
     Profile::Scope scope{Profile::Zone::LightDraw};
     std::scoped_lock lock{buffer_cache.mutex};
     // What ConfigureImpl does for these buffers (UpdateGraphicsBuffers, BindHostGeometryBuffers).
-    if (!buffer_cache.UpdateGeometryBuffers(is_indexed)) {
+    bool updated;
+    {
+        Profile::FineScope geometry_scope{Profile::Zone::LightGeometry};
+        updated = buffer_cache.UpdateGeometryBuffers(is_indexed);
+    }
+    if (!updated) {
         Profile::Add(Profile::Counter::LightFellBack, 1);
         return false;
     }
@@ -1310,10 +1320,13 @@ bool RasterizerVulkan::TryLightDraw(bool is_indexed, bool indirect, bool invalid
         Profile::Add(Profile::Counter::LightFellBack, 1);
         return false;
     }
-    query_cache.NotifySegment(true);
-    HandleTransformFeedback();
-    query_cache.CounterEnable(VideoCommon::QueryType::ZPassPixelCount64,
-                              maxwell3d->regs.zpass_pixel_count_enable);
+    {
+        Profile::FineScope queries_scope{Profile::Zone::LightQueries};
+        query_cache.NotifySegment(true);
+        HandleTransformFeedback();
+        query_cache.CounterEnable(VideoCommon::QueryType::ZPassPixelCount64,
+                                  maxwell3d->regs.zpass_pixel_count_enable);
+    }
     if (texture_cache.Nx2InPassFeedback()) [[unlikely]] {
         // EDEN_NX2_RX_RT_FIT=3: as the uniform way above.
         RecordInPassFeedbackBarrier(scheduler, true);

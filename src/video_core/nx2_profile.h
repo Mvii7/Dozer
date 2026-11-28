@@ -84,6 +84,10 @@ enum class Zone : u32 {
     PacketSend,    ///< A draw packet written to ring 3 (SendStageDraw)
     JoinOp,        ///< A join's op run on B (JoinFromB, JoinFromBLocked)
     CbData,        ///< A ring 2 constant buffer data record on B (its pool check included)
+    // The light draw's parts on the unstaged path and cut a (TryLightDraw; FineScope):
+    IndexBind,     ///< BindHostIndexBuffer (any draw)
+    VertexBind,    ///< BindHostVertexBuffers (any draw)
+    LightQueries,  ///< A light draw's query, transform feedback and counter calls
     Count,
 };
 
@@ -98,6 +102,7 @@ inline constexpr std::array<const char*, static_cast<size_t>(Zone::Count)> zone_
     "stage in wait", "stage out wait", "join wait", "park wait", "replica apply",
     "packet build", "list replay", "light repair", "light geometry", "light uniform",
     "mark streams", "light decide", "stage presets", "packet send", "join op", "cb data",
+    "index bind", "vertex bind", "light queries",
 };
 
 /// Report's thread names for the back stages (nx2_stages.h): A, B (BC with cut a alone), C.

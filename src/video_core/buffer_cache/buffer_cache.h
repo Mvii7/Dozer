@@ -1214,6 +1214,7 @@ void BufferCache<P>::UpdateComputeBuffers() {
 template <class P>
 void BufferCache<P>::BindHostGeometryBuffers(bool is_indexed) {
     if (is_indexed) {
+        Nx2Profile::FineScope scope{Nx2Profile::Zone::IndexBind};
         BindHostIndexBuffer();
     } else if constexpr (!HAS_FULL_INDEX_AND_PRIMITIVE_SUPPORT) {
         const auto& draw_state = maxwell3d->draw_manager.draw_state;
@@ -1223,7 +1224,10 @@ void BufferCache<P>::BindHostGeometryBuffers(bool is_indexed) {
                                         draw_state.vertex_buffer.count);
         }
     }
-    BindHostVertexBuffers();
+    {
+        Nx2Profile::FineScope scope{Nx2Profile::Zone::VertexBind};
+        BindHostVertexBuffers();
+    }
     BindHostTransformFeedbackBuffers();
     if (current_draw_indirect) {
         BindHostDrawIndirectBuffers();
