@@ -135,15 +135,14 @@ of the choice, only the boxes, so you can change any of them afterwards.
 
 | Fill in | What it sets | Same as |
 |---|---|---|
-| **Defaults** (the first start's) | the fastest settings: the seven boxes below on, read traps too, *Enable Reactive Flushing* off (Graphics > Advanced). Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Defaults later turns it off too | `start-performance.bat` |
+| **Defaults** (the first start's) | the fastest settings: the boxes below on, read traps too, but not the FPS overlay, *Enable Reactive Flushing* off (Graphics > Advanced). Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Defaults later turns it off too | `start-performance.bat` |
 | **Experimental** | Defaults with Reactive Flushing instead of read traps: read traps off, barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and *Render target fit for Reactive Flushing* ticked (`EDEN_NX2_RX_RT_FIT=3`) | `start-reactive-experimental.bat` |
 | **Safe** | the seven boxes off, Frame generation off, and *Turn off the per-draw shortcuts* ticked: the GPU shortcuts Dozer keeps on by default off (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
 
 **Per game.** A game's **Properties > Tuning** tab (right-click the game, or **Emulation >
 Configure Current Game**) shows this tab's boxes as that game runs them. A game follows this tab
-until you change a box there: the box then reads **Changed** and a cross appears next to it, which
-resets it to this tab's. Untick the overlay here and every game that did not change it loses the
-overlay too. **Donkey Kong Bananza** also has a **Graphics preset** there (Performance or
+until you change a box there: a cross then appears next to it, which resets it. Untick the overlay
+here and every game that did not change it loses the overlay too. **Donkey Kong Bananza** also has a **Graphics preset** there (Performance or
 Quality) that sets its foliage, reflection updates and shadow quality; Performance is what it runs
 with unless the shortcuts here are off (Safe), when it is Quality. The tab shows Custom once you
 set one of the three by hand.
@@ -176,7 +175,7 @@ Below are the nine settings:
 | Same-value filter in the macro JIT | `JIT_SAME=1` | All games |
 | Lean front macro path | `FRONT_MACRO_LEAN=1` | All games |
 | Timed frame generation | `FG_TIMED=1` (only does something with frame generation on) | All games |
-| FPS overlay in RivaTuner | `OSD=1` (RTSS, if it runs) | All games |
+| FPS overlay in RivaTuner | `OSD=1` (RTSS, if it runs); off until ticked | All games |
 | Turn off the per-draw shortcuts | the list of `=0` variables of `start-safe.bat`; off by default | All games |
 | Render target fit for Reactive Flushing | `RX_RT_FIT=3`; off by default | All games |
 

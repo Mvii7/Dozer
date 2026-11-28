@@ -21,7 +21,7 @@ constexpr u64 Bananza = 0x040074A01BF12000ULL;
 constexpr u64 OtherGame = 0x0100000000010000ULL;
 constexpr u64 MarioKartWorld = 0x0400C3F00006E000ULL;
 
-// start-performance.bat's lines (dist/dozer), DK_DYN and OSD at their defaults (1).
+// start-performance.bat's lines (dist/dozer), DK_DYN at its default (1), the overlay off.
 const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_BACK_STAGES", "1"},
     {"EDEN_NX2_BACK_CUTS", "a"},
@@ -29,7 +29,6 @@ const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_JIT_SAME", "1"},
     {"EDEN_NX2_FRONT_MACRO_LEAN", "1"},
     {"EDEN_NX2_FG_TIMED", "1"},
-    {"EDEN_NX2_OSD", "1"},
     {"EDEN_NX2_DK_DYN", "1"},
     {"EDEN_NX2_DK_FOLIAGE_DENSITY", "10"},
     {"EDEN_NX2_DK_FOLIAGE_DISTANCE", "200"},
@@ -42,6 +41,8 @@ const std::vector<Var> BalancedBananza{
 };
 // Of those, the ones Bananza gets that another game does not.
 constexpr std::size_t BalancedBananzaOwn = 9;
+
+const Var Overlay{"EDEN_NX2_OSD", "1"};
 
 // The game-specific variables Bananza gets whatever the preset (Safe's: foliage, very high
 // shadows and reflections as the game's).
@@ -243,6 +244,7 @@ TEST_CASE("Nx2PerfSettings: setups fill in the launchers' boxes", "[core]") {
         const Switches switches = Apply(setup, AllOff());
         for (const Key& key : Keys) {
             const bool on = key.name == "read_traps" ? setup == Setup::Defaults
+                            : key.name == "osd"      ? false
                             : key.name == "safe_off" ? false
                             : key.name == "rt_fit"   ? setup == Setup::Experimental
                                                      : true;
@@ -412,6 +414,7 @@ TEST_CASE("Nx2PerfSettings: every name is one a setup or a game's setting can se
     low_shadow.dk_shadow = ShadowLow;
     low_shadow.dk_reflections = ReflectionsMedium;
     low_shadow.dk_foliage = FoliageOff;
+    low_shadow.osd = true; // no setup ticks the overlay
     for (const Var& var : Wanted(low_shadow, Game::Bananza)) {
         wanted.insert(var.name);
     }
@@ -427,7 +430,7 @@ TEST_CASE("Nx2PerfSettings: a boot that needs other variables differs from the s
     REQUIRE(Plan(Performance(), GameOf(Bananza), NoneOutside) == first_bananza);
     REQUIRE(Plan(Performance(), GameOf(OtherGame), NoneOutside) != first_bananza);
     Switches changed = Performance();
-    changed.osd = false;
+    changed.osd = true;
     REQUIRE(Plan(changed, Game::Bananza, NoneOutside) != first_bananza);
     // Bananza's own switches set outside: another game needs nothing else, no restart.
     const auto outside = [](std::string_view name) { return BananzaOnly.count(name) != 0; };
@@ -450,14 +453,14 @@ TEST_CASE("Nx2PerfSettings: saving settings needs a restart only after a game se
     REQUIRE(!NeedsRestart(applied, plan_now(Performance())));
     REQUIRE(NeedsRestart(applied, plan_now(AllOff())));
     REQUIRE(NeedsRestart(applied, plan_now(Apply(Setup::Experimental, Performance()))));
-    Switches no_osd = Performance();
-    no_osd.osd = false;
-    REQUIRE(NeedsRestart(applied, plan_now(no_osd)));
+    Switches with_osd = Performance();
+    with_osd.osd = true;
+    REQUIRE(NeedsRestart(applied, plan_now(with_osd)));
     // A change that only touches variables set outside: nothing of ours differs, no restart.
     const auto osd_outside = [](std::string_view name) { return name == "EDEN_NX2_OSD"; };
     const std::optional<std::vector<Var>> applied_outside =
         Plan(Performance(), Game::Bananza, osd_outside);
-    REQUIRE(!NeedsRestart(applied_outside, Plan(no_osd, Game::Bananza, osd_outside)));
+    REQUIRE(!NeedsRestart(applied_outside, Plan(with_osd, Game::Bananza, osd_outside)));
 }
 
 TEST_CASE("Nx2PerfSettings: the frame generation choice and the Graphics settings", "[core]") {
@@ -558,8 +561,14 @@ TEST_CASE("Nx2PerfSettings: a game's overrides read back what was written", "[co
 }
 
 TEST_CASE("Nx2PerfSettings: every game follows the global settings", "[core]") {
-    // The overlay off in the global settings reaches every game (the Bananza one too).
+    // The overlay is off until ticked, and off again in the global settings reaches every game
+    // (the Bananza one too).
     Switches global = Performance();
+    REQUIRE(!global.osd);
+    global.osd = true;
+    for (const Game game : {Game::Bananza, Game::MarioKartWorld, Game::Other}) {
+        REQUIRE(HasVar(Wanted(ForGame(global, {}), game), "EDEN_NX2_OSD"));
+    }
     global.osd = false;
     for (const Game game : {Game::Bananza, Game::MarioKartWorld, Game::Other}) {
         REQUIRE(!ForGame(global, {}).osd);
@@ -578,6 +587,7 @@ TEST_CASE("Nx2PerfSettings: every game follows the global settings", "[core]") {
     Overrides own;
     own.boxes[6] = true;
     REQUIRE(Keys[6].name == "osd");
+    REQUIRE(!global.osd);
     REQUIRE(ForGame(global, own).osd);
     REQUIRE(ForGame(global, own).read_traps == global.read_traps);
     // Changing the global box again changes what the other boxes follow, not the override.
@@ -682,7 +692,7 @@ TEST_CASE("Nx2PerfSettings: an older game's preset is carried over", "[core]") {
     Overrides safe;
     CarryOverPreset(safe, Game::Other, LegacyPreset::Safe, global);
     REQUIRE(safe.boxes[0] == false);   // read traps
-    REQUIRE(safe.boxes[6] == false);   // overlay
+    REQUIRE(!safe.boxes[6].has_value()); // overlay: off in global too
     REQUIRE(safe.boxes[7] == true);    // shortcuts
     REQUIRE(!safe.boxes[8].has_value()); // RX_RT_FIT: global's already off
     REQUIRE(!safe.dk_foliage.has_value()); // only Bananza has levels

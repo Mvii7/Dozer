@@ -55,7 +55,7 @@ const Entry* EntryOf(std::size_t key) {
 // The cross next to a changed setting: the other tabs' own restore button (hidden until shown).
 QPushButton* CreateResetButton(QWidget* parent) {
     QPushButton* button = ConfigurationShared::Widget::CreateRestoreGlobalButton(true, parent);
-    button->setToolTip(QObject::tr("Reset to the global setting"));
+    button->setToolTip(QObject::tr("Reset"));
     return button;
 }
 
@@ -75,10 +75,9 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     auto* intro = new QLabel(
-        tr("These settings are the Tuning tab's, as this game runs them: a setting follows the "
-           "Tuning tab until you change it here. A cross next to one resets it to the Tuning "
-           "tab's. They take effect when the game starts. If a game has already run since Dozer "
-           "was opened, Dozer will ask to restart before a change applies."),
+        tr("These settings apply to this game. A cross next to one resets it. They take effect "
+           "when the game starts. If a game has already run since Dozer was opened, Dozer will "
+           "ask to restart before a change applies."),
         this);
     intro->setWordWrap(true);
     layout->addWidget(intro);
@@ -102,17 +101,15 @@ ConfigureNx2PerfPerGame::ConfigureNx2PerfPerGame(u64 title_id_, QWidget* parent)
             separated = true;
         }
         auto* box = new QCheckBox(this);
-        auto* source = new QLabel(this);
         auto* reset = CreateResetButton(this);
         auto* row_layout = new QHBoxLayout;
         row_layout->addWidget(box, 1);
-        row_layout->addWidget(source);
         row_layout->addWidget(reset);
         if (entry->tip != nullptr) {
             box->setToolTip(tr(entry->tip));
         }
         form->addRow(tr(entry->label), row_layout);
-        rows.push_back({box, source, reset, key});
+        rows.push_back({box, reset, key});
         const std::size_t index = rows.size() - 1;
         connect(box, &QCheckBox::toggled, this,
                 [this, index](bool checked) { ChooseBox(rows[index], checked); });
@@ -234,10 +231,8 @@ void ConfigureNx2PerfPerGame::Refresh() {
             const QSignalBlocker blocker{row.box};
             row.box->setChecked(now.*EntryOf(row.key)->field);
         }
-        // The game's own boxes have no global setting to go back to.
+        // The game's own boxes have nothing to go back to.
         const bool changed = row.key < Perf::Keys.size() && own.boxes[row.key].has_value();
-        row.source->setText(changed ? tr("Changed") : tr("Tuning tab"));
-        row.source->setEnabled(changed);
         ShowReset(row.reset, changed);
     }
     if (preset != nullptr) {

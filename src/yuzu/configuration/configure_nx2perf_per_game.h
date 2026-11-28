@@ -13,7 +13,6 @@
 
 class QCheckBox;
 class QComboBox;
-class QLabel;
 class QPushButton;
 
 // The per-game Tuning tab: each box of the Tuning tab (core/nx2_perf_settings.h) as this game runs
@@ -32,7 +31,6 @@ public:
 private:
     struct Row {
         QCheckBox* box;
-        QLabel* source; ///< "Tuning tab" or "Changed"
         QPushButton* reset;
         std::size_t key; ///< the index in Core::Nx2PerfSettings::KeyAt
     };

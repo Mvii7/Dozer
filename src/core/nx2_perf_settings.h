@@ -71,7 +71,7 @@ struct Switches {
     bool jit_same = true;          ///< EDEN_NX2_JIT_SAME=1
     bool front_macro_lean = true;  ///< EDEN_NX2_FRONT_MACRO_LEAN=1
     bool fg_timed = true;          ///< EDEN_NX2_FG_TIMED=1
-    bool osd = true;               ///< EDEN_NX2_OSD=1
+    bool osd = false;              ///< EDEN_NX2_OSD=1, off until ticked
     bool safe_off = false;         ///< the per-draw shortcuts Dozer keeps on set to 0 (SafeOff)
     bool rt_fit = false;           ///< EDEN_NX2_RX_RT_FIT=3, for Reactive Flushing
     // Game-specific: Apply leaves these as they are.
@@ -86,7 +86,7 @@ struct Switches {
     bool operator==(const Switches&) const = default;
 };
 
-/// What the performance launcher sets: everything on, read traps too.
+/// What the performance launcher sets: everything on, read traps too, but not the RTSS overlay.
 constexpr Switches Performance() {
     return Switches{};
 }
