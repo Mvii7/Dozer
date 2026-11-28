@@ -31,7 +31,7 @@ namespace Core::Nx2PerfSettings {
 
 /// What the Tuning tab's "Apply" fills the global settings in with. Nothing of it is stored.
 enum class Setup : u8 {
-    Default,      ///< start-performance.bat: all on, read traps on, Reactive Flushing off
+    Default,      ///< start-default.bat: all on, read traps on, Reactive Flushing off
     Experimental, ///< start-reactive-experimental.bat: read traps off, Reactive Flushing on, RX_RT_FIT=3
     Safe,         ///< start-safe.bat: all off, and the shortcuts Dozer keeps on set to 0
 };

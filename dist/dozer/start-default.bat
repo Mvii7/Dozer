@@ -1,6 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
-rem Dozer - PERFORMANCE (the default): the fastest settings, read traps on, reactive flushing off. Bananza: low foliage.
+rem Dozer - DEFAULT: the fastest settings, read traps on, reactive flushing off. Bananza: low foliage.
 rem Dozer launcher for dozer-cli.exe (Dozer's program without menus).
 rem Put this file next to dozer-cli.exe.
 rem Start: put your game (.nsp .xci .nsz .xcz .nup .nx) in the Games folder next to this file and double-click

@@ -418,7 +418,7 @@ void QtConfig::ReadNx2PerfValues() {
     keep_off(UISettings::values.nx2perf.mkw_dyn, Loader::Nx2MkwDynamicFps::ProgramId,
              Core::Nx2PerfSettings::Keys.size() + 1);
     // The first start selects the performance setup, which is measured with Reactive Flushing off
-    // (like start-performance.bat); it is saved with the other settings. An existing file keeps
+    // (like start-default.bat); it is saved with the other settings. An existing file keeps
     // its own.
     if (first_start) {
         UISettings::values.nx2perf = Core::Nx2PerfSettings::FirstStart();

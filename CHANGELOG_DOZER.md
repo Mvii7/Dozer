@@ -17,6 +17,9 @@ and `=0` brings back the 2.0.0 code path.
   Quality) for its foliage, reflection and shadow levels. An older `qt-config.ini` is carried over:
   a global Safe or Experimental becomes its boxes, and a game's own preset becomes the boxes and
   levels it changed.
+- Launchers: `start-performance.bat` is now `start-default.bat`, and `start-quality.bat` is gone (it
+  only cleared Bananza's three level lines; set Foliage, Reflection updates and Shadow quality to
+  High in Bananza's Properties instead).
 - Tuning: the Frame generation box is gone; frame generation is only in the Graphics tab, where
   *Enable Frame Generation* is the only checkbox of its rows now. Safe no longer turns it off.
 - Tuning: the FPS overlay in RivaTuner is off until ticked (the Default and the first start no

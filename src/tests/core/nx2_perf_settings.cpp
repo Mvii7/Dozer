@@ -21,7 +21,7 @@ constexpr u64 Bananza = 0x040074A01BF12000ULL;
 constexpr u64 OtherGame = 0x0100000000010000ULL;
 constexpr u64 MarioKartWorld = 0x0400C3F00006E000ULL;
 
-// start-performance.bat's lines (dist/dozer), DK_DYN at its default (1), the overlay off.
+// start-default.bat's lines (dist/dozer), DK_DYN at its default (1), the overlay off.
 const std::vector<Var> BalancedBananza{
     {"EDEN_NX2_BACK_STAGES", "1"},
     {"EDEN_NX2_BACK_CUTS", "a"},
@@ -276,7 +276,7 @@ TEST_CASE("Nx2PerfSettings: setups fill in the launchers' boxes", "[core]") {
 }
 
 TEST_CASE("Nx2PerfSettings: setups set the launchers' variables", "[core]") {
-    // Default: start-performance.bat's, read traps on (unset).
+    // Default: start-default.bat's, read traps on (unset).
     REQUIRE(Wanted(Apply(Setup::Default, Performance()), Game::Bananza) == BalancedBananza);
     // Experimental: Default's read traps off and RX_RT_FIT=3 (start-reactive-experimental.bat).
     auto reactive = BalancedBananza;
