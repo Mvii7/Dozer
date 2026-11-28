@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <span>
 
@@ -81,6 +82,9 @@ public:
     }
 
 private:
+    /// Runs the build once, whoever gets here first, and releases everything waiting on it.
+    void RunBuild();
+
     [[nodiscard]] bool OutputsHoldGpuData(
         const BufferCache& buffer_cache, const TextureCache& texture_cache,
         std::span<const VideoCommon::ImageViewInOut> views) const;
@@ -108,6 +112,9 @@ private:
     std::condition_variable build_condvar;
     std::mutex build_mutex;
     std::atomic_bool is_built{false};
+    std::atomic_bool build_claimed{false};
+    std::function<void()> build_task;
+    VideoCore::ShaderNotify* build_notify{};
 };
 
 } // namespace Vulkan
