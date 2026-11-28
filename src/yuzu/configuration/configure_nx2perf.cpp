@@ -98,7 +98,7 @@ void ConfigureNx2Perf::Show(const Perf::Switches& switches) {
 
 void ConfigureNx2Perf::ShowSetups() {
     ui->setup_text->setText(
-        tr("Defaults: the fastest settings, like start-performance.bat. Experimental: Reactive "
+        tr("Default: the fastest settings, like start-performance.bat. Experimental: Reactive "
            "Flushing instead of read traps, like start-reactive-experimental.bat. Safe: "
            "everything off, like start-safe.bat. A preset only ticks the boxes below; change "
            "any of them afterwards."));

@@ -95,7 +95,7 @@ public:
      */
     [[nodiscard]] static QPushButton* CreateRestoreGlobalButton(bool using_global, QWidget* parent);
 
-    /// Enables or disables the value (a row paired with "Enable Frame Generation" follows it).
+    /// Enables or disables the label and the value (a row of "Enable Frame Generation" follows it).
     void SetDataEnabled(bool enabled);
 
     // Direct handles to sub components created
@@ -109,6 +109,7 @@ public:
     QDateTimeEdit* date_time_edit{};
     std::vector<std::pair<u32, QRadioButton*>> radio_buttons{};
     QWidget* data_widget{}; ///< The component that holds the value
+    QLabel* label_widget{}; ///< The label on the left, if there is one
 
 private:
     void SetupComponent(const QString& label, std::function<void()>& load_func, bool managed,

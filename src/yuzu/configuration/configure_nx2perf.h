@@ -20,7 +20,7 @@ class ConfigureNx2Perf;
 }
 
 // The Tuning tab: Dozer's settings (core/nx2_perf_settings.h), one box each, which every game
-// follows unless its own tab says otherwise. A setup (Defaults, Experimental, Safe, the launchers')
+// follows unless its own tab says otherwise. A setup (Default, Experimental, Safe, the launchers')
 // only fills the boxes in once. A box whose variables were all set outside the program
 // (yuzu/nx2perf_session.h) is greyed out: theirs is used.
 class ConfigureNx2Perf : public QWidget {

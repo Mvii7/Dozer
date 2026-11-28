@@ -71,7 +71,7 @@ saves (`user\nand`), shader caches and log (`user\log\eden_log.txt`) in it, and 
 program" under "The Tuning tab").
 
 Settings: **Emulation > Configure... > Tuning**. On the first start the settings are the
-performance ones (**Defaults** below), and Dozer also turns *Enable Reactive Flushing* off in
+performance ones (**Default** below), and Dozer also turns *Enable Reactive Flushing* off in
 its `qt-config.ini` (Graphics > Advanced).
 
 GPU Mode (GPU accuracy) starts at **Fast** (Low), as in newer Eden versions (2.0.0 started at
@@ -130,13 +130,13 @@ needs that much free disk space).
 ## The Tuning tab
 
 The tab is the settings every game runs with. At the top is a **Preset** box: choosing
-**Defaults**, **Experimental** or **Safe** ticks and unticks the boxes below. You can change any of
+**Default**, **Experimental** or **Safe** ticks and unticks the boxes below. You can change any of
 them afterwards.
 
 | Preset | What it sets | Same as |
 |---|---|---|
-| **Defaults** (the first start's) | the fastest settings: the boxes below on, read traps too, but not the FPS overlay, *Enable Reactive Flushing* off (Graphics > Advanced). Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Defaults later turns it off too | `start-performance.bat` |
-| **Experimental** | Defaults with Reactive Flushing instead of read traps: read traps off, barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and *Render target fit for Reactive Flushing* ticked (`EDEN_NX2_RX_RT_FIT=3`) | `start-reactive-experimental.bat` |
+| **Default** (the first start's) | the fastest settings: the boxes below on, read traps too, but not the FPS overlay, *Enable Reactive Flushing* off (Graphics > Advanced). Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Default later turns it off too | `start-performance.bat` |
+| **Experimental** | Default with Reactive Flushing instead of read traps: read traps off, barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and *Render target fit for Reactive Flushing* ticked (`EDEN_NX2_RX_RT_FIT=3`) | `start-reactive-experimental.bat` |
 | **Safe** | the seven boxes off and *Turn off the per-draw shortcuts* ticked: the GPU shortcuts Dozer keeps on by default off (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
 
 **Per game.** A game's **Properties > Tuning** tab (right-click the game, or **Emulation >
@@ -149,13 +149,13 @@ set one of the three by hand.
 Bananza and Mario Kart World also have a **Dynamic frame
 rate** box, only in their own Properties (on by default, no cross: it has no global setting). A game with changes starts with
 them, and Dozer asks to restart when the session's first game used others. Mario Kart World needs
-read traps on, which Defaults has (Experimental and Safe do not).
+read traps on, which Default has (Experimental and Safe do not).
 
 Below are the nine settings:
 
 | Setting | Switches it sets (`EDEN_NX2_...`) | Group |
 |---|---|---|
-| Read traps | On with Defaults (the first start's), off with Experimental and Safe: `READ_TRAPS=0`. With Reactive Flushing off as well, foliage is not rendered. On: left unset. In Donkey Kong Bananza with foliage off, on is faster than off. Does nothing while Reactive Flushing is on | All games |
+| Read traps | On with Default (the first start's), off with Experimental and Safe: `READ_TRAPS=0`. With Reactive Flushing off as well, foliage is not rendered. On: left unset. In Donkey Kong Bananza with foliage off, on is faster than off. Does nothing while Reactive Flushing is on | All games |
 | Split GPU thread | `BACK_STAGES=1`, `BACK_CUTS=a` | All games |
 | Acquire peek | `ACQUIRE_PEEK=1` | All games |
 | Same-value filter in the macro JIT | `JIT_SAME=1` | All games |

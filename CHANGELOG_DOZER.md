@@ -9,7 +9,7 @@ and `=0` brings back the 2.0.0 code path.
 ## Unreleased (Dozer)
 
 - Tuning: the global tab has no preset any more. It is the boxes, frame generation, and a **Preset**
-  box (Defaults, Experimental, Safe) that only ticks the boxes. Every game follows the
+  box (Default, Experimental, Safe) that only ticks the boxes. Every game follows the
   boxes unless its Properties changes one, shown as **Changed** with the cross. Before, a game whose
   preset differed from the global one (Donkey Kong Bananza always did) ran that preset's boxes and
   ignored yours, so turning the RTSS overlay off for all games left it on there. Safe's shortcuts and
@@ -19,7 +19,7 @@ and `=0` brings back the 2.0.0 code path.
   levels it changed.
 - Tuning: the Frame generation box is gone; frame generation is only in the Graphics tab, where
   *Enable Frame Generation* is the only checkbox of its rows now. Safe no longer turns it off.
-- Tuning: the FPS overlay in RivaTuner is off until ticked (the Defaults and the first start no
+- Tuning: the FPS overlay in RivaTuner is off until ticked (the Default and the first start no
   longer tick it). The per-game tab no longer labels each box; only the cross shows a change.
 - GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
   cores, the split back, and with the back stages the front, each take a physical core, and the

@@ -584,7 +584,11 @@ void Widget::SetupComponent(const QString& label, std::function<void()>& load_fu
         layout->addWidget(lhs, 1);
     } else if (type_id != "bool") {
         QLabel* qt_label = CreateLabel(label);
+        label_widget = qt_label;
         layout->addWidget(qt_label, 1);
+    } else if (follows_frame_gen) {
+        // A box in the column of the other rows' values
+        layout->addStretch(1);
     }
 
     if (type_id == "bool") {
@@ -715,6 +719,9 @@ void Widget::SetupComponent(const QString& label, std::function<void()>& load_fu
 }
 
 void Widget::SetDataEnabled(bool enabled) {
+    if (label_widget != nullptr) {
+        label_widget->setEnabled(enabled);
+    }
     if (data_widget != nullptr) {
         data_widget->setEnabled(enabled);
     }

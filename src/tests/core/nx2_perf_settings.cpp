@@ -131,7 +131,7 @@ Switches WithLevels(Switches switches, const BananzaLevels& levels) {
     return switches;
 }
 
-constexpr std::array<Setup, 3> Setups{Setup::Defaults, Setup::Experimental, Setup::Safe};
+constexpr std::array<Setup, 3> Setups{Setup::Default, Setup::Experimental, Setup::Safe};
 
 bool HasVar(const std::vector<Var>& vars, std::string_view name) {
     for (const Var& var : vars) {
@@ -147,7 +147,7 @@ bool HasVar(const std::vector<Var>& vars, std::string_view name) {
 TEST_CASE("Nx2PerfSettings: the first start is the performance setup", "[core]") {
     const Ini empty;
     REQUIRE(empty.Read() == Performance());
-    REQUIRE(empty.Read() == Apply(Setup::Defaults, Performance()));
+    REQUIRE(empty.Read() == Apply(Setup::Default, Performance()));
     REQUIRE(FirstStart() == Performance());
     REQUIRE(Wanted(Performance(), Game::Bananza) == BalancedBananza);
 }
@@ -240,10 +240,10 @@ TEST_CASE("Nx2PerfSettings: a file from before the presets went away", "[core]")
 }
 
 TEST_CASE("Nx2PerfSettings: setups fill in the launchers' boxes", "[core]") {
-    for (const Setup setup : {Setup::Defaults, Setup::Experimental}) {
+    for (const Setup setup : {Setup::Default, Setup::Experimental}) {
         const Switches switches = Apply(setup, AllOff());
         for (const Key& key : Keys) {
-            const bool on = key.name == "read_traps" ? setup == Setup::Defaults
+            const bool on = key.name == "read_traps" ? setup == Setup::Default
                             : key.name == "osd"      ? false
                             : key.name == "safe_off" ? false
                             : key.name == "rt_fit"   ? setup == Setup::Experimental
@@ -251,7 +251,7 @@ TEST_CASE("Nx2PerfSettings: setups fill in the launchers' boxes", "[core]") {
             REQUIRE(switches.*key.field == on);
         }
     }
-    REQUIRE(Apply(Setup::Defaults, AllOff()) == Performance());
+    REQUIRE(Apply(Setup::Default, AllOff()) == Performance());
     REQUIRE(Apply(Setup::Safe, Performance()) == AllOff());
     for (const Key& key : Keys) {
         const bool safe_box = key.name == "safe_off";
@@ -265,20 +265,20 @@ TEST_CASE("Nx2PerfSettings: setups fill in the launchers' boxes", "[core]") {
         REQUIRE(!Apply(setup, mine).dk_dyn);
         REQUIRE(!Apply(setup, mine).mkw_dyn);
     }
-    // Reactive Flushing: Defaults off, Experimental on, Safe leaves it.
-    REQUIRE(ReactiveFlushing(Setup::Defaults) == false);
+    // Reactive Flushing: Default off, Experimental on, Safe leaves it.
+    REQUIRE(ReactiveFlushing(Setup::Default) == false);
     REQUIRE(ReactiveFlushing(Setup::Experimental) == true);
     REQUIRE(!ReactiveFlushing(Setup::Safe).has_value());
     // Barrier feedback loops: on with Experimental (it needs them), the others leave it.
     REQUIRE(BarrierFeedbackLoops(Setup::Experimental) == true);
-    REQUIRE(!BarrierFeedbackLoops(Setup::Defaults).has_value());
+    REQUIRE(!BarrierFeedbackLoops(Setup::Default).has_value());
     REQUIRE(!BarrierFeedbackLoops(Setup::Safe).has_value());
 }
 
 TEST_CASE("Nx2PerfSettings: setups set the launchers' variables", "[core]") {
-    // Defaults: start-performance.bat's, read traps on (unset).
-    REQUIRE(Wanted(Apply(Setup::Defaults, Performance()), Game::Bananza) == BalancedBananza);
-    // Experimental: Defaults', read traps off and RX_RT_FIT=3 (start-reactive-experimental.bat).
+    // Default: start-performance.bat's, read traps on (unset).
+    REQUIRE(Wanted(Apply(Setup::Default, Performance()), Game::Bananza) == BalancedBananza);
+    // Experimental: Default's read traps off and RX_RT_FIT=3 (start-reactive-experimental.bat).
     auto reactive = BalancedBananza;
     reactive.push_back({"EDEN_NX2_READ_TRAPS", "0"});
     reactive.push_back({"EDEN_NX2_RX_RT_FIT", "3"});

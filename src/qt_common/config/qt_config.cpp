@@ -423,7 +423,7 @@ void QtConfig::ReadNx2PerfValues() {
     if (first_start) {
         UISettings::values.nx2perf = Core::Nx2PerfSettings::FirstStart();
         if (const auto reactive =
-                Core::Nx2PerfSettings::ReactiveFlushing(Core::Nx2PerfSettings::Setup::Defaults)) {
+                Core::Nx2PerfSettings::ReactiveFlushing(Core::Nx2PerfSettings::Setup::Default)) {
             Settings::values.use_reactive_flushing.SetValue(*reactive);
         }
     }

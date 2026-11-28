@@ -31,7 +31,7 @@ namespace Core::Nx2PerfSettings {
 
 /// What the Tuning tab's "Apply" fills the global settings in with. Nothing of it is stored.
 enum class Setup : u8 {
-    Defaults,     ///< start-performance.bat: all on, read traps on, Reactive Flushing off
+    Default,      ///< start-performance.bat: all on, read traps on, Reactive Flushing off
     Experimental, ///< start-reactive-experimental.bat: read traps off, Reactive Flushing on, RX_RT_FIT=3
     Safe,         ///< start-safe.bat: all off, and the shortcuts Dozer keeps on set to 0
 };
@@ -114,7 +114,7 @@ constexpr Switches AllOff() {
 }
 
 /// The boxes `setup` fills in, over `current`: the dynamic frame rate boxes are always `current`'s.
-/// Experimental is Defaults with read traps off and RX_RT_FIT=3.
+/// Experimental is Default with read traps off and RX_RT_FIT=3.
 constexpr Switches Apply(Setup setup, const Switches& current) {
     Switches switches = setup == Setup::Safe ? AllOff() : Performance();
     if (setup == Setup::Experimental) {
@@ -284,7 +284,7 @@ constexpr std::optional<bool> BarrierFeedbackLoops(Setup setup) {
 /// launchers' safe one leaves the .ini as it is).
 constexpr std::optional<bool> ReactiveFlushing(Setup setup) {
     switch (setup) {
-    case Setup::Defaults:
+    case Setup::Default:
         return false;
     case Setup::Experimental:
         return true;
@@ -383,7 +383,7 @@ constexpr void CarryOverPreset(Overrides& own, Game game, int legacy_preset, con
     if (chosen) {
         Switches target = Apply(legacy_preset == LegacyPreset::Safe           ? Setup::Safe
                                 : legacy_preset == LegacyPreset::Reactive     ? Setup::Experimental
-                                                                              : Setup::Defaults,
+                                                                              : Setup::Default,
                                 global);
         for (std::size_t i = 0; i < Keys.size(); ++i) {
             if (!own.boxes[i] && target.*Keys[i].field != global.*Keys[i].field) {
