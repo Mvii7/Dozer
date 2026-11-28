@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- Switch 2 GPU characteristics report the 2D, 3D, compute, inline-to-memory and ZBC engine bits,
+  and `NVGPU_GPU_IOCTL_VSMS_MAPPING` is answered. Without them the Duskbloods network test's CUDA
+  driver found no device, read a null object, closed its GPU address space and aborted with
+  2162-0001. Ported from Lichii.
 - `/dev/nvhost-prof-gpu` opens as a stub device for Switch 2 callers instead of failing. The
   Duskbloods network test's CUDA driver opens it, and with the open refused the game read a null
   object and aborted with 2162-0001. Switch 1 callers still get the refusal. Ported from Lichii.
