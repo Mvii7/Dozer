@@ -95,17 +95,20 @@ public:
      */
     [[nodiscard]] static QPushButton* CreateRestoreGlobalButton(bool using_global, QWidget* parent);
 
+    /// Enables or disables the value (a row paired with "Enable Frame Generation" follows it).
+    void SetDataEnabled(bool enabled);
+
     // Direct handles to sub components created
     QPushButton* restore_button{}; ///< Restore button for custom configurations
     QLineEdit* line_edit{};        ///< QLineEdit, used for LineEdit and HexEdit
     QSpinBox* spinbox{};
     QDoubleSpinBox* double_spinbox{};
     QCheckBox* checkbox{};
-    QCheckBox* paired_checkbox{}; ///< The left checkbox of the paired bool setting (other_setting)
     QSlider* slider{};
     QComboBox* combobox{};
     QDateTimeEdit* date_time_edit{};
     std::vector<std::pair<u32, QRadioButton*>> radio_buttons{};
+    QWidget* data_widget{}; ///< The component that holds the value
 
 private:
     void SetupComponent(const QString& label, std::function<void()>& load_func, bool managed,

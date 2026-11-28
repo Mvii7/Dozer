@@ -518,11 +518,12 @@ void Widget::SetupComponent(const QString& label, std::function<void()>& load_fu
         other_setting = setting.PairedSetting();
     }
 
-    const bool require_checkbox = other_setting != nullptr && other_setting->TypeId() == "bool";
-    // "Enable Frame Generation" has a row of its own: the frame generation rows show it in their
-    // checkbox but leave writing it to that row. Each row wrote it and the last one won, so an
-    // unchecked Queue Target saved frame generation off. ConfigureGraphics keeps the boxes equal.
-    const bool writes_other = require_checkbox && other_setting != &Settings::values.frame_gen;
+    // "Enable Frame Generation" has a row of its own: the frame generation rows have no checkbox
+    // for it, they are only enabled while it is (ConfigureGraphics).
+    const bool follows_frame_gen = other_setting == &Settings::values.frame_gen;
+    const bool require_checkbox =
+        other_setting != nullptr && other_setting->TypeId() == "bool" && !follows_frame_gen;
+    const bool writes_other = require_checkbox;
     if (other_setting != nullptr && other_setting->TypeId() != "bool") {
         LOG_WARNING(
             Frontend,
@@ -580,7 +581,6 @@ void Widget::SetupComponent(const QString& label, std::function<void()>& load_fu
     if (require_checkbox) {
         QWidget* lhs =
             CreateCheckBox(other_setting, label, checkbox_serializer, checkbox_restore_func, touch);
-        paired_checkbox = checkbox; // a bool setting's own checkbox replaces checkbox below
         layout->addWidget(lhs, 1);
     } else if (type_id != "bool") {
         QLabel* qt_label = CreateLabel(label);
@@ -657,6 +657,7 @@ void Widget::SetupComponent(const QString& label, std::function<void()>& load_fu
     }
 
     layout->addWidget(data_component, 1);
+    data_widget = data_component;
 
     if (!managed) {
         return;
@@ -701,7 +702,7 @@ void Widget::SetupComponent(const QString& label, std::function<void()>& load_fu
         };
     }
 
-    if (other_setting != nullptr) {
+    if (require_checkbox) {
         const auto reset = [restore_func, data_component](int state) {
             data_component->setEnabled(state == Qt::Checked);
             if (state != Qt::Checked) {
@@ -710,6 +711,12 @@ void Widget::SetupComponent(const QString& label, std::function<void()>& load_fu
         };
         connect(checkbox, &QCheckBox::STATE_CHANGED, reset);
         reset(checkbox->checkState());
+    }
+}
+
+void Widget::SetDataEnabled(bool enabled) {
+    if (data_widget != nullptr) {
+        data_widget->setEnabled(enabled);
     }
 }
 
