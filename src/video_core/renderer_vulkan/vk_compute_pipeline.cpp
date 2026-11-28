@@ -121,7 +121,14 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
         try {
             const PipelineStats::ScopedTimer stats_timer{PipelineStats::Kind::Compute,
                                                          PipelineStats::Stage::Driver};
+            const auto driver_begin = std::chrono::steady_clock::now();
             pipeline = device.GetLogical().CreateComputePipeline(compute_ci, *pipeline_cache);
+            const auto driver_time = std::chrono::steady_clock::now() - driver_begin;
+            if (driver_time > std::chrono::milliseconds{250}) {
+                LOG_WARNING(Render_Vulkan, "Driver took {:.0f} ms to compile compute shader {:016X}",
+                            std::chrono::duration<double, std::milli>(driver_time).count(),
+                            shader_hash);
+            }
         } catch (const vk::Exception& exception) {
             LOG_CRITICAL(Render_Vulkan, "Adreno rejected compute shader {:016X}: {}", shader_hash,
                          exception.what());
