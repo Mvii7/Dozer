@@ -23,6 +23,7 @@
 #include "video_core/nx2_profile.h"
 #include "video_core/nx2.h"
 #include "video_core/nx2_mode_diag.h"
+#include "video_core/nx2_sync_diag.h"
 #include "video_core/engines/fermi_2d.h"
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/engines/nx2_upscale_pick.h"
@@ -371,8 +372,16 @@ bool KeplerCompute::ProcessNativeMethod(Core::System& system, u32 method, u32 ar
                 if (VideoCommon::Nx2ModeDiag::Enabled()) [[unlikely]] {
                     VideoCommon::Nx2ModeDiag::QmdRelease(flags, address);
                 }
+                const s64 sync_diag_ns =
+                    VideoCommon::Nx2SyncDiag::On() ? VideoCommon::Nx2SyncDiag::NowNs() : 0;
+                if (sync_diag_ns != 0 && (flags & ((1U << 26) | (1U << 19))) != 0) {
+                    VideoCommon::Nx2SyncDiag::NoteQmdRelease();
+                }
                 if (flags & (1U << 26)) {
-                    rasterizer->SignalFence([this, address, payload] {
+                    rasterizer->SignalFence([this, address, payload, sync_diag_ns] {
+                        if (sync_diag_ns != 0) {
+                            VideoCommon::Nx2SyncDiag::NoteQmdLanded(sync_diag_ns);
+                        }
                         const u32 value = memory_manager.Read<u32>(address) + payload;
                         memory_manager.Write<u32>(address, value);
                         if (const auto device = memory_manager.GpuToCpuAddress(address)) {
@@ -393,7 +402,10 @@ bool KeplerCompute::ProcessNativeMethod(Core::System& system, u32 method, u32 ar
                     // NVN2 tracks QMD completion with a max release (bit 19) into a word other
                     // releases also advance: a plain write would move it backwards and leave
                     // GEQ acquires waiting forever.
-                    rasterizer->SignalFence([this, address, payload] {
+                    rasterizer->SignalFence([this, address, payload, sync_diag_ns] {
+                        if (sync_diag_ns != 0) {
+                            VideoCommon::Nx2SyncDiag::NoteQmdLanded(sync_diag_ns);
+                        }
                         const u32 value = (std::max)(memory_manager.Read<u32>(address), payload);
                         memory_manager.Write<u32>(address, value);
                         if (const auto device = memory_manager.GpuToCpuAddress(address)) {

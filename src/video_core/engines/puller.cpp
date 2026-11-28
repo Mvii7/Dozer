@@ -31,6 +31,7 @@
 #include "video_core/nx2_acquire_peek.h"
 #include "video_core/nx2_front_diag_hooks.h"
 #include "video_core/nx2_mode_diag.h"
+#include "video_core/nx2_sync_diag.h"
 #include "video_core/rasterizer_interface.h"
 
 namespace Tegra::Engines {
@@ -493,6 +494,53 @@ struct NoDrainStats {
 };
 thread_local NoDrainStats t_no_drain;
 
+namespace SyncDiag = VideoCommon::Nx2SyncDiag;
+/// EDEN_NX2_SYNC_DIAG: why CheckWithoutDrain last sent an acquire to the drain.
+thread_local SyncDiag::DrainWhy t_drain_why{SyncDiag::DrainWhy::NotMet};
+
+/// EDEN_NX2_SYNC_DIAG: an acquire's drain, taken before it (BeginAcquireDrain) and noted after
+/// the word was read (EndAcquireDrain).
+struct AcquireDrain {
+    GPUVAddr address;
+    SyncDiag::DrainWhy why;
+    bool met_before;
+    u64 total;   ///< Words queued for the back
+    u64 release; ///< Of those, up to the release queued to the word (0: none)
+    s64 start;
+};
+
+AcquireDrain BeginAcquireDrain(DmaPusher& dma_pusher, const Puller::PendingAcquire& acquire,
+                               SyncDiag::DrainWhy why) {
+    auto& split = VideoCommon::GpuSplit::Get();
+    const u64 consumed = split.DiagConsumed();
+    u64 release = 0;
+    if (const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address)) {
+        if (const u64 position = split.DiagSemaphoreWritePosition(*device); position > consumed) {
+            release = position - consumed;
+        }
+    }
+    return AcquireDrain{
+        .address = acquire.address,
+        .why = why,
+        .met_before = acquire.Matches(dma_pusher.memory_manager.Read<u32>(acquire.address)),
+        .total = split.DiagWritePosition() - consumed,
+        .release = release,
+        .start = SyncDiag::NowNs(),
+    };
+}
+
+/// `drain_end`: NowNs when the drain returned.
+void EndAcquireDrain(const AcquireDrain& drain, s64 drain_end, bool met_after) {
+    SyncDiag::GetFront().NoteDrain(drain.address, drain.why, drain.met_before, drain.total,
+                                   drain.release, static_cast<u64>(drain_end - drain.start),
+                                   met_after);
+}
+
+u64 QueuedWords() {
+    auto& split = VideoCommon::GpuSplit::Get();
+    return split.DiagWritePosition() - split.DiagConsumed();
+}
+
 void CountNoDrain(u64 NoDrainStats::*counter) {
     if (NoDrain() != NoDrainMode::Verify && !VideoCommon::Nx2Profile::Enabled()) {
         return;
@@ -529,7 +577,8 @@ void CountNoDrain(u64 NoDrainStats::*counter) {
 // 3D and compute report semaphores, the copy engine's). Port of Lichii's #949.
 AcquireCheck CheckWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcquire& acquire,
                                bool count = true) {
-    const auto note = [count](u64 NoDrainStats::*counter) {
+    const auto note = [count](u64 NoDrainStats::*counter, SyncDiag::DrainWhy why) {
+        t_drain_why = why;
         if (count) {
             CountNoDrain(counter);
         }
@@ -540,38 +589,38 @@ AcquireCheck CheckWithoutDrain(DmaPusher& dma_pusher, const Puller::PendingAcqui
     }
     const bool equal = acquire.operation == Peek::OpEqual && NoDrainEqual();
     if (acquire.operation != Peek::OpGequal && !equal) {
-        note(&NoDrainStats::drain_operation);
+        note(&NoDrainStats::drain_operation, SyncDiag::DrainWhy::Operation);
         return AcquireCheck::Drain;
     }
     if (!split.Active() || !split.FrontMacros() || !ReleasesLandAtOnce()) {
-        note(&NoDrainStats::drain_settings);
+        note(&NoDrainStats::drain_settings, SyncDiag::DrainWhy::Settings);
         return AcquireCheck::Drain;
     }
     if (split.UnknownSemaphoreWriteQueued()) {
-        note(&NoDrainStats::drain_unknown);
+        note(&NoDrainStats::drain_unknown, SyncDiag::DrainWhy::Unknown);
         return AcquireCheck::Drain;
     }
     // A word the buffer cache may hold newer than memory is read through the back.
     const auto device = dma_pusher.memory_manager.GpuToCpuAddress(acquire.address);
     if (!device || Tegra::Nx2IsGpuWritten(*device)) {
-        note(&NoDrainStats::drain_word);
+        note(&NoDrainStats::drain_word, SyncDiag::DrainWhy::Word);
         return AcquireCheck::Drain;
     }
     if (const auto queued = split.QueuedSemaphoreWriteAt(*device)) {
         // A QMD the front can't read may release the word after it (NVN2's maxima).
         if (equal && queued->launch_after) {
-            note(&NoDrainStats::drain_compute);
+            note(&NoDrainStats::drain_compute, SyncDiag::DrainWhy::Compute);
             return AcquireCheck::Drain;
         }
         if (queued->known && acquire.Matches(queued->payload)) {
             return AcquireCheck::MetByQueued;
         }
-        note(&NoDrainStats::drain_queued);
+        note(&NoDrainStats::drain_queued, SyncDiag::DrainWhy::Queued);
         return AcquireCheck::Drain;
     }
     // Without a queued release the word in memory decides only for the words that only advance.
     if (equal) {
-        note(&NoDrainStats::drain_operation);
+        note(&NoDrainStats::drain_operation, SyncDiag::DrainWhy::Operation);
         return AcquireCheck::Drain;
     }
     return acquire.Matches(dma_pusher.memory_manager.Read<u32>(acquire.address))
@@ -637,6 +686,8 @@ enum class ResumeHow : u8 {
     HostPending,  ///< A release only the host GPU has still to write
     Count,
 };
+static_assert(static_cast<size_t>(ResumeHow::Count) ==
+              static_cast<size_t>(VideoCommon::Nx2SyncDiag::Met::Count));
 constexpr std::array<const char*, static_cast<size_t>(ResumeHow::Count)> resume_how_names{
     "queued release", "memory",          "latch",           "latch at peek",
     "peek",           "latch after drain", "memory after drain", "host GPU release"};
@@ -752,6 +803,13 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
             DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerResume);
         }
         NoteResume(how, *pending_acquire, this);
+        if (SyncDiag::On()) {
+            const auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - pending_acquire->since);
+            SyncDiag::GetFront().NoteWaitEnd(this, pending_acquire->address,
+                                             static_cast<SyncDiag::Met>(how),
+                                             static_cast<u64>(us.count()), QueuedWords());
+        }
         return true;
     };
     const auto rescued = [&](u32 now) {
@@ -842,10 +900,23 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
     }
     // The release may still be queued for the split GPU thread's back half (and the caches
     // ReadSemaphoreWord asks are its state).
+    std::optional<AcquireDrain> sync_drain;
+    if (SyncDiag::On()) {
+        sync_drain = BeginAcquireDrain(dma_pusher, *pending_acquire,
+                                       valve_passed ? SyncDiag::DrainWhy::NotMet
+                                       : undrained  ? SyncDiag::DrainWhy::Poll
+                                                    : t_drain_why);
+    }
     DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerResume);
+    const s64 drain_end = sync_drain ? SyncDiag::NowNs() : 0;
     const u32 current = ReadSemaphoreWord(dma_pusher, pending_acquire->address);
     PeekAfter(dma_pusher, peek, pending_acquire->address, pending_acquire->operation,
               pending_acquire->value, current);
+    if (sync_drain) {
+        EndAcquireDrain(*sync_drain, drain_end,
+                        pending_acquire->Matches(current) ||
+                            Nx2SemaphoreWaiters::Get().Latched(this));
+    }
     if (Nx2SemaphoreWaiters::Get().Latched(this)) {
         rescued(current);
         return resumed(ResumeHow::DrainLatched);
@@ -1027,37 +1098,61 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
         const PeekRead peek =
             PeekBefore(dma_pusher, acquire.address, acquire.operation, acquire.value,
                        PeekSite::Acquire);
+        const bool sync_diag = SyncDiag::On();
         if (peek.verdict == Peek::Verdict::Skip && PeekMode() == Peek::Mode::Skip) {
             CountPeek(&PeekStats::skipped);
             PeekMet(dma_pusher, peek, acquire.value);
             PeekSkipped();
+            if (sync_diag) {
+                SyncDiag::GetFront().NoteAcquire(true);
+            }
             return;
         }
-        if (const AcquireCheck check = CheckWithoutDrain(dma_pusher, acquire);
-            check == AcquireCheck::Met || check == AcquireCheck::MetByQueued) {
+        const AcquireCheck check = CheckWithoutDrain(dma_pusher, acquire);
+        if (check == AcquireCheck::Met || check == AcquireCheck::MetByQueued) {
             if (check == AcquireCheck::MetByQueued) {
                 CountNoDrain(&NoDrainStats::by_queued);
             }
             CountNoDrain(&NoDrainStats::passed);
             PeekMet(dma_pusher, peek, acquire.value);
             VerifyWithoutDrain(dma_pusher, acquire, check);
+            if (sync_diag) {
+                SyncDiag::GetFront().NoteAcquire(true);
+            }
             return;
         } else if (check == AcquireCheck::NotMet) {
             CountNoDrain(&NoDrainStats::drain_not_met);
+        }
+        if (sync_diag) {
+            SyncDiag::GetFront().NoteAcquire(false);
         }
         if (SuspendFirst() && op == GpuSemaphoreOperation::AcquireEqual &&
             SuspendUndrainedFor(this, dma_pusher, acquire)) {
             CountNoDrain(&NoDrainStats::suspended);
             pending_acquire = acquire;
             VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::AcquireWaits, 1);
+            if (sync_diag) {
+                SyncDiag::GetFront().NoteWaitStart(this, QueuedWords());
+            }
             return;
         }
         CountNoDrain(&NoDrainStats::drained);
         const UnmetClass unmet = ClassifyUnmet(peek, acquire.operation, acquire.value);
+        std::optional<AcquireDrain> sync_drain;
+        if (sync_diag) {
+            sync_drain = BeginAcquireDrain(dma_pusher, acquire,
+                                           check == AcquireCheck::NotMet
+                                               ? SyncDiag::DrainWhy::NotMet
+                                               : t_drain_why);
+        }
         DrainBack(VideoCommon::Nx2Profile::DrainSite::PullerAcquire);
+        const s64 drain_end = sync_drain ? SyncDiag::NowNs() : 0;
         const u32 current = ReadSemaphoreWord(dma_pusher, acquire.address);
         PeekAfter(dma_pusher, peek, acquire.address, acquire.operation, acquire.value, current);
         CountUnmet(unmet, acquire.Matches(current));
+        if (sync_drain) {
+            EndAcquireDrain(*sync_drain, drain_end, acquire.Matches(current));
+        }
         if (acquire.Matches(current)) {
             PeekMet(dma_pusher, peek, acquire.value);
             return;
@@ -1077,6 +1172,9 @@ void Puller::ProcessSemaphoreTriggerMethod(DmaPusher& dma_pusher) {
         if (!waiters.Latched(this) && !acquire.Matches(ReadSemaphoreWord(dma_pusher, acquire.address))) {
             pending_acquire = acquire;
             VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::AcquireWaits, 1);
+            if (sync_diag) {
+                SyncDiag::GetFront().NoteWaitStart(this, QueuedWords());
+            }
         } else {
             waiters.Remove(this);
             PeekMet(dma_pusher, peek, acquire.value);

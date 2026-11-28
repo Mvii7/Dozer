@@ -8,6 +8,15 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_SYNC_DIAG=1` (diagnostics, off): every 10 s, what the game and the GPU threads wait
+  on each other for. GPU side: the split front's semaphore acquires (how many went on at once, the
+  waits by what met them with their times and the back work queued, the semaphores waited on
+  most), the drains acquires made by why, with how much queued work they waited for and how much
+  of it came after the release the acquire needed, the front's OS sleeps on suspended channels,
+  how long the releases the front sends take to run on the back, and QMD releases until their
+  fence lands. Guest side: per game thread its time in SVCs by kind (sleep, yield, wait
+  synchronization, locks, condition variables, address waits, IPC) against its run time, and
+  nvhost event waits. For telling a guest CPU limit apart from GPU round-trip latency.
 - `EDEN_NX2_STAGE_COMPUTE=1` (back stages, cut a, off): the compute engine's methods run on BC,
   the stage that owns the caches, in the stream's order, instead of on A with the stages parked.
   Donkey Kong Bananza's first boss fight parks them ~1,100-1,400 times a second for its culling

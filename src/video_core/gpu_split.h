@@ -208,6 +208,9 @@ public:
     /// it yet.
     [[nodiscard]] std::optional<QueuedSemaphoreWrite> QueuedSemaphoreWriteAt(
         u64 device_address) const;
+    /// Diagnostics: the write position after the last release sent to the word at
+    /// `device_address` if the back may not have run it, else 0.
+    [[nodiscard]] u64 DiagSemaphoreWritePosition(u64 device_address) const;
     /// Whether a write NoteUnknownSemaphoreWrite noted may not have run yet.
     [[nodiscard]] bool UnknownSemaphoreWriteQueued() const {
         return unknown_write_position > consumed.load(std::memory_order_acquire);
@@ -389,6 +392,7 @@ private:
     size_t semaphore_writes_limit{1024}; ///< Forget what the back ran past this many
     u64 unknown_write_position{};
     u64 compute_launch_position{};
+    u64 sync_diag_position{}; ///< EDEN_NX2_SYNC_DIAG: the last release timed (NoteSemaphoreWrite)
 
     // Back side.
     Tegra::Engines::EngineInterface* back_engine{};

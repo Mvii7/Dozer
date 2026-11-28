@@ -13,6 +13,7 @@
 #include "common/assert.h"
 #include "common/logging.h"
 #include "common/scope_exit.h"
+#include "common/nx2_sync_diag.h"
 #include "core/core.h"
 #include "core/hle/kernel/k_event.h"
 #include "core/hle/service/nvdrv/core/container.h"
@@ -48,9 +49,18 @@ NvResult nvhost_ctrl::Ioctl1(DeviceFD fd, Ioctl command, std::span<const u8> inp
         case 0x1c:
             return WrapFixed(this, &nvhost_ctrl::IocCtrlClearEventWait, input, output);
         case 0x1d:
-            return WrapFixed(this, &nvhost_ctrl::IocCtrlEventWait, input, output, true);
-        case 0x1e:
-            return WrapFixed(this, &nvhost_ctrl::IocCtrlEventWait, input, output, false);
+        case 0x1e: {
+            const NvResult result = WrapFixed(this, &nvhost_ctrl::IocCtrlEventWait, input, output,
+                                              command.cmd == 0x1d);
+            if (Common::Nx2SyncDiag::On()) {
+                using Common::Nx2SyncDiag::EventWait;
+                Common::Nx2SyncDiag::GuestThreads::Get().NoteEventWait(
+                    result == NvResult::Success   ? EventWait::Signalled
+                    : result == NvResult::Timeout ? EventWait::NotYet
+                                                  : EventWait::Error);
+            }
+            return result;
+        }
         case 0x1f:
             return WrapFixed(this, &nvhost_ctrl::IocCtrlEventRegister, input, output);
         case 0x20:

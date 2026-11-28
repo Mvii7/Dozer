@@ -568,6 +568,12 @@
 # render_enable.mode): its calls, the modes it set, its reads' waits and downloads, and the draws
 # skipped for a False mode. Logging only.
 #EDEN_NX2_COND_DIAG=1
+# SYNC_DIAG=1: every 10 s, what the game and the GPU threads wait on each other for: the split
+# front's acquires (what met them, wait times, top semaphores), their drains (queued work, how much
+# came after the release they needed), the front's sleeps, how long releases take to run on the
+# back, QMD fence releases; and per guest thread its time in SVCs by kind against its run time.
+# Logging only.
+#EDEN_NX2_SYNC_DIAG=1
 # HLE_RENDER_ENABLE: NVN's render enable macro without the front waiting for the back (the back
 # reads the counters and sets the mode in order). =2 runs the macro and logs differences. Off.
 #EDEN_NX2_HLE_RENDER_ENABLE=1

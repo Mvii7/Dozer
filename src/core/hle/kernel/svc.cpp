@@ -10,6 +10,8 @@
 #include <cstring>
 #include <type_traits>
 
+#include "common/nx2_sync_diag.h"
+#include "core/arm/debug.h"
 #include "core/arm/arm_interface.h"
 #include "core/core.h"
 #include "core/hle/kernel/k_process.h"
@@ -2551,6 +2553,20 @@ void Call(Core::System& system, u32 imm) {
         LOG_DEBUG(Kernel_SVC, "Switch 2 svc 0x80 addr={:#x} size={:#x} mask={:#x} attr={:#x} -> {:#x}",
                   address, size, mask, attr, result.raw);
         args[0] = result.raw;
+    } else if (Common::Nx2SyncDiag::On()) {
+        // EDEN_NX2_SYNC_DIAG: the thread's time in the SVC (it may come back on another core).
+        auto& thread = GetCurrentThread(kernel);
+        const s64 arg0 = static_cast<s64>(GetArg64(args, 0));
+        const s64 start = Common::Nx2SyncDiag::NowNs();
+        if (process.Is64Bit()) {
+            Call64(system, imm, args);
+        } else {
+            Call32(system, imm, args);
+        }
+        const s64 ns = Common::Nx2SyncDiag::NowNs() - start;
+        Common::Nx2SyncDiag::GuestThreads::Get().NoteSvc(
+            thread.GetThreadId(), imm, arg0, start, ns, thread.GetCpuTime(),
+            [&thread] { return Core::GetThreadName(&thread).value_or("?"); });
     } else if (process.Is64Bit()) {
         Call64(system, imm, args);
     } else {

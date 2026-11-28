@@ -85,6 +85,7 @@ add_library(
     multi_level_page_table.h
     nx2_rtss_osd.h
     nx2_slow_frame.h
+    nx2_sync_diag.h
     nx2_sync_serial.h
     nx2_zero_check.h
     overflow.h

@@ -29,6 +29,7 @@
 #include "video_core/nx2_busy_clock.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/nx2_stages.h"
+#include "video_core/nx2_sync_diag.h"
 
 namespace VideoCommon {
 
@@ -200,6 +201,7 @@ void GpuSplit::Stop() {
     semaphore_writes_limit = 1024;
     unknown_write_position = 0;
     compute_launch_position = 0;
+    sync_diag_position = 0;
     back_engine = nullptr;
     front_macros = false;
     published.store(0, std::memory_order_relaxed);
@@ -298,8 +300,25 @@ void GpuSplit::NoteSemaphoreWrite(u64 device_address, u32 payload, bool known) {
         semaphore_writes_limit = (std::max)(size_t{1024}, semaphore_writes.size() * 2);
     }
     // After the macro writes held (EDEN_NX2_WRITE_BATCH): the release may be among them.
+    const u64 position = WritePosition();
     semaphore_writes.insert_or_assign(device_address & ~u64{3},
-                                      SemaphoreWrite{WritePosition(), payload, known});
+                                      SemaphoreWrite{position, payload, known});
+    if (Nx2SyncDiag::On() && position != sync_diag_position) {
+        // Once per release (a 16-byte one notes two words): when the back gets past it.
+        sync_diag_position = position;
+        const u64 words = position - consumed.load(std::memory_order_acquire);
+        Defer([sent = Nx2SyncDiag::NowNs(), words] { Nx2SyncDiag::NoteReleaseRan(sent, words); });
+        sync_diag_position = WritePosition();
+    }
+}
+
+u64 GpuSplit::DiagSemaphoreWritePosition(u64 device_address) const {
+    const auto it = semaphore_writes.find(device_address & ~u64{3});
+    if (it == semaphore_writes.end() ||
+        it->second.position <= consumed.load(std::memory_order_acquire)) {
+        return 0;
+    }
+    return it->second.position;
 }
 
 std::optional<GpuSplit::QueuedSemaphoreWrite> GpuSplit::QueuedSemaphoreWriteAt(

@@ -22,6 +22,7 @@
 #include "video_core/nx2_busy_clock.h"
 #include "video_core/nx2_front_diag_hooks.h"
 #include "video_core/nx2_profile.h"
+#include "video_core/nx2_sync_diag.h"
 #include "video_core/host1x/host1x.h"
 #include "video_core/renderer_base.h"
 
@@ -71,6 +72,7 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
         namespace Profile = VideoCommon::Nx2Profile;
         auto& split = VideoCommon::GpuSplit::Get();
         const bool busy_clock = VideoCommon::Nx2BusyClock::Tracked();
+        const bool sync_diag = VideoCommon::Nx2SyncDiag::On();
         // A GPU mapping change went to the back (RunCommand::front_waits): before the front parses
         // another command list, which may live in or read from the mapped memory, the back runs it.
         // Once for a burst of maps.
@@ -90,6 +92,9 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
             if (VideoCommon::Nx2FrontDiag::On()) [[unlikely]] {
                 VideoCommon::Nx2FrontDiag::Report();
             }
+            if (sync_diag) {
+                VideoCommon::Nx2SyncDiag::GetFront().Report();
+            }
             split.MaybeStart(system);
             if (scheduler.HasPendingChannels() && pending_wake) {
                 // Suspended channels wait on semaphores: a new command or a GPU release wakes the
@@ -100,6 +105,9 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                     Profile::Scope scope{Profile::Zone::ResumePending};
                     wait_for_maps();
                     resumed = scheduler.ResumePending(system.GPU());
+                }
+                if (sync_diag) {
+                    VideoCommon::Nx2SyncDiag::GetFront().NoteResumePass(resumed);
                 }
                 const bool popped = state.queue.TryPop(next);
                 if (resumed || popped) {
@@ -126,6 +134,11 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                                 break;
                             }
                         } while (until < poll_end);
+                    } else if (sync_diag) {
+                        const s64 start = VideoCommon::Nx2SyncDiag::NowNs();
+                        const bool notified = wake.Sleep(std::chrono::microseconds{500});
+                        VideoCommon::Nx2SyncDiag::GetFront().NoteSleep(
+                            static_cast<u64>(VideoCommon::Nx2SyncDiag::NowNs() - start), notified);
                     } else {
                         wake.Sleep(std::chrono::microseconds{500});
                     }
