@@ -3530,6 +3530,9 @@ private:
     void FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& state, u32 method, u32 count);
     void FrontVerify(VideoCommon::GpuSplit& split, FrontState& state);
     void FinishFrontMacro(Core::System& system);
+    /// NVN's render enable macro's read and mode (EDEN_NX2_HLE_RENDER_ENABLE); `expected` the
+    /// macro's mode to compare with (=2), ~0 to set it.
+    void BackRenderEnable(Core::System& system, u32 parameter, GPUVAddr address, u32 expected);
     void FrontIndirectDraw(Core::System& system, VideoCommon::GpuSplit& split, FrontState& state,
                            GPUVAddr record);
     /// `count` records `stride` bytes apart from `record` (FrontIndirectDraw merges calls).

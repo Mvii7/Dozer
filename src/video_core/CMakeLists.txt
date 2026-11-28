@@ -123,6 +123,7 @@ add_library(video_core STATIC
     nx2_mode_pace21_logic.h
     nx2_indirect_diag.h
     nx2_cond_diag.h
+    nx2_hle_render_enable.h
     nx2_profile.h
     nx2_read_budget.h
     nx2_stage_api.cpp

@@ -8,6 +8,11 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_HLE_RENDER_ENABLE` (split front, off): NVN's render enable macro without the front
+  waiting for the back. `=1` sends the macro's writes and has the back read the two counters and
+  set `render_enable.mode` at the same point of the stream (stages parked, as for a conditional
+  render), so the result is the one the macro gets today; `=2` runs the macro as before and logs
+  where the back's mode would differ.
 - `EDEN_NX2_COND_DIAG=1` (diagnostics, off): every 10 s, NVN's render enable macro on the split
   front, which reads two counters the GPU writes and sets `render_enable.mode` by whether they
   differ (Donkey Kong Bananza: 670-820 calls a second in its first boss fight, each draining the

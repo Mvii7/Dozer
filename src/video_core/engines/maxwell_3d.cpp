@@ -28,6 +28,7 @@
 #include "video_core/nx2_front_diag_hooks.h"
 #include "video_core/nx2_cond_diag.h"
 #include "video_core/nx2_front_same.h"
+#include "video_core/nx2_hle_render_enable.h"
 #include "video_core/nx2_indirect_diag.h"
 #include "video_core/nx2_mode_diag.h"
 #include "video_core/nx2_profile.h"
@@ -1446,6 +1447,15 @@ struct Maxwell3D::FrontState {
     /// EDEN_NX2_COND_DIAG: the macro running is NVN's render enable macro (FrontDmaRead counts
     /// its read).
     bool cond_call{};
+    /// EDEN_NX2_HLE_RENDER_ENABLE: its mode, and whether the macro at each start is NVN's render
+    /// enable macro for the code generation (direct mapped by start).
+    u32 hle_render_enable{};
+    struct RenderEnableCheck {
+        u32 key{}; ///< The macro's start + 1 (0: none)
+        bool yes{};
+    };
+    std::array<RenderEnableCheck, 64> render_enable_checks{};
+    u64 render_enable_generation{~u64{0}};
     struct DecidedCheck {
         u32 key{}; ///< The macro's start + 1 (0: none; a start of ~0 is never kept)
         bool indirect{}; ///< NVN's indexed indirect draw (else not)
@@ -1779,6 +1789,11 @@ Maxwell3D::FrontState& Maxwell3D::Front(Core::System& system, VideoCommon::GpuSp
             front->hle_indirect = HleIndirectEnabled();
             front->front_verify = FrontVerifyEnabled();
             front->indirect_batch = IndirectBatchEnabled();
+            front->hle_render_enable = VideoCommon::Nx2HleRenderEnable::Mode();
+            if (front->hle_render_enable != 0) {
+                LOG_INFO(HW_GPU, "NVN's render enable macro: EDEN_NX2_HLE_RENDER_ENABLE={}",
+                         front->hle_render_enable);
+            }
             bool fifo_narrowed = false;
 #ifdef ARCHITECTURE_x86_64
             if (front->macro_lean && front->front_jit) {
@@ -2103,6 +2118,44 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
         LOG_ERROR(HW_GPU, "Indirect draw macro {:#x} got {} parameters, not 6", method,
                   fs.parameters.size());
     }
+    bool render_enable = false;
+    if (fs.hle_render_enable != 0 && fs.parameters.size() == 3 &&
+        fs.control != Regs::ShadowRamControl::Replay) [[unlikely]] {
+        if (fs.render_enable_generation != engine.native_code_generation) {
+            fs.render_enable_checks.fill({});
+            fs.render_enable_generation = engine.native_code_generation;
+        }
+        auto& slot = fs.render_enable_checks[start % fs.render_enable_checks.size()];
+        if (slot.key != start + 1) {
+            slot.key = start + 1;
+            slot.yes = VideoCommon::Nx2HleRenderEnable::Identify(engine.native_code, start);
+        }
+        render_enable = slot.yes;
+    }
+    if (render_enable && fs.hle_render_enable == 1) {
+        // The macro's writes but the read: the back reads the words and sets the mode in order.
+        const u32 parameter = fs.parameters[0];
+        const u32 high = fs.parameters[1];
+        const u32 low = fs.parameters[2];
+        fs.parameters.clear();
+        FrontWrite(split, fs, 0x154, high, true, true);
+        FrontWrite(split, fs, 0x155, low, true, true);
+        FrontWrite(split, fs, 0x158, VideoCommon::Nx2HleRenderEnable::ReadWords, true, true);
+        const GPUVAddr address = (GPUVAddr{high & 0x1ffffff} << 32) | low;
+        split.DeferTo<VideoCommon::DeferTarget::OnA>(
+            [this, system_ptr = &system, parameter, address] {
+                BackRenderEnable(*system_ptr, parameter, address, ~0U);
+            });
+        if (fs.draw_pending) {
+            fs.draw_pending = false;
+            split.DeferTo<VideoCommon::DeferTarget::OnA>(
+                [this, system_ptr = &system] { FinishFrontMacro(*system_ptr); });
+        }
+        if (fs.lean) [[unlikely]] {
+            fs.FlushLean();
+        }
+        return;
+    }
     // Whether the macro is NVN's indexed indirect draw (FrontTakeIndirectRecord): compare its
     // writes on its first calls with one instance.
     if (fs.indirect_generation != engine.native_code_generation) {
@@ -2280,6 +2333,16 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
                          start, fs.checked_writes.size());
             }
         }
+    }
+    if (render_enable) [[unlikely]] {
+        // =2: the back reads the words itself and compares the mode with the macro's.
+        const u32 parameter = fs.parameters[0];
+        const GPUVAddr address = (GPUVAddr{fs.parameters[1] & 0x1ffffff} << 32) | fs.parameters[2];
+        const u32 expected = fs.regs[MAXWELL3D_REG_INDEX(render_enable.mode)];
+        split.DeferTo<VideoCommon::DeferTarget::OnA>(
+            [this, system_ptr = &system, parameter, address, expected] {
+                BackRenderEnable(*system_ptr, parameter, address, expected);
+            });
     }
     fs.parameters.clear();
     if (fs.draw_pending) {
@@ -2592,6 +2655,46 @@ void Maxwell3D::BackDrawIndexedIndirect(Core::System& system, u32 topology, GPUV
     VideoCommon::Nx2IndirectDiag::Note(*this, topology, record, count);
     engine_state = EngineHint::None;
     replace_table.clear();
+}
+
+void Maxwell3D::BackRenderEnable(Core::System& system, u32 parameter, GPUVAddr address,
+                                 u32 expected) {
+    namespace Hle = VideoCommon::Nx2HleRenderEnable;
+    ConsumeSink(system);
+    // As FrontDmaRead reads them after its drain: the stages parked, as ProcessQueryCondition.
+    std::array<u32, Hle::ReadWords> words{};
+    const auto read = [&] {
+        constexpr size_t bytes = sizeof(words);
+        if (memory_manager.IsMemoryDirty(address, bytes, VideoCommon::CacheType::BufferCache)) {
+            memory_manager.FlushRegion(address, bytes, VideoCommon::CacheType::BufferCache);
+        }
+        for (u32 i = 0; i < Hle::ReadWords; ++i) {
+            words[i] = memory_manager.Read<u32>(address + u64{i} * sizeof(u32));
+        }
+    };
+    if (stage_capture && VideoCommon::Nx2Stages::Forwarding()) {
+        VideoCommon::Nx2Stages::JoinFromA(VideoCommon::Nx2Stages::JoinReason::Condition, read);
+    } else {
+        read();
+    }
+    const u32 mode = Hle::ModeFor(parameter, words);
+    if (expected == ~0U) {
+        CallMethod(system, MAXWELL3D_REG_INDEX(render_enable.mode), mode, true);
+        return;
+    }
+    static u64 checks{};
+    static u64 mismatches{};
+    ++checks;
+    if (mode != expected && mismatches++ < 64) {
+        LOG_ERROR(HW_GPU,
+                  "Render enable (EDEN_NX2_HLE_RENDER_ENABLE=2): mode {} for parameter {} at "
+                  "{:#x}, the macro set {} ({} of {} calls)",
+                  mode, parameter, address, expected, mismatches, checks);
+    }
+    if ((checks & 0xffff) == 1) {
+        LOG_INFO(HW_GPU, "Render enable checks (EDEN_NX2_HLE_RENDER_ENABLE=2): {} done, {} differ",
+                 checks, mismatches);
+    }
 }
 
 void Maxwell3D::FinishFrontMacro(Core::System& system) {
