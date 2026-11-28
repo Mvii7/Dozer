@@ -346,31 +346,18 @@ void ConfigureGraphics::Setup(const ConfigurationShared::Builder& builder) {
         graphics_layout.addWidget(widget);
     }
 
-    // The frame generation rows' checkboxes show "Enable Frame Generation", which only its own
-    // row writes (ConfigurationShared::Widget): keep them equal to it, both ways. A click on a
-    // row's box clicks the main one (in a per-game configuration that makes it custom).
+    // The frame generation rows have no checkbox of their own: they follow "Enable Frame
+    // Generation".
     if (const auto main_row = hold_graphics.find(Settings::values.frame_gen.Id());
         main_row != hold_graphics.end()) {
         QCheckBox* const main_box =
             static_cast<ConfigurationShared::Widget*>(main_row->second)->checkbox;
-        for (ConfigurationShared::Widget* const row : frame_gen_rows) {
-            // The left checkbox (for a bool row such as Auto Flow Scale, checkbox is its value)
-            QCheckBox* const box = row->paired_checkbox;
-            if (main_box == nullptr || box == nullptr || box == main_box) {
-                continue;
+        if (main_box != nullptr) {
+            for (ConfigurationShared::Widget* const row : frame_gen_rows) {
+                row->SetDataEnabled(main_box->isChecked());
+                connect(main_box, &QCheckBox::toggled, row,
+                        [row](bool checked) { row->SetDataEnabled(checked); });
             }
-            box->setChecked(main_box->isChecked());
-            box->setEnabled(main_box->isEnabled());
-            connect(main_box, &QCheckBox::toggled, box, &QCheckBox::setChecked);
-            connect(box, &QCheckBox::clicked, main_box, [main_box, box](bool checked) {
-                if (!main_box->isEnabled()) { // a game runs: frame generation cannot change
-                    box->setChecked(main_box->isChecked());
-                    return;
-                }
-                if (main_box->isChecked() != checked) {
-                    main_box->click();
-                }
-            });
         }
     }
 

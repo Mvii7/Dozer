@@ -28,27 +28,27 @@
     </widget>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="preset_row">
+    <layout class="QHBoxLayout" name="setup_row">
      <item>
-      <widget class="QLabel" name="preset_label">
+      <widget class="QLabel" name="setup_label">
        <property name="text">
         <string>Preset</string>
        </property>
        <property name="buddy">
-        <cstring>preset</cstring>
+        <cstring>setup</cstring>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QComboBox" name="preset">
+      <widget class="QComboBox" name="setup">
        <item>
         <property name="text">
-         <string>Performance</string>
+         <string>Select a preset...</string>
         </property>
        </item>
        <item>
         <property name="text">
-         <string>Quality</string>
+         <string>Default</string>
         </property>
        </item>
        <item>
@@ -61,15 +61,10 @@
          <string>Safe</string>
         </property>
        </item>
-       <item>
-        <property name="text">
-         <string>Custom</string>
-        </property>
-       </item>
       </widget>
      </item>
      <item>
-      <spacer name="preset_spacer">
+      <spacer name="setup_spacer">
        <property name="orientation">
         <enum>Qt::Orientation::Horizontal</enum>
        </property>
@@ -84,68 +79,7 @@
     </layout>
    </item>
    <item>
-    <widget class="QLabel" name="preset_text">
-     <property name="text">
-      <string/>
-     </property>
-     <property name="wordWrap">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="frame_gen_row">
-     <item>
-      <widget class="QLabel" name="frame_gen_label">
-       <property name="text">
-        <string>Frame generation</string>
-       </property>
-       <property name="buddy">
-        <cstring>frame_gen</cstring>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QComboBox" name="frame_gen">
-       <item>
-        <property name="text">
-         <string>Off</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>2x</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Dynamic</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Other (Graphics tab)</string>
-        </property>
-       </item>
-      </widget>
-     </item>
-     <item>
-      <spacer name="frame_gen_spacer">
-       <property name="orientation">
-        <enum>Qt::Orientation::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>0</width>
-         <height>0</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-    </layout>
-   </item>
-   <item>
-    <widget class="QLabel" name="frame_gen_text">
+    <widget class="QLabel" name="setup_text">
      <property name="text">
       <string/>
      </property>
@@ -321,6 +255,52 @@
         </property>
         <property name="buddy">
          <cstring>osd</cstring>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="safe_off">
+        <property name="text">
+         <string>Turn off the per-draw shortcuts</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="safe_off_text">
+        <property name="text">
+         <string>Sets every per-draw shortcut Dozer keeps on by default to 0, as start-safe.bat does. For finding out whether one of them breaks a game.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="indent">
+         <number>22</number>
+        </property>
+        <property name="buddy">
+         <cstring>safe_off</cstring>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="rt_fit">
+        <property name="text">
+         <string>Render target fit for Reactive Flushing</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="rt_fit_text">
+        <property name="text">
+         <string>Sets EDEN_NX2_RX_RT_FIT=3, which start-reactive-experimental.bat uses with Reactive Flushing on (Graphics, Advanced).</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="indent">
+         <number>22</number>
+        </property>
+        <property name="buddy">
+         <cstring>rt_fit</cstring>
         </property>
        </widget>
       </item>

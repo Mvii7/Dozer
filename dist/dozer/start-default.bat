@@ -1,6 +1,6 @@
 @echo off
 setlocal DisableDelayedExpansion
-rem Dozer - PERFORMANCE (the default): the fastest settings, read traps on, reactive flushing off. Bananza: low foliage.
+rem Dozer - DEFAULT: the fastest settings, read traps on, reactive flushing off. Bananza: low foliage.
 rem Dozer launcher for dozer-cli.exe (Dozer's program without menus).
 rem Put this file next to dozer-cli.exe.
 rem Start: put your game (.nsp .xci .nsz .xcz .nup .nx) in the Games folder next to this file and double-click
@@ -21,8 +21,8 @@ rem DK_DYN: 1 = Bananza dynamic frame rate patch (in memory, README), 0 = off.
 set "DK_DYN=1"
 rem MKW_DYN: 1 = Mario Kart World dynamic frame rate patch (in memory, README), 0 = off.
 set "MKW_DYN=1"
-rem OSD: 1 = FPS / speed overlay through RivaTuner Statistics Server (if running).
-set "OSD=1"
+rem OSD: 1 = FPS / speed overlay through RivaTuner Statistics Server (if running); off by default.
+set "OSD=0"
 rem ---------------------------------------------------------------------------------------
 set "HERE=%~dp0"
 if not exist "%HERE%dozer-cli.exe" goto noexe

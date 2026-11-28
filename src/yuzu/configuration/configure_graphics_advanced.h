@@ -35,7 +35,7 @@ public:
 
     void ExposeComputeOption();
 
-    /// Anka's presets (configure_nx2perf.h): the Reactive Flushing box, as if clicked.
+    /// Anka's setups (configure_nx2perf.h): the Reactive Flushing box, as if clicked.
     /// False when the box can't change (a game is running).
     bool SetReactiveFlushing(bool on, bool barrier_on);
 

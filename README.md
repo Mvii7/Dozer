@@ -70,8 +70,8 @@ saves (`user\nand`), shader caches and log (`user\log\eden_log.txt`) in it, and 
 `nx2_switches.txt` in `%APPDATA%\eden`, if you made one; see "Switches set outside the
 program" under "The Tuning tab").
 
-Settings: **Emulation > Configure... > Tuning**. On the first start the preset is
-**Performance**, and Dozer also turns *Enable Reactive Flushing* off in
+Settings: **Emulation > Configure... > Tuning**. On the first start the settings are the
+performance ones (**Default** below), and Dozer also turns *Enable Reactive Flushing* off in
 its `qt-config.ini` (Graphics > Advanced).
 
 GPU Mode (GPU accuracy) starts at **Fast** (Low), as in newer Eden versions (2.0.0 started at
@@ -86,10 +86,10 @@ files in `Games`, and the `user` folder (your keys, firmware and saves).
 - **Use `.nx` instead of `.nup`.** It usually stutters less. Right-click a game in the list and
   choose **Convert to NX...** (see "Game files"). Dozer also offers to convert a `.nup` the first
   time you start it.
-- **Performance is the default preset.** Read traps are on, and Donkey Kong Bananza runs with low
+- **The performance settings are the default.** Read traps are on, and Donkey Kong Bananza runs with low
   foliage (thinned, drawn closer), medium shadows and very low reflection updates. To see Bananza
-  as the game makes it, pick **Quality** in its **Properties > Tuning**, or set **Foliage** to
-  Off there for the most speed.
+  as the game makes it, pick **Quality** as its **Graphics preset** in **Properties > Tuning**, or
+  set **Foliage** to Off there for the most speed.
 - **If your system is struggling, try handheld mode.** It trades resolution for performance. It
   made little difference on the maintainer's machine, so it mainly helps weaker systems.
 - **Keep asynchronous presentation and asynchronous shader compilation on** (Graphics > Extras).
@@ -129,55 +129,43 @@ needs that much free disk space).
 
 ## The Tuning tab
 
-At the top of the tab is a **Preset** box; a one-line description of the chosen preset is shown
-under it.
+The tab is the settings every game runs with. At the top is a **Preset** box: choosing
+**Default**, **Experimental** or **Safe** ticks and unticks the boxes below. You can change any of
+them afterwards.
 
 | Preset | What it sets | Same as |
 |---|---|---|
-| **Performance** (the first start's choice) | the fastest settings: all nine settings below on, read traps too, *Enable Reactive Flushing* off (Graphics > Advanced). Donkey Kong Bananza: low foliage, very low reflection updates, medium shadows. Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Performance or Quality later turns it off too | `start-performance.bat` |
-| **Quality** | Performance's settings with Donkey Kong Bananza as the game makes it: foliage, reflections and very high shadows (it was called Balanced) | `start-quality.bat` |
-| **Experimental** | the performance settings with Reactive Flushing instead of read traps: barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and `EDEN_NX2_RX_RT_FIT=3` | `start-reactive-experimental.bat` |
-| **Safe** | all nine off, Frame generation off, and the GPU shortcuts Dozer keeps on by default off too (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
-| **Custom** | chosen by itself when you change a box by hand | - |
+| **Default** (the first start's) | the fastest settings: the boxes below on, read traps too, but not the FPS overlay, *Enable Reactive Flushing* off (Graphics > Advanced). Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Default later turns it off too | `start-default.bat` |
+| **Experimental** | Default with Reactive Flushing instead of read traps: read traps off, barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and *Render target fit for Reactive Flushing* ticked (`EDEN_NX2_RX_RT_FIT=3`) | `start-reactive-experimental.bat` |
+| **Safe** | the seven boxes off and *Turn off the per-draw shortcuts* ticked: the GPU shortcuts Dozer keeps on by default off (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
 
 **Per game.** A game's **Properties > Tuning** tab (right-click the game, or **Emulation >
-Configure Current Game**) shows this tab's preset and boxes as that game runs them, the same as
-here. Change one for that game only and a cross appears next to it; the cross resets it to this
-tab's. **Donkey Kong Bananza** starts with the **Performance** preset (read traps on with foliage
-off is its fastest) instead of this tab's, so with another preset here its cross is there from the
-start; press it and Bananza follows this tab's preset.
-Frame generation stays as it is here. Bananza and Mario Kart World also have a **Dynamic frame
+Configure Current Game**) shows this tab's boxes as that game runs them. A game follows this tab
+until you change a box there: a cross then appears next to it, which resets it. Untick the overlay
+here and every game that did not change it loses the overlay too. **Donkey Kong Bananza** also has a **Graphics preset** there (Performance or
+Quality) that sets its foliage, reflection updates and shadow quality; Performance is what it runs
+with unless the shortcuts here are off (Safe), when it is Quality. The tab shows Custom once you
+set one of the three by hand.
+Bananza and Mario Kart World also have a **Dynamic frame
 rate** box, only in their own Properties (on by default, no cross: it has no global setting). A game with changes starts with
 them, and Dozer asks to restart when the session's first game used others. Mario Kart World needs
-read traps on, which Performance and Quality have (Experimental and Safe do not).
+read traps on, which Default has (Experimental and Safe do not).
 
-**Frame generation.** The tab also has a **Frame generation** box with three choices:
-
-| Choice | What it does |
-|---|---|
-| **Off** (the default) | frame generation off |
-| **2x** | Optical Flow, one generated frame per real frame (fixed). On a 60 Hz screen it holds the game at 30 fps |
-| **Dynamic** | Optical Flow with a 120 fps target, capped at the screen's refresh rate when it is known. It steps between 1x and 4x only while the screen can show the extra frames and the game's own frame rate holds: a step that lowers the game's frame rate by more than 8% is undone |
-| *Other (Graphics tab)* | not a choice: shown when the Graphics tab holds another frame generation setup (LSFG, or another multiplier or target frame rate), which the Tuning tab leaves as it is |
-
-Generated frames need a screen faster than the game's frame rate; on a 60 Hz screen they only
-help below 30 fps. The presets do not change this box, except Safe, which sets it to Off. The
-box writes the Graphics tab's frame generation settings (*Enable Frame Generation*, the type
-Optical Flow, and the multiplier or the target frame rate), so you see the same choice there.
-
-Below the preset are the nine settings, in two groups:
+Below are the nine settings:
 
 | Setting | Switches it sets (`EDEN_NX2_...`) | Group |
 |---|---|---|
-| Read traps | On in the Performance (the first start's) and Quality presets, off in Experimental and Safe: `READ_TRAPS=0`. With Reactive Flushing off as well, foliage is not rendered. On: left unset. In Donkey Kong Bananza with foliage off, on is faster than off. Does nothing while Reactive Flushing is on. Unticking it while Performance or Quality is selected changes the preset to Custom | All games |
+| Read traps | On with Default (the first start's), off with Experimental and Safe: `READ_TRAPS=0`. With Reactive Flushing off as well, foliage is not rendered. On: left unset. In Donkey Kong Bananza with foliage off, on is faster than off. Does nothing while Reactive Flushing is on | All games |
 | Split GPU thread | `BACK_STAGES=1`, `BACK_CUTS=a` | All games |
 | Acquire peek | `ACQUIRE_PEEK=1` | All games |
 | Same-value filter in the macro JIT | `JIT_SAME=1` | All games |
 | Lean front macro path | `FRONT_MACRO_LEAN=1` | All games |
 | Timed frame generation | `FG_TIMED=1` (only does something with frame generation on) | All games |
-| FPS overlay in RivaTuner | `OSD=1` (RTSS, if it runs) | All games |
+| FPS overlay in RivaTuner | `OSD=1` (RTSS, if it runs); off until ticked | All games |
+| Turn off the per-draw shortcuts | the list of `=0` variables of `start-safe.bat`; off by default | All games |
+| Render target fit for Reactive Flushing | `RX_RT_FIT=3`; off by default | All games |
 
-These are the switches `start-performance.bat` sets ("Launchers", "Main switches"). The program
+These are the switches `start-default.bat` sets ("Launchers", "Main switches"). The program
 sets them in its own environment just before a game starts. The dynamic frame rate settings
 (`DK_DYN=1`, `MKW_DYN=1`) are per game: a **Dynamic frame rate** box in the Tuning tab of the
 game's Properties, for Bananza (040074A01BF12000) and Mario Kart World (0400C3F00006E000), the ones
@@ -193,9 +181,9 @@ the thorns drawn up to 200 units (`DK_FOLIAGE_DENSITY=10`, `DK_FOLIAGE_THORN_DEN
 (Very low, Low, Medium, High: the reflection cube map captured every 240, 32, 16 or 8 frames,
 High the game's own; `DK_CUBEMAP_INTERVAL=240` / `32` / `16`) and
 **Shadow quality** (Low, Medium, High, Very high: the sun shadow's 1 to 4 cascades, Very high the
-game's own; `DK_SHADOW_CASCADES=<1-3>`). The presets set all three: Performance and Experimental
-Low foliage, Very low reflection updates and Medium shadows; Quality and Safe the game's own (foliage,
-High reflection updates, Very high shadows). Each is changeable per game; see "Donkey Kong Bananza foliage", "... shadow
+game's own; `DK_SHADOW_CASCADES=<1-3>`). Bananza's **Graphics preset** sets all three: Performance
+Low foliage, Very low reflection updates and Medium shadows; Quality the game's own (foliage,
+High reflection updates, Very high shadows), which is also what the shortcuts off (Safe) give. Each is changeable per game; see "Donkey Kong Bananza foliage", "... shadow
 quality" and "... reflections" below. The log says which were set ("Dozer settings for <title id>
 ...").
 
@@ -227,7 +215,7 @@ The tab's settings are kept in the `[Dozer]` group of `user\config\qt-config.ini
 
 1. Put your game file (`.nsp`, `.xci`, `.nsz`, `.xcz`, `.nup` or `.nx`) in the `Games` folder (subfolders
    are fine), or drag it onto the launcher instead.
-2. Double-click `start-performance.bat`.
+2. Double-click `start-default.bat`.
 
 **On the first start** the launcher prepares the settings. dozer-cli uses the same `user\` folder
 as `dozer.exe` (the one next to the programs): the same keys, firmware and saves. It keeps its
@@ -249,9 +237,8 @@ The game starts in full screen; dozer-cli has no menu. **Quit with Alt+F4.**
 
 | Launcher | When to use it |
 |---|---|
-| `start-performance.bat` | **Performance (the default).** The fastest settings, read traps on, reactive flushing off. Bananza with low foliage, medium shadows and very low reflection updates. |
-| `start-quality.bat` | **Quality.** The performance settings with Bananza as the game makes it: foliage, reflections, very high shadows. |
-| `start-reactive-experimental.bat` | **Experimental.** The performance settings with Reactive Flushing instead of read traps. |
+| `start-default.bat` | **Default.** The fastest settings, read traps on, reactive flushing off. Bananza with low foliage, medium shadows and very low reflection updates. |
+| `start-reactive-experimental.bat` | **Experimental.** The default settings with Reactive Flushing instead of read traps. |
 | `start-safe.bat` | The GPU shortcuts Dozer keeps on by default off, read traps off, the opt-in switches that change play cleared; Dozer's fixes and its changes without a switch stay in: for troubleshooting and for games other than Bananza. |
 
 A launcher starts, in this order: a game file dragged onto it, the `GAME=` line, or the game in
@@ -266,22 +253,22 @@ changed:
 | `FULLSCREEN=-f` | full screen; empty = window |
 | `DK_DYN=1` | Bananza dynamic frame rate patch (below); `0` = off |
 | `MKW_DYN=1` | Mario Kart World dynamic frame rate patch (below); `0` = off |
-| `OSD=1` | FPS / speed display through RTSS; `0` = off |
+| `OSD=1` | FPS / speed display through RTSS; `0` = off (the launchers set `0`) |
 
-(`DK_DYN=` and `OSD=` are in the performance, quality and reactive launchers only.) If the path of your
+(`DK_DYN=` and `OSD=` are in the default and reactive launchers only.) If the path of your
 game contains `&`, `^`, `,`, `;` or `=` but no space, Windows passes a dragged file badly: put
 the game in `Games` or write it in the `GAME=` line instead.
 A launcher stops with a message when its `CONFIG=` file does not exist (dozer-cli would quietly
 make a new one with default settings), and keeps its window open when the emulator exits with an
 error. Take the launchers from the release zip: they need Windows line endings (CRLF).
 
-- **`start-performance.bat`** - the default, the fastest settings:
+- **`start-default.bat`** - the default, the fastest settings:
   the GPU thread's back as stages (`BACK_STAGES=1`, `BACK_CUTS=a`), `ACQUIRE_PEEK=1`,
   `JIT_SAME=1`, `FRONT_MACRO_LEAN=1`; Bananza's own 60/30/20 fps choice followed at the right
   speed (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`, `PACE_SPIN_US=1500`); the dynamic
   frame rate patch (`DK_DYN=1`; while it is applied, the two pacing lines above are set aside:
   they act with `DK_DYN=0` or when the patch does not apply); timed Optical Flow generated frames
-  (`FG_TIMED=1`, only does something with frame generation on); the RTSS display (`OSD=1`). The
+  (`FG_TIMED=1`, only does something with frame generation on); the RTSS display (`OSD`, off here: set it to `1`). The
   Bananza-specific lines are marked; for other games use the safe launcher, or remove them. It
   is meant for reactive flushing **off**: it turns it off in an `sdl2-config.ini` it makes,
   and only prints a note when an existing one has it on. Read traps stay
@@ -289,8 +276,6 @@ error. Take the launchers from the release zip: they need Windows line endings (
   very low reflection updates and medium shadows (`DK_FOLIAGE_DENSITY=10`,
   `DK_FOLIAGE_THORN_DENSITY=50`, `DK_FOLIAGE_DISTANCE=200`, `DK_CUBEMAP_INTERVAL=240`,
   `DK_SHADOW_CASCADES=2`).
-- **`start-quality.bat`** - the same as `start-performance.bat`, with Bananza as the game makes
-  it: foliage, reflections and very high shadows (those three lines cleared).
 - **`start-safe.bat`** - for troubleshooting and for games other than Bananza: Dozer's shortcut
   switches that are on by default set to `0`, the opt-in ones that change play cleared (a few
   diagnostic ones, such as `AUTO_INPUT_FILE` or `VI2_REPLY`, are not cleared: do not set them in
@@ -348,7 +333,7 @@ changed, and with the switch unset no module is touched. It only applies to Bana
 040074A01BF12000) and only if the expected instructions are found. `DK_DYN_MIN_FPS=<1-60>`
 moves the 40 fps limit.
 
-It is off by default in dozer-cli; `start-performance.bat`, `start-quality.bat` and
+It is off by default in dozer-cli; `start-default.bat` and
 `start-reactive-experimental.bat` turn it on (`DK_DYN=1` at the top), and so does the menu
 program's Tuning tab (the Dynamic frame rate box in Bananza's Properties, on until unticked, no
 preset changes it). With it the game's frame time varies by design (any rate between 40 and 60, in
@@ -381,10 +366,10 @@ the same way (foliage off wins over both):
   take the code's default of 100, which a distance under 100 brings down too (in the code, only
   when nothing else there reads that value).
 
-`start-performance.bat` and `start-reactive-experimental.bat` set the Low level (10% kept, 50% of
-the thorns, drawn up to 200 units); `start-quality.bat` and `start-safe.bat` leave the foliage as the game makes it. In
+`start-default.bat` and `start-reactive-experimental.bat` set the Low level (10% kept, 50% of
+the thorns, drawn up to 200 units); `start-safe.bat` leaves the foliage as the game makes it. In
 the menu program it is the **Foliage** dropdown in Bananza's Properties > Tuning: Off, Low,
-Medium (50%, thorns 75%, 400 units) and High. The Performance and Experimental presets choose Low, Quality and
+Medium (50%, thorns 75%, 400 units) and High. Bananza's Performance preset chooses Low, Quality and
 Safe High. A game's Foliage off box from before the dropdown is read as Off when ticked, High
 when unticked. It applies when the game starts.
 
@@ -414,7 +399,7 @@ game starts.
 
 ## Mario Kart World dynamic frame rate (MKW-DYN)
 
-`EDEN_NX2_MKW_DYN=1` (`MKW_DYN=1` in `start-performance.bat`, `start-quality.bat` and
+`EDEN_NX2_MKW_DYN=1` (`MKW_DYN=1` in `start-default.bat` and
 `start-reactive-experimental.bat`, and the Dynamic frame rate box in the game's Properties > Tuning) applies a game-specific patch: when Mario Kart World's main
 module is loaded, three instructions of its frame mode choice are rewritten **in memory** so that
 the game picks 1 or 2 vblanks a frame from its real frame time instead of staying at 30 fps, and
@@ -429,7 +414,7 @@ and the Tuning tab (until unticked; no preset changes it). It was not measured o
 ## Frame generation (optional)
 
 PokeDinner-Eglantine 2.0.0 already has frame generation; Dozer adds `FG_TIMED`, shows the
-multiplier on the OSD and has a **Frame generation** box in its Tuning tab ("The Tuning tab").
+multiplier on the OSD. Frame generation itself is in the Graphics tab.
 Two kinds exist:
 
 - **Optical Flow Interpolation** (built in, the default kind; called FSR3 before, though it is not
@@ -438,8 +423,9 @@ Two kinds exist:
   *Lossless Scaling* app. **Dozer does not include it**; put your own copy in the user folder's
   `lossless\` folder if you want this kind.
 
-In the menu program, choose 2x or Dynamic in the Tuning tab's Frame generation box (it writes the
-Graphics tab's frame generation settings, which you can also set there). To turn Optical Flow
+In the menu program, tick *Enable Frame Generation* in the Graphics tab: for one generated frame per
+real frame leave the target frame rate at 0 and the multiplier at 2, or set the target frame rate
+(120 aims for 120 fps, capped at the screen's refresh rate). To turn Optical Flow
 frame generation on for dozer-cli, close the program and add these lines under `[Renderer]` in
 `config\sdl2-config.ini` (the `\default=false` lines make dozer-cli read the value):
 

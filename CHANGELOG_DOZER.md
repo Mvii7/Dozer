@@ -19,6 +19,23 @@ and `=0` brings back the 2.0.0 code path.
   most and `<n>` of their calls (parameters, data RAM reads and writes, every register write,
   marked where it changes the register), and per macro how many of its writes change a register.
   Each logged call runs again on a copy of the data RAM; the real call is unchanged.
+- Tuning: the global tab has no preset any more. It is the boxes and a **Preset**
+  box (Default, Experimental, Safe) that only ticks the boxes. Every game follows the
+  boxes unless its Properties changes one, which gets a cross to reset it. Before, a game whose
+  preset differed from the global one (Donkey Kong Bananza always did) ran that preset's boxes and
+  ignored yours, so turning the RTSS overlay off for all games left it on there. Safe's shortcuts and
+  Experimental's `RX_RT_FIT=3` are boxes now. Bananza has a **Graphics preset** (Performance,
+  Quality) for its foliage, reflection and shadow levels. An older `qt-config.ini` is carried over:
+  a global Safe or Experimental becomes its boxes, and a game's own preset becomes the boxes and
+  levels it changed.
+- Launchers: `start-performance.bat` is now `start-default.bat`, and `start-quality.bat` is gone (it
+  only cleared Bananza's three level lines; set Foliage, Reflection updates and Shadow quality to
+  High in Bananza's Properties instead).
+- Tuning: the Frame generation box is gone; frame generation is only in the Graphics tab, where
+  *Enable Frame Generation* is the only checkbox of its rows now. Safe no longer turns it off.
+- Tuning: the FPS overlay in RivaTuner is off until ticked (the Default and the first start no
+  longer tick it, and neither do `start-default.bat` and `start-reactive-experimental.bat`). It is
+  off after an upgrade too (it was on by default before): tick it again if you want it. The per-game tab no longer labels each box; only the cross shows a change.
 - GPU threads, Windows (`EDEN_NX2_BACK_CPU=0` leaves them where Windows puts them): with at least 8
   cores, the split back, and with the back stages the front, each take a physical core, and the
   other threads stay off those cores. They were sharing a core with the game. The Safe launcher

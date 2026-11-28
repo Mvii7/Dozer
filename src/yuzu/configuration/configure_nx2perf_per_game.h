@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cstddef>
-#include <span>
 #include <vector>
 
 #include <QWidget>
@@ -16,10 +15,10 @@ class QCheckBox;
 class QComboBox;
 class QPushButton;
 
-// The per-game Tuning tab: the preset and each box of the Tuning tab (core/nx2_perf_settings.h) as
-// this game runs them. They mirror the global ones; a cross appears next to one this game changed
-// (Bananza's preset starts changed), and resets it to the global setting. Only the changes are
-// kept (UISettings::values.nx2perf_games).
+// The per-game Tuning tab: each box of the Tuning tab (core/nx2_perf_settings.h) as this game runs
+// them, and Bananza's graphics levels with a preset that sets them. They follow the Tuning tab; a
+// cross appears next to one this game changed, and resets it to the Tuning tab's. Only the
+// changes are kept (UISettings::values.nx2perf_games).
 class ConfigureNx2PerfPerGame : public QWidget {
     Q_OBJECT
 
@@ -36,16 +35,18 @@ private:
         std::size_t key; ///< the index in Core::Nx2PerfSettings::KeyAt
     };
 
-    /// The presets this game's combo lists, in order (Custom last).
-    std::span<const Core::Nx2PerfSettings::Preset> Order() const;
+    static constexpr int PresetPerformance = 0;
+    static constexpr int PresetQuality = 1;
+    static constexpr int PresetCustom = 2;
+
     void Refresh();
-    void ChoosePreset(Core::Nx2PerfSettings::Preset chosen);
+    void ChooseLevels(const Core::Nx2PerfSettings::BananzaLevels& levels);
     void ChooseBox(const Row& row, bool checked);
 
     u64 title_id;
     Core::Nx2PerfSettings::Game game;
     Core::Nx2PerfSettings::Overrides own;
-    QComboBox* preset = nullptr;
+    QComboBox* preset = nullptr; ///< Bananza's graphics preset
     QPushButton* preset_reset = nullptr;
     QComboBox* foliage = nullptr; ///< Bananza's foliage
     QComboBox* shadow = nullptr; ///< Bananza's shadow quality

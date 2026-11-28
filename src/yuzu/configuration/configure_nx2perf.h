@@ -19,10 +19,10 @@ namespace Ui {
 class ConfigureNx2Perf;
 }
 
-// The Tuning tab: a preset (the launchers' setups, or Custom) and Dozer's settings
-// (core/nx2_perf_settings.h), one box each; a box changed by hand makes the preset Custom. A box
-// whose variables were all set outside the program (yuzu/nx2perf_session.h) is greyed out: theirs
-// is used.
+// The Tuning tab: Dozer's settings (core/nx2_perf_settings.h), one box each, which every game
+// follows unless its own tab says otherwise. A setup (Default, Experimental, Safe, the launchers')
+// only fills the boxes in once. A box whose variables were all set outside the program
+// (yuzu/nx2perf_session.h) is greyed out: theirs is used.
 class ConfigureNx2Perf : public QWidget {
     Q_OBJECT
 
@@ -32,11 +32,11 @@ public:
 
     void ApplyConfiguration();
 
-    /// A preset also sets Reactive Flushing in Graphics, Advanced, through this (false: it could
+    /// A setup also sets Reactive Flushing in Graphics, Advanced, through this (false: it could
     /// not, a game is running).
     void SetReactiveFlushing(std::function<bool(bool, bool)> func);
 
-    /// A game runs: Reactive Flushing and frame generation cannot change now; the tab keeps them
+    /// A game runs: Reactive Flushing cannot change now; the tab keeps it
     /// for the restart or the game's end (Nx2PerfSession::AddPendingGraphics).
     void SetGameRunning(bool running);
 
@@ -52,23 +52,15 @@ private:
     void SetConfiguration();
     Core::Nx2PerfSettings::Switches Current() const;
     void Show(const Core::Nx2PerfSettings::Switches& switches);
-    void ShowPreset();
-    void ChoosePreset(Core::Nx2PerfSettings::Preset chosen);
-    void BoxChanged();
+    void ShowSetups();
+    void ApplySetup(Core::Nx2PerfSettings::Setup chosen);
     void MarkSetOutside();
-    void ShowFrameGen();
-    void ChooseFrameGen(Core::Nx2PerfSettings::FrameGen chosen);
     void ShowPending();
 
     std::unique_ptr<Ui::ConfigureNx2Perf> ui;
     std::vector<Row> rows;
-    Core::Nx2PerfSettings::Preset preset = Core::Nx2PerfSettings::Preset::Performance;
     std::function<bool(bool, bool)> reactive_flushing;
     bool game_running = false;
-    Core::Nx2PerfSettings::FrameGen frame_gen_shown = Core::Nx2PerfSettings::FrameGen::Off;
-    // Chosen in this dialog (written on every Apply: the Graphics tab, applied first, writes its
-    // own view of the same settings each time)
-    std::optional<Core::Nx2PerfSettings::FrameGen> frame_gen_choice;
     std::optional<bool> pending_reactive;
     std::optional<bool> pending_barrier;
 };
