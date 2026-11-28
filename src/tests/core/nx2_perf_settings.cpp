@@ -619,6 +619,16 @@ TEST_CASE("Nx2PerfSettings: Bananza's levels", "[core]") {
     REQUIRE_FALSE(has(Wanted(Performance(), Game::MarioKartWorld)));
     REQUIRE_FALSE(has(Wanted(Performance(), Game::Other)));
     REQUIRE_FALSE(has(Wanted(AllOff(), Game::Bananza)));
+    // The shortcuts off for the game alone give it the game's own levels too, and a level it chose
+    // stays.
+    Overrides game_safe;
+    game_safe.boxes[7] = true;
+    REQUIRE(Keys[7].name == "safe_off");
+    REQUIRE(ForGame(Performance(), game_safe).dk_foliage == FoliageHigh);
+    REQUIRE(ForGame(Performance(), game_safe).dk_reflections == ReflectionsHigh);
+    REQUIRE(ForGame(Performance(), game_safe).dk_shadow == ShadowVeryHigh);
+    game_safe.dk_shadow = ShadowLow;
+    REQUIRE(ForGame(Performance(), game_safe).dk_shadow == ShadowLow);
     // A game's own level goes over the default.
     Overrides one;
     one.dk_foliage = FoliageHigh;
@@ -636,53 +646,69 @@ TEST_CASE("Nx2PerfSettings: an older game's preset is carried over", "[core]") {
     const Switches global = Performance();
     // No preset and not Bananza: nothing to carry.
     Overrides other;
-    CarryOverPreset(other, Game::Other, -1, global);
+    CarryOverPreset(other, Game::Other, -1, LegacyPreset::Performance, global);
     REQUIRE(other.Empty());
     // Following the global preset: nothing either.
     Overrides follow;
-    CarryOverPreset(follow, Game::Bananza, LegacyFollowGlobal, global);
+    CarryOverPreset(follow, Game::Bananza, LegacyFollowGlobal, LegacyPreset::Performance, global);
     REQUIRE(follow.Empty());
     // Bananza started from Performance whatever the global one: with Quality or Safe on the global
     // side it keeps its low levels, and with Performance there is nothing to keep.
     Overrides bananza;
-    CarryOverPreset(bananza, Game::Bananza, -1, global);
+    CarryOverPreset(bananza, Game::Bananza, -1, LegacyPreset::Performance, global);
     REQUIRE(bananza.Empty());
     Switches safe_global = AllOff();
-    CarryOverPreset(bananza, Game::Bananza, -1, safe_global);
+    CarryOverPreset(bananza, Game::Bananza, -1, LegacyPreset::Safe, safe_global);
     REQUIRE(bananza.dk_foliage == FoliageLow);
     REQUIRE(bananza.dk_reflections == ReflectionsVeryLow);
     REQUIRE(bananza.dk_shadow == ShadowMedium);
+    // Following a global Quality preset: Quality's levels stay; following Performance or Safe
+    // (Safe's levels are the default now) there is nothing to keep.
+    Overrides follows_quality;
+    CarryOverPreset(follows_quality, Game::Bananza, LegacyFollowGlobal, LegacyPreset::Quality,
+                    global);
+    REQUIRE(follows_quality.dk_foliage == FoliageHigh);
+    REQUIRE(follows_quality.dk_reflections == ReflectionsHigh);
+    REQUIRE(follows_quality.dk_shadow == ShadowVeryHigh);
+    Overrides follows_performance;
+    CarryOverPreset(follows_performance, Game::Bananza, LegacyFollowGlobal,
+                    LegacyPreset::Performance, global);
+    REQUIRE(follows_performance.Empty());
+    Overrides follows_safe;
+    CarryOverPreset(follows_safe, Game::Bananza, LegacyFollowGlobal, LegacyPreset::Safe,
+                    safe_global);
+    REQUIRE(follows_safe.Empty());
     // Its boxes are not kept (they follow the global ones now).
     for (const auto& box : bananza.boxes) {
         REQUIRE(!box.has_value());
     }
     // A preset a game chose gives the boxes it set that differ from the global ones.
     Overrides safe;
-    CarryOverPreset(safe, Game::Other, LegacyPreset::Safe, global);
+    CarryOverPreset(safe, Game::Other, LegacyPreset::Safe, LegacyPreset::Performance, global);
     REQUIRE(safe.boxes[0] == false);   // read traps
     REQUIRE(!safe.boxes[6].has_value()); // overlay: off in global too
     REQUIRE(safe.boxes[7] == true);    // shortcuts
     REQUIRE(!safe.boxes[8].has_value()); // RX_RT_FIT: global's already off
     REQUIRE(!safe.dk_foliage.has_value()); // only Bananza has levels
     Overrides reactive;
-    CarryOverPreset(reactive, Game::MarioKartWorld, LegacyPreset::Reactive, global);
+    CarryOverPreset(reactive, Game::MarioKartWorld, LegacyPreset::Reactive, LegacyPreset::Performance, global);
     REQUIRE(reactive.boxes[0] == false);
     REQUIRE(reactive.boxes[8] == true);
     REQUIRE(!reactive.boxes[6].has_value());
     // Bananza with Quality: the game's own levels; with Performance chosen, none to keep.
     Overrides quality;
-    CarryOverPreset(quality, Game::Bananza, LegacyPreset::Quality, global);
+    CarryOverPreset(quality, Game::Bananza, LegacyPreset::Quality, LegacyPreset::Performance, global);
     REQUIRE(quality.dk_foliage == FoliageHigh);
     REQUIRE(quality.dk_reflections == ReflectionsHigh);
     REQUIRE(quality.dk_shadow == ShadowVeryHigh);
     Overrides performance;
-    CarryOverPreset(performance, Game::Bananza, LegacyPreset::Performance, global);
+    CarryOverPreset(performance, Game::Bananza, LegacyPreset::Performance, LegacyPreset::Performance, global);
     REQUIRE(performance.Empty());
     // What a game already chose is kept.
     Overrides chosen;
     chosen.boxes[0] = true;
     chosen.dk_shadow = ShadowLow;
-    CarryOverPreset(chosen, Game::Bananza, LegacyPreset::Safe, global);
+    CarryOverPreset(chosen, Game::Bananza, LegacyPreset::Safe, LegacyPreset::Performance, global);
     REQUIRE(chosen.boxes[0] == true);
     REQUIRE(chosen.dk_shadow == ShadowLow);
 }

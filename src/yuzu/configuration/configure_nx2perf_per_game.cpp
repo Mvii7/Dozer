@@ -259,7 +259,8 @@ void ConfigureNx2PerfPerGame::Refresh() {
 
 void ConfigureNx2PerfPerGame::ChooseLevels(const Perf::BananzaLevels& levels) {
     // Only what differs from the Tuning tab's is kept.
-    const Perf::BananzaLevels base = Perf::BananzaDefault(UISettings::values.nx2perf);
+    const Perf::BananzaLevels base =
+        Perf::BananzaDefault(Perf::WithOverrides(UISettings::values.nx2perf, own));
     const auto kept = [](int chosen, int base_level) {
         return chosen == base_level ? std::nullopt : std::optional<int>{chosen};
     };

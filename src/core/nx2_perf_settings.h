@@ -217,12 +217,20 @@ constexpr Switches WithOverrides(Switches switches, const Overrides& overrides) 
 
 /// The settings a game runs with: the global ones with Bananza's levels as a game makes them, then
 /// the game's own overrides.
-constexpr Switches ForGame(Switches global, const Overrides& own) {
-    const BananzaLevels levels = BananzaDefault(global);
-    global.dk_foliage = levels.foliage;
-    global.dk_reflections = levels.reflections;
-    global.dk_shadow = levels.shadow;
-    return WithOverrides(global, own);
+constexpr Switches ForGame(const Switches& global, const Overrides& own) {
+    Switches switches = WithOverrides(global, own);
+    // The game's own shortcuts box decides the levels too
+    const BananzaLevels levels = BananzaDefault(switches);
+    if (!own.dk_foliage) {
+        switches.dk_foliage = levels.foliage;
+    }
+    if (!own.dk_reflections) {
+        switches.dk_reflections = levels.reflections;
+    }
+    if (!own.dk_shadow) {
+        switches.dk_shadow = levels.shadow;
+    }
+    return switches;
 }
 
 /// Reads a game's overrides through `read(key)`: -1 for no override, 0 off, 1 on;
@@ -369,15 +377,17 @@ inline constexpr int LegacyFollowGlobal = -2;
 /// Carries a game's older preset over as overrides, over the global settings `global` (read with
 /// an older file, see Load). A preset the game chose gives the boxes and Bananza's levels it set
 /// that differ from global's. Bananza started with Performance whatever the global one, and keeps
-/// its levels (not its boxes: those follow global now) unless it followed the global preset.
-constexpr void CarryOverPreset(Overrides& own, Game game, int legacy_preset, const Switches& global) {
+/// its levels (not its boxes: those follow global now); when it followed the global preset
+/// (`legacy_global`, the older global preset's number) it keeps that preset's levels.
+constexpr void CarryOverPreset(Overrides& own, Game game, int legacy_preset, int legacy_global,
+                               const Switches& global) {
     const bool chosen = legacy_preset == LegacyPreset::Quality ||
                         legacy_preset == LegacyPreset::Reactive ||
                         legacy_preset == LegacyPreset::Safe ||
                         legacy_preset == LegacyPreset::Performance;
-    const bool bananza_start = game == Game::Bananza && !chosen &&
-                               legacy_preset != LegacyFollowGlobal;
-    if (!chosen && !bananza_start) {
+    const bool follows = game == Game::Bananza && legacy_preset == LegacyFollowGlobal;
+    const bool bananza_start = game == Game::Bananza && !chosen && !follows;
+    if (!chosen && !bananza_start && !follows) {
         return;
     }
     if (chosen) {
@@ -394,8 +404,9 @@ constexpr void CarryOverPreset(Overrides& own, Game game, int legacy_preset, con
     if (game != Game::Bananza) {
         return;
     }
-    const bool game_makes_it = legacy_preset == LegacyPreset::Quality ||
-                               legacy_preset == LegacyPreset::Safe;
+    const int levels_preset = follows ? legacy_global : legacy_preset;
+    const bool game_makes_it = levels_preset == LegacyPreset::Quality ||
+                               levels_preset == LegacyPreset::Safe;
     const BananzaLevels levels = game_makes_it ? BananzaQuality : BananzaPerformance;
     const BananzaLevels base = BananzaDefault(global);
     if (!own.dk_foliage && levels.foliage != base.foliage) {

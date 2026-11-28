@@ -368,6 +368,7 @@ void QtConfig::ReadNx2PerfValues() {
     };
     // A file from before the presets went away: its game overrides carry the preset over.
     const bool older = read_int("version", 0) < Core::Nx2PerfSettings::FormatVersion;
+    const int legacy_global = read_int("preset", Core::Nx2PerfSettings::LegacyPreset::Performance);
     UISettings::values.nx2perf = Core::Nx2PerfSettings::Load(
         [this](std::string_view key, bool def) {
             return ReadBooleanSetting(std::string{key}, std::make_optional(def));
@@ -389,7 +390,8 @@ void QtConfig::ReadNx2PerfValues() {
         if (older && program_id != 0) {
             Core::Nx2PerfSettings::CarryOverPreset(overrides,
                                                    Core::Nx2PerfSettings::GameOf(program_id),
-                                                   read("preset"), UISettings::values.nx2perf);
+                                                   read("preset"), legacy_global,
+                                                   UISettings::values.nx2perf);
         }
         if (program_id != 0 && !overrides.Empty()) {
             UISettings::values.nx2perf_games[program_id] = overrides;
@@ -400,7 +402,7 @@ void QtConfig::ReadNx2PerfValues() {
     if (older && !bananza_stored) {
         auto& own = UISettings::values.nx2perf_games[Loader::Nx2DkDynamicFps::ProgramId];
         Core::Nx2PerfSettings::CarryOverPreset(own, Core::Nx2PerfSettings::Game::Bananza, -1,
-                                               UISettings::values.nx2perf);
+                                               legacy_global, UISettings::values.nx2perf);
         if (own.Empty()) {
             UISettings::values.nx2perf_games.erase(Loader::Nx2DkDynamicFps::ProgramId);
         }

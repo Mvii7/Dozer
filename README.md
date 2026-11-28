@@ -253,9 +253,9 @@ changed:
 | `FULLSCREEN=-f` | full screen; empty = window |
 | `DK_DYN=1` | Bananza dynamic frame rate patch (below); `0` = off |
 | `MKW_DYN=1` | Mario Kart World dynamic frame rate patch (below); `0` = off |
-| `OSD=1` | FPS / speed display through RTSS; `0` = off |
+| `OSD=1` | FPS / speed display through RTSS; `0` = off (the launchers set `0`) |
 
-(`DK_DYN=` and `OSD=` are in the performance, quality and reactive launchers only.) If the path of your
+(`DK_DYN=` and `OSD=` are in the default and reactive launchers only.) If the path of your
 game contains `&`, `^`, `,`, `;` or `=` but no space, Windows passes a dragged file badly: put
 the game in `Games` or write it in the `GAME=` line instead.
 A launcher stops with a message when its `CONFIG=` file does not exist (dozer-cli would quietly
@@ -268,7 +268,7 @@ error. Take the launchers from the release zip: they need Windows line endings (
   speed (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`, `PACE_SPIN_US=1500`); the dynamic
   frame rate patch (`DK_DYN=1`; while it is applied, the two pacing lines above are set aside:
   they act with `DK_DYN=0` or when the patch does not apply); timed Optical Flow generated frames
-  (`FG_TIMED=1`, only does something with frame generation on); the RTSS display (`OSD=1`). The
+  (`FG_TIMED=1`, only does something with frame generation on); the RTSS display (`OSD`, off here: set it to `1`). The
   Bananza-specific lines are marked; for other games use the safe launcher, or remove them. It
   is meant for reactive flushing **off**: it turns it off in an `sdl2-config.ini` it makes,
   and only prints a note when an existing one has it on. Read traps stay
