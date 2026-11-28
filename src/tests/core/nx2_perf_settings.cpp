@@ -463,38 +463,6 @@ TEST_CASE("Nx2PerfSettings: saving settings needs a restart only after a game se
     REQUIRE(!NeedsRestart(applied_outside, Plan(with_osd, Game::Bananza, osd_outside)));
 }
 
-TEST_CASE("Nx2PerfSettings: the frame generation choice and the Graphics settings", "[core]") {
-    const FrameGenSettings off{};
-    // Each choice gives the settings that read back as that choice.
-    for (const FrameGen choice : {FrameGen::Off, FrameGen::Fixed2x, FrameGen::Dynamic}) {
-        REQUIRE(FrameGenFrom(FrameGenApply(choice, off)) == choice);
-    }
-    REQUIRE(FrameGenApply(FrameGen::Fixed2x, off) ==
-            FrameGenSettings{.on = true, .fsr3 = true, .multiplier = 2, .target_rate = 0});
-    REQUIRE(FrameGenApply(FrameGen::Dynamic, off).target_rate == DYNAMIC_TARGET_RATE);
-    REQUIRE(DYNAMIC_TARGET_RATE == 120);
-    // Off only turns it off; Other changes nothing.
-    const FrameGenSettings lsfg3{.on = true, .fsr3 = false, .multiplier = 3, .target_rate = 0};
-    REQUIRE(FrameGenFrom(lsfg3) == FrameGen::Other);
-    REQUIRE(FrameGenApply(FrameGen::Off, lsfg3) ==
-            FrameGenSettings{.on = false, .fsr3 = false, .multiplier = 3, .target_rate = 0});
-    REQUIRE(FrameGenApply(FrameGen::Other, lsfg3) == lsfg3);
-    // Dynamic switches the type to FSR3 and keeps the multiplier (the target rate decides).
-    REQUIRE(FrameGenApply(FrameGen::Dynamic, lsfg3) ==
-            FrameGenSettings{.on = true, .fsr3 = true, .multiplier = 3, .target_rate = 120});
-    // FSR3 with another multiplier or target rate is the Graphics tab's own setup.
-    REQUIRE(FrameGenFrom({.on = true, .fsr3 = true, .multiplier = 3, .target_rate = 0}) ==
-            FrameGen::Other);
-    REQUIRE(FrameGenFrom({.on = true, .fsr3 = true, .multiplier = 2, .target_rate = 60}) ==
-            FrameGen::Other);
-    REQUIRE(FrameGenFrom({.on = false, .fsr3 = true, .multiplier = 2, .target_rate = 120}) ==
-            FrameGen::Off);
-    // Safe turns it off, the others leave it.
-    REQUIRE(FrameGenFor(Setup::Safe) == FrameGen::Off);
-    REQUIRE(!FrameGenFor(Setup::Defaults).has_value());
-    REQUIRE(!FrameGenFor(Setup::Experimental).has_value());
-}
-
 TEST_CASE("Nx2PerfSettings: a game's own boxes go over the global ones", "[core]") {
     Switches global = Performance();
     global.read_traps = false;

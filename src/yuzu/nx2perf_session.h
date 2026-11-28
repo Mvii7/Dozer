@@ -59,7 +59,6 @@ bool OfferRestart(QWidget* parent, const QString& running_game, bool fullscreen)
 struct PendingGraphics {
     std::optional<bool> reactive_flushing;
     std::optional<bool> barrier_feedback_loops;
-    std::optional<Core::Nx2PerfSettings::FrameGen> frame_gen;
 };
 
 /// Adds to the waiting graphics settings (a later choice replaces an earlier one).
@@ -74,12 +73,6 @@ const PendingGraphics& Pending();
 /// After the game stopped (MainWindow::OnEmulationStopped): writes the waiting graphics settings
 /// to the global settings. True when it wrote something: the caller saves the config.
 bool ApplyPendingGraphics();
-
-/// The frame generation choice the global Graphics settings amount to.
-Core::Nx2PerfSettings::FrameGen CurrentFrameGen();
-
-/// Writes a frame generation choice to the global Graphics settings (no game running).
-void ApplyFrameGen(Core::Nx2PerfSettings::FrameGen choice);
 
 /// The window refused to close after Prepare / OfferRestart asked for a restart: no restart at
 /// exit.

@@ -36,7 +36,7 @@ public:
     /// not, a game is running).
     void SetReactiveFlushing(std::function<bool(bool, bool)> func);
 
-    /// A game runs: Reactive Flushing and frame generation cannot change now; the tab keeps them
+    /// A game runs: Reactive Flushing cannot change now; the tab keeps it
     /// for the restart or the game's end (Nx2PerfSession::AddPendingGraphics).
     void SetGameRunning(bool running);
 
@@ -55,18 +55,12 @@ private:
     void ShowSetups();
     void ApplySetup(Core::Nx2PerfSettings::Setup chosen);
     void MarkSetOutside();
-    void ShowFrameGen();
-    void ChooseFrameGen(Core::Nx2PerfSettings::FrameGen chosen);
     void ShowPending();
 
     std::unique_ptr<Ui::ConfigureNx2Perf> ui;
     std::vector<Row> rows;
     std::function<bool(bool, bool)> reactive_flushing;
     bool game_running = false;
-    Core::Nx2PerfSettings::FrameGen frame_gen_shown = Core::Nx2PerfSettings::FrameGen::Off;
-    // Chosen in this dialog (written on every Apply: the Graphics tab, applied first, writes its
-    // own view of the same settings each time)
-    std::optional<Core::Nx2PerfSettings::FrameGen> frame_gen_choice;
     std::optional<bool> pending_reactive;
     std::optional<bool> pending_barrier;
 };

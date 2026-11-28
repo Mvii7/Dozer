@@ -137,7 +137,7 @@ them afterwards.
 |---|---|---|
 | **Defaults** (the first start's) | the fastest settings: the boxes below on, read traps too, but not the FPS overlay, *Enable Reactive Flushing* off (Graphics > Advanced). Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Defaults later turns it off too | `start-performance.bat` |
 | **Experimental** | Defaults with Reactive Flushing instead of read traps: read traps off, barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and *Render target fit for Reactive Flushing* ticked (`EDEN_NX2_RX_RT_FIT=3`) | `start-reactive-experimental.bat` |
-| **Safe** | the seven boxes off, Frame generation off, and *Turn off the per-draw shortcuts* ticked: the GPU shortcuts Dozer keeps on by default off (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
+| **Safe** | the seven boxes off and *Turn off the per-draw shortcuts* ticked: the GPU shortcuts Dozer keeps on by default off (`EDEN_NX2_LIGHT_DRAW=0` and the rest of `start-safe.bat`'s list), in every game. Other graphics settings such as Reactive Flushing stay as they are; Dozer's fixes and its changes without a switch stay in | `start-safe.bat` |
 
 **Per game.** A game's **Properties > Tuning** tab (right-click the game, or **Emulation >
 Configure Current Game**) shows this tab's boxes as that game runs them. A game follows this tab
@@ -146,24 +146,10 @@ here and every game that did not change it loses the overlay too. **Donkey Kong 
 Quality) that sets its foliage, reflection updates and shadow quality; Performance is what it runs
 with unless the shortcuts here are off (Safe), when it is Quality. The tab shows Custom once you
 set one of the three by hand.
-Frame generation stays as it is here. Bananza and Mario Kart World also have a **Dynamic frame
+Bananza and Mario Kart World also have a **Dynamic frame
 rate** box, only in their own Properties (on by default, no cross: it has no global setting). A game with changes starts with
 them, and Dozer asks to restart when the session's first game used others. Mario Kart World needs
 read traps on, which Defaults has (Experimental and Safe do not).
-
-**Frame generation.** The tab also has a **Frame generation** box with three choices:
-
-| Choice | What it does |
-|---|---|
-| **Off** (the default) | frame generation off |
-| **2x** | Optical Flow, one generated frame per real frame (fixed). On a 60 Hz screen it holds the game at 30 fps |
-| **Dynamic** | Optical Flow with a 120 fps target, capped at the screen's refresh rate when it is known. It steps between 1x and 4x only while the screen can show the extra frames and the game's own frame rate holds: a step that lowers the game's frame rate by more than 8% is undone |
-| *Other (Graphics tab)* | not a choice: shown when the Graphics tab holds another frame generation setup (LSFG, or another multiplier or target frame rate), which the Tuning tab leaves as it is |
-
-Generated frames need a screen faster than the game's frame rate; on a 60 Hz screen they only
-help below 30 fps. Presets do not change this box, except Safe, which sets it to Off. The
-box writes the Graphics tab's frame generation settings (*Enable Frame Generation*, the type
-Optical Flow, and the multiplier or the target frame rate), so you see the same choice there.
 
 Below are the nine settings:
 
@@ -431,7 +417,7 @@ and the Tuning tab (until unticked; no preset changes it). It was not measured o
 ## Frame generation (optional)
 
 PokeDinner-Eglantine 2.0.0 already has frame generation; Dozer adds `FG_TIMED`, shows the
-multiplier on the OSD and has a **Frame generation** box in its Tuning tab ("The Tuning tab").
+multiplier on the OSD. Frame generation itself is in the Graphics tab.
 Two kinds exist:
 
 - **Optical Flow Interpolation** (built in, the default kind; called FSR3 before, though it is not
@@ -440,8 +426,9 @@ Two kinds exist:
   *Lossless Scaling* app. **Dozer does not include it**; put your own copy in the user folder's
   `lossless\` folder if you want this kind.
 
-In the menu program, choose 2x or Dynamic in the Tuning tab's Frame generation box (it writes the
-Graphics tab's frame generation settings, which you can also set there). To turn Optical Flow
+In the menu program, tick *Enable Frame Generation* in the Graphics tab: for one generated frame per
+real frame leave the target frame rate at 0 and the multiplier at 2, or set the target frame rate
+(120 aims for 120 fps, capped at the screen's refresh rate). To turn Optical Flow
 frame generation on for dozer-cli, close the program and add these lines under `[Renderer]` in
 `config\sdl2-config.ini` (the `\default=false` lines make dozer-cli read the value):
 

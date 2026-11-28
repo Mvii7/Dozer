@@ -220,7 +220,7 @@ bool OfferRestart(QWidget* parent, const QString& running_game, bool fullscreen)
                                "settings; the new ones take effect after a restart.");
     if (pending) {
         text += QStringLiteral("\n\n") +
-                QObject::tr("Reactive Flushing and frame generation cannot change in a running "
+                QObject::tr("Reactive Flushing cannot change in a running "
                             "game: they are applied before the restart, or when the game stops "
                             "if you choose Later.");
     }
@@ -255,12 +255,8 @@ void AddPendingGraphics(const PendingGraphics& pending) {
     if (pending.barrier_feedback_loops) {
         g_pending.barrier_feedback_loops = pending.barrier_feedback_loops;
     }
-    if (pending.frame_gen) {
-        g_pending.frame_gen = pending.frame_gen;
-    }
     g_pending_unasked |= before.reactive_flushing != g_pending.reactive_flushing ||
-                         before.barrier_feedback_loops != g_pending.barrier_feedback_loops ||
-                         before.frame_gen != g_pending.frame_gen;
+                         before.barrier_feedback_loops != g_pending.barrier_feedback_loops;
 }
 
 const PendingGraphics& Pending() {
@@ -268,7 +264,7 @@ const PendingGraphics& Pending() {
 }
 
 bool HasPendingGraphics() {
-    return g_pending.reactive_flushing || g_pending.barrier_feedback_loops || g_pending.frame_gen;
+    return g_pending.reactive_flushing || g_pending.barrier_feedback_loops;
 }
 
 bool ApplyPendingGraphics() {
@@ -281,45 +277,14 @@ bool ApplyPendingGraphics() {
     if (g_pending.barrier_feedback_loops) {
         Settings::values.barrier_feedback_loops.SetValue(*g_pending.barrier_feedback_loops);
     }
-    if (g_pending.frame_gen) {
-        ApplyFrameGen(*g_pending.frame_gen);
-    }
     LOG_INFO(Frontend, "Dozer: graphics settings chosen during the game applied: reactive flushing "
-                       "{}, barrier feedback loops {}, frame generation {}",
+                       "{}, barrier feedback loops {}",
              g_pending.reactive_flushing ? (*g_pending.reactive_flushing ? "on" : "off") : "-",
              g_pending.barrier_feedback_loops ? (*g_pending.barrier_feedback_loops ? "on" : "off")
-                                              : "-",
-             g_pending.frame_gen ? static_cast<int>(*g_pending.frame_gen) : -1);
+                                              : "-");
     g_pending = {};
     g_pending_unasked = false;
     return true;
-}
-
-Perf::FrameGen CurrentFrameGen() {
-    const auto& v = Settings::values;
-    return Perf::FrameGenFrom({.on = v.frame_gen.GetValue(true),
-                               .fsr3 = v.frame_gen_type.GetValue(true) ==
-                                       Settings::FrameGenType::Fsr3,
-                               .multiplier = v.frame_gen_multiplier.GetValue(true),
-                               .target_rate = v.frame_gen_target_rate.GetValue(true)});
-}
-
-void ApplyFrameGen(Perf::FrameGen choice) {
-    auto& v = Settings::values;
-    const Perf::FrameGenSettings now =
-        Perf::FrameGenApply(choice, {.on = v.frame_gen.GetValue(true),
-                                     .fsr3 = v.frame_gen_type.GetValue(true) ==
-                                             Settings::FrameGenType::Fsr3,
-                                     .multiplier = v.frame_gen_multiplier.GetValue(true),
-                                     .target_rate = v.frame_gen_target_rate.GetValue(true)});
-    v.frame_gen.SetValue(now.on);
-    if (now.on) {
-        if (now.fsr3) {
-            v.frame_gen_type.SetValue(Settings::FrameGenType::Fsr3);
-        }
-        v.frame_gen_multiplier.SetValue(now.multiplier);
-        v.frame_gen_target_rate.SetValue(now.target_rate);
-    }
 }
 
 void CancelRestart() {
