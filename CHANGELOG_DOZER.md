@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- The Duskbloods network test boots: its remote memory (`svcGetInfo` type 31) was 0 and the game
+  wrote to a null pointer about 2 s in and exited. Now the game gets 512 MiB, the application pool
+  grows by 1152 MiB plus that (dropped with a log line if the pools do not fit), and the memory
+  totals it reads leave the remote memory out. Only for this title. Ported from Lichii.
 - `EDEN_NX2_HLE_DIRECT=1` (test switch, off): NVN's direct draw macros run in C++ instead of the
   macro JIT: the index buffer and draw macro and the vertex attribute format and vertex stream
   macros, which Donkey Kong Bananza calls ~1,000,000 times a second in its first boss fight. A

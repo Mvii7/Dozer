@@ -25,6 +25,13 @@ public:
     // 214 GPU-only regions). It sits in the non-secure system pool, outside the application pool.
     static constexpr size_t Nx2GraphicsServerMemorySize = 8ULL * 1024 * 1024 * 1024; // 8_GiB
 
+    // Switch 2 "remote memory" (svcGetInfo types 31 and 32), for The Duskbloods network test. The
+    // application pool grows by this much, and the memory totals the game reads leave it out.
+    static size_t Nx2RemoteMemorySize();
+
+    /// The Switch 2 application the kernel is about to be set up for (0 for any other program).
+    static void SetApplicationProgramId(u64 program_id);
+
 public:
     class Init {
     public:
@@ -34,6 +41,8 @@ public:
         static KPhysicalAddress GetKernelPhysicalBaseAddress(KPhysicalAddress base_address);
         static bool ShouldIncreaseThreadResourceLimit();
         static std::size_t GetApplicationPoolSize();
+        /// The part of GetApplicationPoolSize the application needs beyond the arrangement.
+        static std::size_t GetApplicationPoolGrowth();
         static std::size_t GetAppletPoolSize();
         static std::size_t GetMinimumNonSecureSystemPoolSize();
     };
