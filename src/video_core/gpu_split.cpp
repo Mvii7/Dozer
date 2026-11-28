@@ -367,6 +367,12 @@ void GpuSplit::DeferFunction(std::function<void()>&& func) {
 }
 
 size_t GpuSplit::Execute(const u64* entry, u64 published_left) {
+    return ExecuteIn<false>(entry, published_left);
+}
+
+template <bool OnStage>
+size_t GpuSplit::ExecuteIn(const u64* entry, u64 published_left) {
+    Tegra::Engines::EngineInterface*& back_engine = OnStage ? stage_engine : this->back_engine;
     const u64 head = entry[0];
     switch (static_cast<Kind>(head & 0xf)) {
     case Kind::Wrap:
@@ -567,7 +573,7 @@ void GpuSplit::StageExecute(u64 position, u64 words) {
     u64 last_store = position;
     while (position != end) {
         const size_t index = position & RingMask;
-        const size_t size = Execute(&ring[index], end - position);
+        const size_t size = ExecuteIn<true>(&ring[index], end - position);
         position += size != 0 ? size : RingWords - index;
         if (position - last_store >= 4096 && position != end) {
             consumed.store(position, std::memory_order_release);
@@ -631,6 +637,21 @@ bool GpuSplit::StagedJoinStarts(const u64* entry, Nx2Stages::JoinReason& reason)
     CountJoinCandidate(engine);
     reason = Nx2Stages::JoinReason::Engine;
     return true;
+}
+
+bool GpuSplit::StageComputeStarts(const u64* entry) const {
+    const u64 head = entry[0];
+    switch (static_cast<Kind>(head & 0xf)) {
+    case Kind::Engine:
+        return reinterpret_cast<const Tegra::Engines::EngineInterface*>(entry[1])
+            ->stage_is_compute;
+    case Kind::Method:
+    case Kind::Multi:
+    case Kind::Batch:
+        return back_engine != nullptr && back_engine->stage_is_compute;
+    default:
+        return false;
+    }
 }
 
 bool GpuSplit::StagedJoinContinues(const u64* entry) const {
@@ -796,6 +817,16 @@ void GpuSplit::RunStagedBack(std::stop_token stop_token) {
     system->RegisterHostThread();
     Nx2Stages::Detail::t_stage = static_cast<u8>(Nx2Stages::Stage::A);
     const bool pass_through = Nx2Stages::Get().mode == 3;
+    {
+        const char* value = std::getenv("EDEN_NX2_STAGE_COMPUTE");
+        const bool wanted = value != nullptr && value[0] == '1';
+        stage_compute = wanted && Nx2Stages::Get().mode == 1 && !Nx2Stages::Get().cut_c;
+        if (wanted) {
+            LOG_INFO(HW_GPU, "GPU back stages: compute engine {} (EDEN_NX2_STAGE_COMPUTE=1)",
+                     stage_compute ? "on BC, in order, without a join"
+                                   : "in joins (needs EDEN_NX2_BACK_STAGES=1 and cut a alone)");
+        }
+    }
     u64 read_position = 0;
     while (!stop_token.stop_requested()) {
         Nx2Profile::Report(Nx2Profile::stage_report_names[0]);
@@ -832,6 +863,50 @@ void GpuSplit::RunStagedBack(std::stop_token stop_token) {
         u64 last_mark = read_position;
         while (read_position != available) {
             const size_t index = read_position & RingMask;
+            if (stage_compute && StageComputeStarts(&ring[index])) [[unlikely]] {
+                // EDEN_NX2_STAGE_COMPUTE: BC runs the compute engine's entries in the stream's
+                // order (it owns the caches; A never touches the engine), without a join. Ring
+                // space goes back only when the last stage marks past them.
+                if (stage_engine_sent != back_engine) {
+                    Nx2Stages::Post(Nx2Stages::Ring::ToB, [engine = back_engine] {
+                        GpuSplit::Get().StageSetEngine(engine);
+                    });
+                }
+                const u64 start = read_position;
+                do {
+                    const size_t at = read_position & RingMask;
+                    const u64* const entry = &ring[at];
+                    const u64 head = entry[0];
+                    size_t size = 0;
+                    switch (static_cast<Kind>(head & 0xf)) {
+                    case Kind::Wrap:
+                        size = RingWords - at;
+                        break;
+                    case Kind::Engine:
+                        back_engine = reinterpret_cast<Tegra::Engines::EngineInterface*>(entry[1]);
+                        size = 2;
+                        break;
+                    case Kind::Method:
+                        size = (head & HasSegment) != 0 ? 2 : 1;
+                        break;
+                    case Kind::Multi:
+                        size = ((head & HasSegment) != 0 ? 3 : 2) +
+                               (static_cast<u32>(head >> 32) + 1) / 2;
+                        break;
+                    case Kind::Batch:
+                        size = 1 + static_cast<size_t>(head >> 32);
+                        break;
+                    default:
+                        break;
+                    }
+                    read_position += size;
+                } while (read_position != available &&
+                         (static_cast<Kind>(ring[read_position & RingMask] & 0xf) == Kind::Wrap ||
+                          StageComputeStarts(&ring[read_position & RingMask])));
+                stage_engine_sent = back_engine;
+                Nx2Stages::Detail::PostExecA(start, read_position - start);
+                continue;
+            }
             Nx2Stages::JoinReason reason{};
             if (StagedJoinStarts(&ring[index], reason)) [[unlikely]] {
                 // With the stages parked: this entry and what follows of the engines whose

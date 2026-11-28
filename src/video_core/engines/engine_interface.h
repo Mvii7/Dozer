@@ -74,6 +74,9 @@ public:
     /// (Maxwell3D, which sends what they do to the stages); otherwise A runs them with the
     /// stages parked (a join).
     bool stage_methods_on_a{};
+    /// KeplerCompute: with EDEN_NX2_STAGE_COMPUTE=1 its entries run on BC (GpuSplit::StageExecute)
+    /// instead of in a join.
+    bool stage_is_compute{};
     /// Methods whose consecutive macro writes go to CallMethodRun together (none by default).
     static constexpr u32 MaxMethodRun = 32;
     u32 method_run_begin{};

@@ -225,6 +225,10 @@ public:
     /// Back stages, =3 (ExecA): B runs `words` words of ring 1 from `position` as BackLoop did,
     /// handing ring space back every 4096 words (B is the last stage).
     void StageExecute(u64 position, u64 words);
+    /// BC: the engine the next StageExecute range starts with (EDEN_NX2_STAGE_COMPUTE).
+    void StageSetEngine(Tegra::Engines::EngineInterface* engine) {
+        stage_engine = engine;
+    }
 
 private:
     enum class Kind : u64 {
@@ -332,6 +336,12 @@ private:
     void BackLoop(std::stop_token stop_token);
     /// Runs the entry; `published_left`: words published from it on. Returns its size.
     size_t Execute(const u64* entry, u64 published_left);
+    /// Execute with the engine in back_engine (the back, A) or in stage_engine (StageExecute).
+    template <bool OnStage>
+    size_t ExecuteIn(const u64* entry, u64 published_left);
+    /// Back stages, EDEN_NX2_STAGE_COMPUTE=1: whether A hands the entry to BC with the compute
+    /// engine's that follow it (a method of KeplerCompute, or a switch to it).
+    bool StageComputeStarts(const u64* entry) const;
 
     /// Back stages (nx2_stages.h): BackLoop as stage A. Runs the engines' entries against the
     /// primary registers, sends ring 1's Call entries to their stage (DeferTarget), marks how far
@@ -382,6 +392,11 @@ private:
 
     // Back side.
     Tegra::Engines::EngineInterface* back_engine{};
+    /// Back stages: the engine of the ranges BC runs (StageExecute); A's copy of what BC has.
+    Tegra::Engines::EngineInterface* stage_engine{};
+    Tegra::Engines::EngineInterface* stage_engine_sent{};
+    /// EDEN_NX2_STAGE_COMPUTE=1 with stages (=1) and cut a alone: KeplerCompute on BC.
+    bool stage_compute{};
 
     static GpuSplit instance;
 

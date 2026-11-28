@@ -41,6 +41,7 @@ KeplerCompute::KeplerCompute(MemoryManager& memory_manager_)
     : memory_manager{memory_manager_}
     , upload_state{memory_manager, regs.upload}
 {
+    stage_is_compute = true;
     // EDEN_NX2_QMD_TRACE: log the QMD scheduler's loads, dependency counts and launches.
     if (std::getenv("EDEN_NX2_QMD_TRACE")) {
         native_qmd.trace = [this](std::string_view event, u64 address, s32 value) {

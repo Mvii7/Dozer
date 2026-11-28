@@ -8,6 +8,10 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `EDEN_NX2_STAGE_COMPUTE=1` (back stages, cut a, off): the compute engine's methods run on BC,
+  the stage that owns the caches, in the stream's order, instead of on A with the stages parked.
+  Donkey Kong Bananza's first boss fight parks them ~1,100-1,400 times a second for its culling
+  dispatches; each park waits for everything queued to finish and leaves the memory stage idle.
 - `EDEN_NX2_COND_POST=1` (back stages, off): a render enable write whose override or mode reads
   no memory (always/never render, or mode True/False: every call of NVN's render enable macro in
   Donkey Kong Bananza's first boss fight, ~1500 a second) no longer parks the stages: A sets the
