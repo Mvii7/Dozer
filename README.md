@@ -129,11 +129,11 @@ needs that much free disk space).
 
 ## The Tuning tab
 
-The tab is the settings every game runs with. At the top is a **Fill in** box: choosing
-**Defaults**, **Experimental** or **Safe** ticks and unticks the boxes below once. Nothing is kept
-of the choice, only the boxes, so you can change any of them afterwards.
+The tab is the settings every game runs with. At the top is a **Preset** box: choosing
+**Defaults**, **Experimental** or **Safe** ticks and unticks the boxes below. You can change any of
+them afterwards.
 
-| Fill in | What it sets | Same as |
+| Preset | What it sets | Same as |
 |---|---|---|
 | **Defaults** (the first start's) | the fastest settings: the boxes below on, read traps too, but not the FPS overlay, *Enable Reactive Flushing* off (Graphics > Advanced). Dozer's first start also turns Reactive Flushing off in `qt-config.ini` by itself; choosing Defaults later turns it off too | `start-performance.bat` |
 | **Experimental** | Defaults with Reactive Flushing instead of read traps: read traps off, barrier feedback loops on (Graphics > Advanced; Reactive Flushing needs it) and *Render target fit for Reactive Flushing* ticked (`EDEN_NX2_RX_RT_FIT=3`) | `start-reactive-experimental.bat` |
@@ -161,7 +161,7 @@ read traps on, which Defaults has (Experimental and Safe do not).
 | *Other (Graphics tab)* | not a choice: shown when the Graphics tab holds another frame generation setup (LSFG, or another multiplier or target frame rate), which the Tuning tab leaves as it is |
 
 Generated frames need a screen faster than the game's frame rate; on a 60 Hz screen they only
-help below 30 fps. Fill in does not change this box, except Safe, which sets it to Off. The
+help below 30 fps. Presets do not change this box, except Safe, which sets it to Off. The
 box writes the Graphics tab's frame generation settings (*Enable Frame Generation*, the type
 Optical Flow, and the multiplier or the target frame rate), so you see the same choice there.
 
@@ -183,7 +183,7 @@ These are the switches `start-performance.bat` sets ("Launchers", "Main switches
 sets them in its own environment just before a game starts. The dynamic frame rate settings
 (`DK_DYN=1`, `MKW_DYN=1`) are per game: a **Dynamic frame rate** box in the Tuning tab of the
 game's Properties, for Bananza (040074A01BF12000) and Mario Kart World (0400C3F00006E000), the ones
-the patches check; for any other game they stay off. They are on until unticked, no fill in
+the patches check; for any other game they stay off. They are on until unticked, no preset
 changes them (not even Safe), and they have no global setting. For Bananza the
 program always sets its frame pacing too (`PRESENT_INTERVAL_WORD=12:16:4`, `MODE_PACE=2`,
 `PACE_SPIN_US=1500`, no box): the dynamic frame rate patch sets it aside while it applies, and
@@ -212,7 +212,7 @@ or the other way round),
 Dozer asks: **Restart** (opens again with that game), **Start Anyway** (keeps the session's
 switches) or **Cancel**.
 
-**Graphics settings while a game runs.** Reactive Flushing (changed through Fill in) and Frame
+**Graphics settings while a game runs.** Reactive Flushing (changed through a preset) and Frame
 generation are graphics settings, and those cannot change in a running game. If you change them
 while a game runs, Dozer keeps the change and applies it when you press **Restart Now**, or when
 the game stops if you chose **Later**; the tab says so.
@@ -426,7 +426,7 @@ vblank, which kept the game at 30 fps). Nothing is written to disk, no game file
 with the switch unset no module is touched. It only applies to Mario Kart World (title
 0400C3F00006E000) and only if each of the three instruction sequences is found exactly once;
 otherwise the log says which one was not. It is off by default in dozer-cli, on in the launchers
-and the Tuning tab (until unticked; no fill in changes it). It was not measured on Dozer: the game may still not reach 60 fps where the CPU is the limit.
+and the Tuning tab (until unticked; no preset changes it). It was not measured on Dozer: the game may still not reach 60 fps where the CPU is the limit.
 
 ## Frame generation (optional)
 

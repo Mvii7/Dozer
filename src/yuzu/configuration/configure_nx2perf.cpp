@@ -40,7 +40,7 @@ ConfigureNx2Perf::ConfigureNx2Perf(QWidget* parent)
     SetConfiguration();
     MarkSetOutside();
 
-    // The combo's items are a hint, then Perf::Setup in order.
+    // The combo's items are a hint, then Perf::Setup in order; it goes back to the hint.
     connect(ui->setup, &QComboBox::activated, this, [this](int index) {
         if (index > 0 && index <= static_cast<int>(Perf::Setup::Safe) + 1) {
             ApplySetup(static_cast<Perf::Setup>(index - 1));
@@ -110,11 +110,10 @@ void ConfigureNx2Perf::Show(const Perf::Switches& switches) {
 
 void ConfigureNx2Perf::ShowSetups() {
     ui->setup_text->setText(
-        tr("Fills in the boxes below once; nothing is kept but the boxes. Defaults: the "
-           "fastest settings, all on, Reactive Flushing off (Graphics, Advanced), like "
-           "start-performance.bat. Experimental: read traps off and Reactive Flushing on, like "
-           "start-reactive-experimental.bat. Safe: everything off and frame generation off, like "
-           "start-safe.bat. Games follow these unless a game's Properties says otherwise."));
+        tr("Defaults: the fastest settings, like start-performance.bat. Experimental: Reactive "
+           "Flushing instead of read traps, like start-reactive-experimental.bat. Safe: "
+           "everything off, like start-safe.bat. A preset only ticks the boxes below; change "
+           "any of them afterwards."));
 }
 
 void ConfigureNx2Perf::ApplySetup(Perf::Setup chosen) {

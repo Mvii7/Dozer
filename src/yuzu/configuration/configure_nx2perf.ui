@@ -32,7 +32,7 @@
      <item>
       <widget class="QLabel" name="setup_label">
        <property name="text">
-        <string>Fill in</string>
+        <string>Preset</string>
        </property>
        <property name="buddy">
         <cstring>setup</cstring>
@@ -43,7 +43,7 @@
       <widget class="QComboBox" name="setup">
        <item>
         <property name="text">
-         <string>Choose a setup...</string>
+         <string>Select a preset...</string>
         </property>
        </item>
        <item>
