@@ -8,6 +8,9 @@ and `=0` brings back the 2.0.0 code path.
 
 ## Unreleased (Dozer)
 
+- `/dev/nvhost-prof-gpu` opens as a stub device for Switch 2 callers instead of failing. The
+  Duskbloods network test's CUDA driver opens it, and with the open refused the game read a null
+  object and aborted with 2162-0001. Switch 1 callers still get the refusal. Ported from Lichii.
 - The Duskbloods network test boots: its remote memory (`svcGetInfo` type 31) was 0 and the game
   wrote to a null pointer about 2 s in and exited. Now the game gets 512 MiB, the application pool
   grows by 1152 MiB plus that (dropped with a log line if the pools do not fit), and the memory
